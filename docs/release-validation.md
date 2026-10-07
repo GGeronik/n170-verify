@@ -3,7 +3,7 @@
 This public guide describes checks to run; it is not a result report. Apart from the separately pinned synthetic challenge packs, historical
 internal logs, screenshots and handoffs are outside the public inventory. Keep
 results tied to the exact received source ZIP hash or the distinct hash of a
-modified build. Automated agent checks are not an external audit or an
+modified build. Automated checks are not an external audit or an
 outside-user study.
 
 ## Receipt and clean build

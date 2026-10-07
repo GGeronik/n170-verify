@@ -48,6 +48,14 @@ with tempfile.TemporaryDirectory() as directory:
  (root/build.INVENTORY).write_text(json.dumps(changed)); refuses()
  changed['downloads']['release-assets/challenge-kit/README.md']['path']='challenge-kit/SHA256SUMS'
  (root/build.INVENTORY).write_text(json.dumps(changed)); refuses()
+ (root/build.INVENTORY).write_text(json.dumps(original))
+ hidden=root/'.local-config'; hidden.mkdir(); (hidden/'notes.txt').write_text('synthetic')
+ _, collected=build.collect_source(root)
+ assert '.local-config/notes.txt' not in collected
+ (hidden/'notes.txt').unlink(); hidden.rmdir()
+ hidden_file=root/'.local-input'; hidden_file.write_text('synthetic'); refuses(); hidden_file.unlink()
+ changed=json.loads(json.dumps(original)); changed['files'].append('docs/.hidden/input.txt')
+ (root/build.INVENTORY).write_text(json.dumps(changed)); refuses()
 `));
 test("combined toolkit includes original Python packages/tests and standalone Node checker, runs offline, and excludes optional implementations", () => check(String.raw`
 with zipfile.ZipFile(app/'dist/client/n170-verify-toolkit.zip') as archive:
