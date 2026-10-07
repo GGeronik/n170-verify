@@ -1,0 +1,2 @@
+filename,strategy,has_bias,total_signals,biased_entry_signals,biased_exit_signals,biased_indicators
+SyntheticLeak.py,SyntheticLeak,True,20,2,1,"future_close,whole_history_mean"

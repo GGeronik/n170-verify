@@ -1,0 +1,23 @@
+{
+  "schema_version": "n170.agent-handoff.v1",
+  "synthetic": true,
+  "source": {
+    "broker": "Synthetic example broker",
+    "connector": "Synthetic example MCP connector; no live connection",
+    "tools": ["synthetic_portfolio_history", "synthetic_account_activity"],
+    "retrieved_at": "2025-01-07T12:00:00Z"
+  },
+  "account_scope": "Synthetic example portfolio",
+  "currency": "USD",
+  "frequency": 252,
+  "requested_period": { "start": "2025-01-02", "end": "2025-01-07" },
+  "coverage": { "pagination": "complete", "missing_periods": [], "unsupported_events": [] },
+  "flow_timing": "interval_end",
+  "observations": [
+    { "date": "2025-01-02", "nav": "100", "external_flow": "0", "source_ref": "synthetic_fixture.observations[0]" },
+    { "date": "2025-01-03", "nav": "101", "external_flow": "0", "source_ref": "synthetic_fixture.observations[1]" },
+    { "date": "2025-01-06", "nav": "112.02", "external_flow": "10", "source_ref": "synthetic_fixture.observations[2]" },
+    { "date": "2025-01-07", "nav": "110.8998", "external_flow": "0", "source_ref": "synthetic_fixture.observations[3]" }
+  ],
+  "mapping": { "date": "synthetic_fixture.observations[].date", "nav": "synthetic_fixture.observations[].nav", "external_flow": "synthetic_fixture.observations[].external_flow" }
+}

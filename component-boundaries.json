@@ -1,0 +1,61 @@
+{
+  "schema": "n170.release.boundaries.v1",
+  "original_core": {
+    "license": "Apache-2.0",
+    "paths": [
+      "app/",
+      "verify_toolkit/",
+      "toolkit-tests/",
+      "verify_accounting/",
+      "accounting-tests/",
+      "build.py",
+      "verify_release.py",
+      "scripts/verify-reconciliation.mjs",
+      "scripts/reconciliation-input.mjs",
+      "scripts/reconciliation-source.mjs",
+      "scripts/verify-record.mjs"
+    ],
+    "notes": "Original N170 code only. Component LICENSE and NOTICE files are retained. Names and marks receive no additional license."
+  },
+  "npm": {
+    "status": "separately_installed",
+    "inventory": "DEPENDENCIES.json",
+    "notices": "The original Vite plugin emits third-party-licenses.txt for actual browser-bundled packages. Build tooling and optional platform packages remain separately installed under their own license terms."
+  },
+  "freqtrade": {
+    "status": "separately_installed_optional",
+    "license": "GPL-3.0",
+    "engine_bundled": false,
+    "notes": "Original adapter/runner interoperability does not relicense the upstream engine. No broker access or live trading is part of this release."
+  },
+  "auditzk": {
+    "status": "grant_pending",
+    "upstream_code_bundled": false,
+    "notes": "Owner reports a forthcoming special grant. Written terms, covered revision, redistribution and downstream permissions are unrecorded. This candidate includes an original disabled/mock interface, not TEE attestation or real AuditZK integration. No upstream AuditZK code is included."
+  },
+  "data": {
+    "included": "Original synthetic examples and the explicitly pinned older public challenge kit, including its selected synthetic execution receipts. Current accounting and continuity evidence packages are not bundled.",
+    "not_included": [
+      "personal accounts",
+      "broker credentials",
+      "private signing keys",
+      "licensed market data",
+      "private engines",
+      "internal handoff reports",
+      "private or unselected raw research runs"
+    ]
+  },
+  "release": {
+    "published": false,
+    "external_human_audit": false,
+    "source_authentication": false,
+    "claims": "Local candidate preparation and reproducible supplied-byte checks only."
+  },
+  "beancount": {
+    "status": "separately_installed_optional",
+    "license": "GPL-2.0-only",
+    "upstream_code_bundled": false,
+    "version": "3.2.3",
+    "notes": "Original N170 interchange and subprocess adapter only. Beancount implementation is separately installed under its own license; optional oracle execution is distinct from offline verification."
+  }
+}

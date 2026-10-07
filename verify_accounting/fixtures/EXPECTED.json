@@ -1,0 +1,24 @@
+{
+  "schema": "n170.accounting.hand-oracles.v1",
+  "basis": "Original hand calculations frozen before ledger implementation. These are synthetic engineering cases, not investment evidence or externally timestamped commitments.",
+  "gain": {
+    "calculation": "1000 - 4*100 - 2 + 1*120 - 1 = 717 cash; 3*100 = 300 cost; 3*110 = 330 value; 20 realized + 30 unrealized - 3 fees = 47 profit.",
+    "cash": "717", "quantity": "3", "cost_basis": "300", "fees": "3",
+    "realized_pnl": "20", "unrealized_pnl": "30", "external_flows": "0", "net_pnl": "47", "nav": "1047"
+  },
+  "loss": {
+    "calculation": "1000 - 4*100 - 2 + 1*80 - 1 = 677 cash; 3*90 = 270 value; -20 realized - 30 unrealized - 3 fees = -53 profit.",
+    "cash": "677", "quantity": "3", "cost_basis": "300", "fees": "3",
+    "realized_pnl": "-20", "unrealized_pnl": "-30", "external_flows": "0", "net_pnl": "-53", "nav": "947"
+  },
+  "contribution": {
+    "calculation": "Gain case plus a final 100 contribution: 817 cash and 1147 NAV; 1147 - 1000 - 100 = 47 investment profit.",
+    "cash": "817", "quantity": "3", "cost_basis": "300", "fees": "3",
+    "realized_pnl": "20", "unrealized_pnl": "30", "external_flows": "100", "net_pnl": "47", "nav": "1147"
+  },
+  "fifo": {
+    "calculation": "1000 - 2*100 - 1 - 2*150 - 1 + 3*120 - 1 = 857 cash; FIFO cost sold 350, realized 10; remaining cost 150, value 130, unrealized -20; net profit -13.",
+    "cash": "857", "quantity": "1", "cost_basis": "150", "fees": "3",
+    "realized_pnl": "10", "unrealized_pnl": "-20", "external_flows": "0", "net_pnl": "-13", "nav": "987"
+  }
+}

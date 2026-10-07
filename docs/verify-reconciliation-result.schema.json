@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:n170:private-source-check:result:v1",
+  "title": "N170 private source checker result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "checker_version",
+    "status",
+    "reasons",
+    "selected_event",
+    "checks",
+    "counts",
+    "source_decisions",
+    "currency_evidence",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "n170.private-source-check.v1"
+    },
+    "checker_version": {
+      "const": "1.0.0"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED_UNDER_OWNER_ASSERTIONS",
+        "MISMATCH",
+        "NOT_ASSESSABLE",
+        "INVALID_INPUT"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 80,
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    },
+    "selected_event": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sequence",
+            "event_type",
+            "superseded"
+          ],
+          "properties": {
+            "sequence": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            },
+            "event_type": {
+              "enum": [
+                "performance",
+                "correction",
+                "legacy"
+              ]
+            },
+            "superseded": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signed_profile",
+        "source_bytes",
+        "source_normalization",
+        "signed_source_commitments",
+        "signed_scope",
+        "signed_returns",
+        "private_intervals"
+      ],
+      "properties": {
+        "signed_profile": {
+          "type": "boolean"
+        },
+        "source_bytes": {
+          "type": "boolean"
+        },
+        "source_normalization": {
+          "type": "boolean"
+        },
+        "signed_source_commitments": {
+          "type": "boolean"
+        },
+        "signed_scope": {
+          "type": "boolean"
+        },
+        "signed_returns": {
+          "type": "boolean"
+        },
+        "private_intervals": {
+          "type": "boolean"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retained_sources",
+        "observations",
+        "intervals"
+      ],
+      "properties": {
+        "retained_sources": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "intervals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 499,
+          "description": "Independently calculated adjacent source/signed intervals, at most observations minus one (499); zero if calculation unavailable. This is not the private requested-schedule expansion, whose input may contain up to 5500 intervals."
+        }
+      }
+    },
+    "source_decisions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ordinal",
+          "disposition",
+          "bytes_available",
+          "byte_binding",
+          "text_decoding",
+          "reason_present"
+        ],
+        "properties": {
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "disposition": {
+            "enum": [
+              "active",
+              "unresolved",
+              "excluded",
+              "superseded"
+            ]
+          },
+          "bytes_available": {
+            "type": "boolean"
+          },
+          "byte_binding": {
+            "enum": [
+              "unavailable",
+              "matched",
+              "mismatch"
+            ]
+          },
+          "text_decoding": {
+            "enum": [
+              "unavailable",
+              "valid_utf8",
+              "invalid_utf8"
+            ]
+          },
+          "reason_present": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "currency_evidence": {
+      "enum": [
+        "unassessed",
+        "source",
+        "owner_assertion"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+          "FLOW_TIMING_IS_OWNER_ASSERTION",
+          "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+          "SCHEDULE_IS_OWNER_ASSERTION",
+          "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+          "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+          "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+          "IDENTITY_NOT_ESTABLISHED",
+          "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+          "RETAINED_SOURCE_BYTES_UNAVAILABLE",
+          "RETAINED_SOURCE_UTF8_UNDECODABLE",
+          "CURRENCY_IS_OWNER_ASSERTION"
+        ]
+      }
+    }
+  }
+}

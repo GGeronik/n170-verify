@@ -1,0 +1,1662 @@
+[
+  {
+    "path": "__init__.py",
+    "sha256": "a7dcde20fc68390fe688232022d6b2c18cb29de3a0f5e6748bf4ba2a3e17e457",
+    "size": 972
+  },
+  {
+    "path": "__main__.py",
+    "sha256": "7f4c0cc1db1b59103028a67064fa516dc8e401d61c815e918bfad64ce080bc8d",
+    "size": 207
+  },
+  {
+    "path": "candle_columns.py",
+    "sha256": "3bf46586a133867f3d14026b0dba4ab1ca9a49afcb61b935eca4ca888a822c9d",
+    "size": 3582
+  },
+  {
+    "path": "commands/__init__.py",
+    "sha256": "41013c41a0474e7cdd02d7869007bbafe01078aeec646d545caabde7dcaef2fe",
+    "size": 1733
+  },
+  {
+    "path": "commands/analyze_commands.py",
+    "sha256": "f06c223e11809e9059501c71df9351324cf83c01b990e3537a6910117b6c4a69",
+    "size": 624
+  },
+  {
+    "path": "commands/arguments.py",
+    "sha256": "d5dc442fecaa5574fce7ccc8f13c7f7d2f2b4e482fe8e2fa18d75ae04ebfce19",
+    "size": 23292
+  },
+  {
+    "path": "commands/build_config_commands.py",
+    "sha256": "834dbbf06f501e82bcb10f06707f36d47e2d46020bd00944588e1d77e9f3cc76",
+    "size": 1644
+  },
+  {
+    "path": "commands/cli_options.py",
+    "sha256": "f5040f1eb119e72c5a600d981f6aa4295043c65eef245eb10389113592f6c51a",
+    "size": 27391
+  },
+  {
+    "path": "commands/data_commands.py",
+    "sha256": "cd1a34ed0b922bfe1e53b9f6305c9d0185eb9ecffa9f91edc5329b54799a2cc3",
+    "size": 7982
+  },
+  {
+    "path": "commands/db_commands.py",
+    "sha256": "6944c5bfa4ad42ca89acfcb7274bea516e65b7c9e19577596a6cf51013f0575f",
+    "size": 609
+  },
+  {
+    "path": "commands/deploy_commands.py",
+    "sha256": "ed458b713408a5f37543a2931005c1a42c657e8efe1f118b005d97c0e54aa99f",
+    "size": 4879
+  },
+  {
+    "path": "commands/deploy_ui.py",
+    "sha256": "23a0216613b7a69a7deea33addd43c933629d49e914f7eb14a1226a064ff0e2b",
+    "size": 2783
+  },
+  {
+    "path": "commands/hyperopt_commands.py",
+    "sha256": "a59823bf5be0decf5e7893fdeeee2a6b93e0e32a3028bd36e48a216e4a2fa040",
+    "size": 3791
+  },
+  {
+    "path": "commands/list_commands.py",
+    "sha256": "45f5687a9bc6146386cc9e93357608cf39c22aef566fc3855a74341ad04e1ae4",
+    "size": 14268
+  },
+  {
+    "path": "commands/optimize_commands.py",
+    "sha256": "4ee2e9ecf083fbadb8322d6c97a358177f2ffc66c1780953b74e5160b8b6e6c7",
+    "size": 5470
+  },
+  {
+    "path": "commands/pairlist_commands.py",
+    "sha256": "369ea69b92068939e0efeaf667ba04762f67ac94dc5883b947a167edfe9e4597",
+    "size": 1461
+  },
+  {
+    "path": "commands/plot_commands.py",
+    "sha256": "115ddbd1f86907d7a0b3b10fe7346b8f7e47217c14f8533f137fafbbea96fb7e",
+    "size": 1233
+  },
+  {
+    "path": "commands/strategy_utils_commands.py",
+    "sha256": "6bc97b7d3fdf1c94b9cb68a318abac4d0c87a96220a0a60d46ff7223cdcbdd03",
+    "size": 1731
+  },
+  {
+    "path": "commands/trade_commands.py",
+    "sha256": "3aa06d0e34f94ee9f863551f16f07521fdf3914dc818207ab9c3d084a21ac288",
+    "size": 744
+  },
+  {
+    "path": "commands/webserver_commands.py",
+    "sha256": "afa2b6f9a2d28ae04a3479baa5c46fe87805cb8fe3f28cdec4081160408b5677",
+    "size": 422
+  },
+  {
+    "path": "config_schema/__init__.py",
+    "sha256": "5f009d6ee88ac85998cecae47ce671aea8e4413006246a883c35e73b7b91175a",
+    "size": 90
+  },
+  {
+    "path": "config_schema/config_schema.py",
+    "sha256": "4583ffb86f97b6aae4a3ad6ac5c86c43f6048ab5a586337005e1e12760a42248",
+    "size": 62420
+  },
+  {
+    "path": "configuration/__init__.py",
+    "sha256": "732c8c31bc48181102243ecd5316157b998d9583b9b880a0797858154ab146cb",
+    "size": 468
+  },
+  {
+    "path": "configuration/config_secrets.py",
+    "sha256": "df764272e444e3b607cc1b36d05c2a1c30575dd76a31057605d3e5a79c55980c",
+    "size": 1979
+  },
+  {
+    "path": "configuration/config_setup.py",
+    "sha256": "b5bcf65d7d809c5829f244272a64662f9538f3aa208518e59327555e4b277eae",
+    "size": 768
+  },
+  {
+    "path": "configuration/config_validation.py",
+    "sha256": "426f5b7242e3ab1e3fb77c7035498d79d3ff6f0109b98c14664f67c64aec46af",
+    "size": 17471
+  },
+  {
+    "path": "configuration/configuration.py",
+    "sha256": "b8d369351d87d8e95f36a8c6830203c4045dcd14ac5f2eaf4f7505ffd9218099",
+    "size": 23805
+  },
+  {
+    "path": "configuration/deploy_config.py",
+    "sha256": "05996d5edddca67a3796806c71dc5e4f89d30d7dff7ed3a2e7ac36d80ddefbad",
+    "size": 8274
+  },
+  {
+    "path": "configuration/deprecated_settings.py",
+    "sha256": "43f62ac312eb21d2b774e249a8cf1b1071a105ca42bc504ef4e78e46137cf6d5",
+    "size": 6430
+  },
+  {
+    "path": "configuration/detect_environment.py",
+    "sha256": "f2ce6f5af3a439956048af589f0fd2bbd32b00a68dc2131229aee15db8b18e74",
+    "size": 163
+  },
+  {
+    "path": "configuration/directory_operations.py",
+    "sha256": "623bc4f241a6760e0745f1a2595794f88c73ae04d766872d6a2c4229abdcca82",
+    "size": 3944
+  },
+  {
+    "path": "configuration/environment_vars.py",
+    "sha256": "aa20421c7e95d420a427cd72268afe2e8ba4f1a43e23a47930f2911f70ebcb52",
+    "size": 2816
+  },
+  {
+    "path": "configuration/load_config.py",
+    "sha256": "5ad9f1f080a3ecae7c54e27eb0e173b21d96876cf85fa465364f8305ed652f60",
+    "size": 3896
+  },
+  {
+    "path": "configuration/timerange.py",
+    "sha256": "0441e8bdb165a045de13d08676df0fff40b8e724aa24671c56f7f21f1446165c",
+    "size": 7125
+  },
+  {
+    "path": "constants.py",
+    "sha256": "9d7db7b89cb93c1ab7dd1a9934aced94f4fe922373d0ef6451398d9f34c27ed1",
+    "size": 6665
+  },
+  {
+    "path": "data/__init__.py",
+    "sha256": "3487fb19b55a96c8327f6e74ce4770deb61f701a060ba0362b4f704d4eabe10c",
+    "size": 185
+  },
+  {
+    "path": "data/btanalysis/__init__.py",
+    "sha256": "af46b06480b19fa40cccc5aec734e807b1ce840a2d3e1ec5495442d555278c99",
+    "size": 834
+  },
+  {
+    "path": "data/btanalysis/bt_fileutils.py",
+    "sha256": "459c18b724b46789309973ab6cf0ff8aa8ddf571310967d8b7a0930c5626bf2a",
+    "size": 21676
+  },
+  {
+    "path": "data/btanalysis/historic_precision.py",
+    "sha256": "eb8c134741bf4de3fd855d9b727cd9b8a9856490f0fb4485d216f2156b32226f",
+    "size": 1316
+  },
+  {
+    "path": "data/btanalysis/trade_parallelism.py",
+    "sha256": "f5a117cd78f7e94bd52a7c22bec2d9d9395c1ce88fa6d04d2f4a26fc6e8d6481",
+    "size": 7331
+  },
+  {
+    "path": "data/converter/__init__.py",
+    "sha256": "af1cdabf2729553b1e2a10a24f0caea8fc35081444c3772dc9130449fd457d18",
+    "size": 1110
+  },
+  {
+    "path": "data/converter/converter.py",
+    "sha256": "05b3dbf9789192f95a4785d54154aeac246febefe81037432c7c89b375c64e7c",
+    "size": 12577
+  },
+  {
+    "path": "data/converter/orderflow.py",
+    "sha256": "ab897e7cd5bcd5745c1f255619cf0a2ce565812bd3dc08784f34a49ef85b3a57",
+    "size": 10632
+  },
+  {
+    "path": "data/converter/trade_converter.py",
+    "sha256": "56973212f1502a2eac8cbc508092731deb2bfb4501d7ceefe736e21bc25c0746",
+    "size": 5857
+  },
+  {
+    "path": "data/converter/trade_converter_kraken.py",
+    "sha256": "214178b150c28c47875e6b107bc9c6624e2deedf76ff564750cf20af7eb47e8a",
+    "size": 3395
+  },
+  {
+    "path": "data/dataprovider.py",
+    "sha256": "2cbc4b775cc441f8391b825f6da55a224cc167aa81583ca94945e64bcc8f9c5f",
+    "size": 26929
+  },
+  {
+    "path": "data/entryexitanalysis.py",
+    "sha256": "c5155ed17248b62e70d8dd394399a4d7a76b9586e556ebce612e8cb128f68a50",
+    "size": 14992
+  },
+  {
+    "path": "data/history/__init__.py",
+    "sha256": "81333f90b08014e8fa3cbfb42898af7a67cc8d523dfde2d9e9f043da9cffe244",
+    "size": 469
+  },
+  {
+    "path": "data/history/datahandlers/__init__.py",
+    "sha256": "b6406edb69ec183c4829272599aaee812f77d704ad229290357f584f7fc99570",
+    "size": 77
+  },
+  {
+    "path": "data/history/datahandlers/arrowdatahandler.py",
+    "sha256": "b2c01cf88ef361549f0d9e6a92a7142ecfcc6c45e310a3ac594c61d62aa2c5aa",
+    "size": 10744
+  },
+  {
+    "path": "data/history/datahandlers/featherdatahandler.py",
+    "sha256": "64aa94cec192f357c30e3a9e016f6d7f3c06b3e9efb5b10d2b6f759cec16e0ed",
+    "size": 486
+  },
+  {
+    "path": "data/history/datahandlers/idatahandler.py",
+    "sha256": "fa555aef8c27d0085d99a76bacfd683ae963a7bfc33842c92cea5862696a9392",
+    "size": 25035
+  },
+  {
+    "path": "data/history/datahandlers/jsondatahandler.py",
+    "sha256": "e33020f61b55a9784b8cba18e5772b3c03a65234dc0c6c502c47e4db657353d6",
+    "size": 6552
+  },
+  {
+    "path": "data/history/datahandlers/parquetdatahandler.py",
+    "sha256": "cc150e2507740e2656d558230dae32406485b3aad048636205200bb5c22b8270",
+    "size": 446
+  },
+  {
+    "path": "data/history/history_utils.py",
+    "sha256": "d26e3a1b51b2776cbcc8e18c63b689e3828342914532b822cfef6f56b5643566",
+    "size": 31450
+  },
+  {
+    "path": "data/metrics.py",
+    "sha256": "d5dfd23bcf556efc5faf23f6031d2b758f29feba0c2ace44080140da3de877ae",
+    "size": 24076
+  },
+  {
+    "path": "enums/__init__.py",
+    "sha256": "4c3c2b5cfdfded184612210b4087ace5235f51ea12458a9e21ef09b87a47d8f9",
+    "size": 859
+  },
+  {
+    "path": "enums/backteststate.py",
+    "sha256": "cd4c140dc36564c2f1ffd95de69c994e0f1d98fb22e02dff2f7a669df7880639",
+    "size": 239
+  },
+  {
+    "path": "enums/candletype.py",
+    "sha256": "e5d382e53155bdb003e1e0d90837e273694e0f7f942041adf6dd3c2d5238c9f2",
+    "size": 738
+  },
+  {
+    "path": "enums/exitchecktuple.py",
+    "sha256": "3f6d6589cf0be0152ebf7e6fc9a59775c96a3fc053c90db8e90720a41e8250c9",
+    "size": 641
+  },
+  {
+    "path": "enums/exittype.py",
+    "sha256": "84b5dbcc71aa3e3a7636b660aa7f605474d3014d19417742c0b965f2d2444ba6",
+    "size": 620
+  },
+  {
+    "path": "enums/hyperoptstate.py",
+    "sha256": "60f89ad0c641033826f6981a2baaf8e20a5eb6f13d0509fb9530e56fc8902a50",
+    "size": 209
+  },
+  {
+    "path": "enums/marginmode.py",
+    "sha256": "c2cb635a4e4dba5956fe56915d7e1b201dc6bcf2ccb82ffd1e75e6172e9d3616",
+    "size": 244
+  },
+  {
+    "path": "enums/marketstatetype.py",
+    "sha256": "a1cfc12c724611af8889c27c74fe6fc19b950866710f2fdb9096136e60a6c1b9",
+    "size": 262
+  },
+  {
+    "path": "enums/ordertypevalue.py",
+    "sha256": "87b24ca3a071a82595c258f23816762c1024cc936a006bc83cfc3b9422859069",
+    "size": 101
+  },
+  {
+    "path": "enums/pricetype.py",
+    "sha256": "9c2fe49c7512b1010904de89f6a9c54654fee7798d25ba30453965fc3218e120",
+    "size": 179
+  },
+  {
+    "path": "enums/rpcmessagetype.py",
+    "sha256": "26b21326cea8fe45f552ad99bea3de948897b7e65a58fd8d3663b02e10dc9b33",
+    "size": 970
+  },
+  {
+    "path": "enums/runmode.py",
+    "sha256": "8f0dd046966fdd48ceac3a409882ec19b64584ead29aa3184a0291ccf2928eab",
+    "size": 555
+  },
+  {
+    "path": "enums/signaltype.py",
+    "sha256": "7ac6fedb86c72d066084768b4f2db40deafbe9a280cc32d2ee23e685ef7eba78",
+    "size": 449
+  },
+  {
+    "path": "enums/state.py",
+    "sha256": "3f6c39d03629f6560fa3915f91294d9594169638f013bf7c7aa0d3554db2437e",
+    "size": 218
+  },
+  {
+    "path": "enums/tradingmode.py",
+    "sha256": "c04f2506f12120db2919748388f47611bd98ef09fae7a16db1553745ec264a0f",
+    "size": 222
+  },
+  {
+    "path": "exceptions.py",
+    "sha256": "9508e6d118e4d065989b49fb3f93739ea4b6b7f5f19037e17b3397a1746b15ab",
+    "size": 2200
+  },
+  {
+    "path": "exchange/__init__.py",
+    "sha256": "cb0b7e5881034ced5bd53446d795a24bb855fcff833d6f793ce1174b9126967f",
+    "size": 1765
+  },
+  {
+    "path": "exchange/binance.py",
+    "sha256": "2858b325c4effac384303af3b679ad89b7cc2c84132a387e3d2ad4511fcb5ffc",
+    "size": 22869
+  },
+  {
+    "path": "exchange/binance_public_data.py",
+    "sha256": "b1db101eca99fc4c545f8e6ebf1cc119a9d4ae1897a660563f1952d589babe45",
+    "size": 19042
+  },
+  {
+    "path": "exchange/bingx.py",
+    "sha256": "5246baf0a32b7563af671938f846afec778912fec51a46db6bb9569e09e47a4c",
+    "size": 632
+  },
+  {
+    "path": "exchange/bitget.py",
+    "sha256": "dd268f7014f21cef39a676476a88f4f2b058f96bf035fe2f5f07e6430586beb7",
+    "size": 11873
+  },
+  {
+    "path": "exchange/bitpanda.py",
+    "sha256": "a3fc1815d8434914e9d683a189a78e12891374272ba24be33bbcaf08705bffc7",
+    "size": 1548
+  },
+  {
+    "path": "exchange/bitvavo.py",
+    "sha256": "a0e531ec7272f035d991ee6603952182e4d9d2912656e3192f965e11a45661d2",
+    "size": 578
+  },
+  {
+    "path": "exchange/bybit.py",
+    "sha256": "dca7139651c0f86cb56cc070efaf6c65bc09829bdbec14c5ab4afcb4635e427a",
+    "size": 13319
+  },
+  {
+    "path": "exchange/check_exchange.py",
+    "sha256": "f38d87fa7c8fb526c2c9fedf327a2908f51b76b1936f89c912769be105976818",
+    "size": 2962
+  },
+  {
+    "path": "exchange/coinex.py",
+    "sha256": "11159c7379fa3c9651db9944ce118e554de50f0788fd35b89df7ff6ee811104a",
+    "size": 635
+  },
+  {
+    "path": "exchange/common.py",
+    "sha256": "afeae16b0e48c56472706a363170469962cdfacec94d07579f148c3e8d0d28ed",
+    "size": 6611
+  },
+  {
+    "path": "exchange/cryptocom.py",
+    "sha256": "9763fe8728f6b502f639636c558df9a8206376b67c8ae4fcea619c00ba61d9fa",
+    "size": 393
+  },
+  {
+    "path": "exchange/exchange.py",
+    "sha256": "7789f81eb7420bdfa8f3fe108f624351c04e34a53b007b0f2b6f0b4dc35a2d21",
+    "size": 175009
+  },
+  {
+    "path": "exchange/exchange_types.py",
+    "sha256": "b2b0d2a99935438e30820081bfb4cfbd291370991d2b0d729cb7392702370b72",
+    "size": 4249
+  },
+  {
+    "path": "exchange/exchange_utils.py",
+    "sha256": "04f49dbe31934d10f189bcc6a3958a430f0ce1791e5d07ef56a978018f49b3f0",
+    "size": 13221
+  },
+  {
+    "path": "exchange/exchange_utils_timeframe.py",
+    "sha256": "eff0ba69f833dabe101d4fa31f78a6709ab58a3dcedddc8c7e8cdffed4281dc6",
+    "size": 3250
+  },
+  {
+    "path": "exchange/exchange_ws.py",
+    "sha256": "1492ffcdb3051be4ba1856daa62d1d0e4d31d4ce85266892af3ae65174e00626",
+    "size": 13141
+  },
+  {
+    "path": "exchange/gate.py",
+    "sha256": "30685f66c6f61f482cbf0012c8325fd4b0dd8ee27111766a5539649eabbb29a5",
+    "size": 5311
+  },
+  {
+    "path": "exchange/hitbtc.py",
+    "sha256": "cc424e07ebc26fdf963c20669c51a66a2e9c6d3dd5e50585045b568d045662ef",
+    "size": 546
+  },
+  {
+    "path": "exchange/htx.py",
+    "sha256": "30888657faa7102f45079858856d66c0c92bca516910e888c8818fc4cbceab44",
+    "size": 1107
+  },
+  {
+    "path": "exchange/hyperliquid.py",
+    "sha256": "86882ad94a3f82360b1832475d2ddf457a6b3c1144545bac5fcdecf03a4c752c",
+    "size": 15511
+  },
+  {
+    "path": "exchange/idex.py",
+    "sha256": "e128bad5d221f782484939b7aa35c2af2abf861241964409b90a2ce331851b0f",
+    "size": 382
+  },
+  {
+    "path": "exchange/kraken.py",
+    "sha256": "c4c63dcf33bd5d9a4b1ca50f50ae013af8401ded5c2db0a978bb3cdeb320dcfc",
+    "size": 5978
+  },
+  {
+    "path": "exchange/krakenfutures.py",
+    "sha256": "ff68168205d53bdb90dc34a5a4cc99e26c83bb92b00c60e66062c98a210c9e5d",
+    "size": 13591
+  },
+  {
+    "path": "exchange/kucoin.py",
+    "sha256": "7f7bec2d5931cc46425f050d33d1619b0687c8bf52a907d8e66dd5a1c19813d9",
+    "size": 2200
+  },
+  {
+    "path": "exchange/lbank.py",
+    "sha256": "9ada94793d81493be87b796f455445419b2e8a9c58996d1b563eaa391de2e953",
+    "size": 483
+  },
+  {
+    "path": "exchange/luno.py",
+    "sha256": "57255d7c58d7a09f09c8ab6dbc2cce4e77a90c8c6a26c5a3af91bff5237c5e25",
+    "size": 732
+  },
+  {
+    "path": "exchange/modetrade.py",
+    "sha256": "e60d65057289feedd0091abf3a047eec421d8781956e97a3895c5b471ee66899",
+    "size": 797
+  },
+  {
+    "path": "exchange/okx.py",
+    "sha256": "83d425d1302cee43451c74b47a50d3a1ce33fa3762f04f01df11436801a60e00",
+    "size": 11787
+  },
+  {
+    "path": "freqai/RL/Base3ActionRLEnv.py",
+    "sha256": "eacdeeca0c15d8764d63127314e320beaffa57af78bc11c28f04357bf44daf6e",
+    "size": 4708
+  },
+  {
+    "path": "freqai/RL/Base4ActionRLEnv.py",
+    "sha256": "2add2bf5f983b65069e6035262ec3a38345f16baa0c6fa8a1fa93f138344caf1",
+    "size": 5138
+  },
+  {
+    "path": "freqai/RL/Base5ActionRLEnv.py",
+    "sha256": "960aff7b672a3cd25e628b650ae15dc983172ad3d26e7ce60a8fef5f0a8925c0",
+    "size": 5737
+  },
+  {
+    "path": "freqai/RL/BaseEnvironment.py",
+    "sha256": "ff74832e64f066cdfa4baf155319fb9a8f3585d87fd8861c13b98aae9d2c4f54",
+    "size": 15324
+  },
+  {
+    "path": "freqai/RL/BaseReinforcementLearningModel.py",
+    "sha256": "7f39d53cd7299066afccfe0a36c9cd91f0dd531a1cb1249e1ee18beeeae3ee36",
+    "size": 20660
+  },
+  {
+    "path": "freqai/RL/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "freqai/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "freqai/base_models/BaseClassifierModel.py",
+    "sha256": "d557ca4c2a1d0b5847f01363bb8a8a20dd27bc13114ed6c6aa37739d52af6b5e",
+    "size": 4970
+  },
+  {
+    "path": "freqai/base_models/BasePyTorchClassifier.py",
+    "sha256": "4186015da616ddfeb675f67eef66e2a7983f171ead87dcdea1c8fce837edfcef",
+    "size": 7974
+  },
+  {
+    "path": "freqai/base_models/BasePyTorchModel.py",
+    "sha256": "82aa5acce775aa02957cde7ab7441bbc04f6024204955e87ca60765a8fbaf644",
+    "size": 1276
+  },
+  {
+    "path": "freqai/base_models/BasePyTorchRegressor.py",
+    "sha256": "7cd1446942e739a19619f09afa03b7c2797b86a5f15fc7272f9c02f79aca35f3",
+    "size": 4413
+  },
+  {
+    "path": "freqai/base_models/BaseRegressionModel.py",
+    "sha256": "b91bf3a0cbf096c204f4c5b2b15d7d79777c1a890fe54345d663610a9198475d",
+    "size": 5325
+  },
+  {
+    "path": "freqai/base_models/FreqaiMultiOutputClassifier.py",
+    "sha256": "51dd7ffe6621c8c65fcf40b631f4aec00da4f6e08071d90f9007999195854330",
+    "size": 3381
+  },
+  {
+    "path": "freqai/base_models/FreqaiMultiOutputRegressor.py",
+    "sha256": "cff9e8e73f981c4a88216aa8aa4dfe6504ade2f0e8ec4de56e689f3bff9bc692",
+    "size": 2274
+  },
+  {
+    "path": "freqai/data_drawer.py",
+    "sha256": "d38bc8592fec9f6808157725c84828fba3fe26e7233e0d092c1964a16c627f58",
+    "size": 39088
+  },
+  {
+    "path": "freqai/data_kitchen.py",
+    "sha256": "5c5adb434389c6843df3d5527b5fee3f592edb1f5c3b2f1f21ec2f487dd1f0a6",
+    "size": 43968
+  },
+  {
+    "path": "freqai/freqai_interface.py",
+    "sha256": "fa0c3d1835ea3e2804d23617095d877d760b357bfd02ec30a954b4ae16154065",
+    "size": 47293
+  },
+  {
+    "path": "freqai/prediction_models/LightGBMClassifier.py",
+    "sha256": "8a37b60e3a710618468e9a4790a968afdd8626d3702402e47025ddc8a3298d73",
+    "size": 2424
+  },
+  {
+    "path": "freqai/prediction_models/LightGBMClassifierMultiTarget.py",
+    "sha256": "ebee158a0b5ab787fcd502467b8eda841833fa83d1e974ea9467c2079b3967b3",
+    "size": 3096
+  },
+  {
+    "path": "freqai/prediction_models/LightGBMRegressor.py",
+    "sha256": "aa3a3e7cb6b2c0be75c8266650efc7997496b49bebe1ec3ae661e578378880cf",
+    "size": 2278
+  },
+  {
+    "path": "freqai/prediction_models/LightGBMRegressorMultiTarget.py",
+    "sha256": "f8679df7e1b9a7f46562c3e1f76b6387020ae18a0eb94c9aca100de194ed9e51",
+    "size": 3142
+  },
+  {
+    "path": "freqai/prediction_models/PyTorchMLPClassifier.py",
+    "sha256": "43ea5b5ebd1c2084803aab5ea39d1b1e412347b9efa720f245dc855be6862cc7",
+    "size": 3531
+  },
+  {
+    "path": "freqai/prediction_models/PyTorchMLPRegressor.py",
+    "sha256": "05e5136f002bcc4d7fa2f931b98e7bde32e49a227305163b0d355e4ff35af420",
+    "size": 3207
+  },
+  {
+    "path": "freqai/prediction_models/PyTorchTransformerRegressor.py",
+    "sha256": "1cc9b43f9e1a3326cece9261c326216bc64a6a761516a56b4e5e582607cf0b1d",
+    "size": 6085
+  },
+  {
+    "path": "freqai/prediction_models/ReinforcementLearner.py",
+    "sha256": "7dd73e843e1c906f8c16f46870c97f939565641cd74a2bd39fd565c992c0ab98",
+    "size": 7118
+  },
+  {
+    "path": "freqai/prediction_models/ReinforcementLearner_multiproc.py",
+    "sha256": "a9d1ab221dab69d74cf73823d233e7c8f75c6f4649cfc815718d58953a681f26",
+    "size": 3042
+  },
+  {
+    "path": "freqai/prediction_models/SKLearnRandomForestClassifier.py",
+    "sha256": "9ae42bb20319a2c0646ff0f4d727e2ac36e2b3f9e21c66b19a48e3a96467225a",
+    "size": 3236
+  },
+  {
+    "path": "freqai/prediction_models/XGBoostClassifier.py",
+    "sha256": "dfe539a3db5aed6124f3fb41c5db33dd4771e5e63ebc21f50ddcf177c70287d8",
+    "size": 3316
+  },
+  {
+    "path": "freqai/prediction_models/XGBoostRFClassifier.py",
+    "sha256": "ece1f9359c079896a3be552021623a38c5acdc4f0d880504bcb0af4d4325e36c",
+    "size": 3322
+  },
+  {
+    "path": "freqai/prediction_models/XGBoostRFRegressor.py",
+    "sha256": "1ceea2a9eb714599bebdcae2b91e48c11ab7dc4240625c186af07597d9876a08",
+    "size": 2330
+  },
+  {
+    "path": "freqai/prediction_models/XGBoostRegressor.py",
+    "sha256": "c247d7809eddb9a74094dfad4cdd67cd4e8df516dafb29602290b2ce8c977423",
+    "size": 2169
+  },
+  {
+    "path": "freqai/prediction_models/XGBoostRegressorMultiTarget.py",
+    "sha256": "ca56e5b0035e11d3d5a118874c10e918fa19acaa055765b42b7472ec3162054f",
+    "size": 2258
+  },
+  {
+    "path": "freqai/prediction_models/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "freqai/tensorboard/TensorboardCallback.py",
+    "sha256": "beb925b6548d339d24eb5043f803c0460473ebd42e0ef84a36478c2c46055be0",
+    "size": 2127
+  },
+  {
+    "path": "freqai/tensorboard/__init__.py",
+    "sha256": "dcc7d7ee7bd82ef4ea5239207e4effd8d734dc2ded848b6bcf54c725f441c5c5",
+    "size": 745
+  },
+  {
+    "path": "freqai/tensorboard/base_tensorboard.py",
+    "sha256": "34784b6478ee5ee00da1fdf1bdf6a876b0a14bba354d18e5eacf8d8686965b85",
+    "size": 675
+  },
+  {
+    "path": "freqai/tensorboard/lightgbm_callback.py",
+    "sha256": "a66cb907efccab990105ba687ad7071653de2ee35e6b4e799e2770d0db8f0ceb",
+    "size": 794
+  },
+  {
+    "path": "freqai/tensorboard/tensorboard.py",
+    "sha256": "e703cb584d9f8b252bc9bcd54a66dc0e482fec5098834d5f2df31df71333e840",
+    "size": 1826
+  },
+  {
+    "path": "freqai/torch/PyTorchDataConvertor.py",
+    "sha256": "9d39df6c824a9b494f4f70eb375492438135e4be0b4fb24840cae15bda4d3188",
+    "size": 1874
+  },
+  {
+    "path": "freqai/torch/PyTorchMLPModel.py",
+    "sha256": "86f3db3d0556a328c0bcb6eea60249ca314f25dca6057772d42896b46c429a09",
+    "size": 3762
+  },
+  {
+    "path": "freqai/torch/PyTorchModelTrainer.py",
+    "sha256": "3c8f8e55f617685bff79d1f5aac33e845a4428934e68338592462b7ffee6b932",
+    "size": 10124
+  },
+  {
+    "path": "freqai/torch/PyTorchTrainerInterface.py",
+    "sha256": "222ceb5545a27ac61e78764fcab5709b535d2a543c19b1101df0f4aad2da992b",
+    "size": 1995
+  },
+  {
+    "path": "freqai/torch/PyTorchTransformerModel.py",
+    "sha256": "5f48416bc14b6dc6d4e52fbdb49d382f6e172dabc29658375d97f18b730a0adc",
+    "size": 3677
+  },
+  {
+    "path": "freqai/torch/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "freqai/torch/datasets.py",
+    "sha256": "554abf95550c54ca621d611751b9bf3a6e18622bab2ed73381cb44fa11dc19f1",
+    "size": 668
+  },
+  {
+    "path": "freqai/utils.py",
+    "sha256": "3ec1e281828c54338a38a2079c336fe7863b03b651bec92b22b77dc14b21bf25",
+    "size": 7576
+  },
+  {
+    "path": "freqtradebot.py",
+    "sha256": "aaaab618f81e1a6e497741988826f890f95f24e9e0b7cd452353e6ece24b3c16",
+    "size": 114001
+  },
+  {
+    "path": "ft_types/__init__.py",
+    "sha256": "80942d94d076e8d93812353b0e608a450a1c43bf2c37dbb13ced5007ef981b30",
+    "size": 405
+  },
+  {
+    "path": "ft_types/backtest_result_type.py",
+    "sha256": "711ab637d6d3a8878c5a6792e538a652e2f51fd3c314440e077e5a356e03dc11",
+    "size": 1349
+  },
+  {
+    "path": "ft_types/plot_annotation_type.py",
+    "sha256": "eae3fe2870df515eb168a4bd2c4e14fdb9ffaa61248ab1ffba42167936c77e73",
+    "size": 1069
+  },
+  {
+    "path": "ft_types/valid_exchanges_type.py",
+    "sha256": "0fb4c3b285decb49a80a65c4fe143c67b370e0c763417bfb540a1be68fc71233",
+    "size": 390
+  },
+  {
+    "path": "leverage/__init__.py",
+    "sha256": "627a2d0ecb35afff710da70728faf7155f7216ad821abacbec31542491007c06",
+    "size": 63
+  },
+  {
+    "path": "leverage/interest.py",
+    "sha256": "8c3ee4a7934fa48a1e8c71379c78dcaf40d7614b5545d7a38430e69b5fba8c8c",
+    "size": 1245
+  },
+  {
+    "path": "leverage/liquidation_price.py",
+    "sha256": "fc51e207f5b07ec164d9908d65ac48da0a54e3c4e91e9511f50309171ef7ec57",
+    "size": 2519
+  },
+  {
+    "path": "loggers/__init__.py",
+    "sha256": "39c5ff64674ee14f6ae15be83c91707b88e72309377614b9bdfadd2807e334c5",
+    "size": 8744
+  },
+  {
+    "path": "loggers/buffering_handler.py",
+    "sha256": "d520c26a80adfec84895018f943744cfab12098db298caca1d23f681a71e7608",
+    "size": 506
+  },
+  {
+    "path": "loggers/ft_rich_handler.py",
+    "sha256": "cddfaf428bd0b2b94206071f8bac0cdcf78fa5de32f96cfbf7e139757b81699c",
+    "size": 1750
+  },
+  {
+    "path": "loggers/json_formatter.py",
+    "sha256": "b3ccac3e65b9205b3b6a579cdc8a9e20d4b0e2db9ed765fadaafc23a9aa74db4",
+    "size": 2513
+  },
+  {
+    "path": "loggers/rich_console.py",
+    "sha256": "385d24915ee64cc1f7fd5dd3ef0758708940f7bbed8f9c08551f4450a6b5f552",
+    "size": 685
+  },
+  {
+    "path": "loggers/set_log_levels.py",
+    "sha256": "8d57f13f3d9076b16cfe2ad473215a5ec60d9f50036907b592bf9fadb6792f2a",
+    "size": 822
+  },
+  {
+    "path": "loggers/std_err_stream_handler.py",
+    "sha256": "0a15b2e58c3bd0ee51c62f0db73a6526b3be648d1f410224f67a0c622609d3b1",
+    "size": 714
+  },
+  {
+    "path": "main.py",
+    "sha256": "caa5ba0b21e6c120d0805c29e286b8ac1ccb2ac255b9539d0e2f108116ce611a",
+    "size": 2532
+  },
+  {
+    "path": "misc.py",
+    "sha256": "71e307111720704f2736ac24fcfae32870131cfcbc99499cfdf7f7779eaca21b",
+    "size": 8835
+  },
+  {
+    "path": "mixins/__init__.py",
+    "sha256": "cd30fc97895a28d9ce0054dc4e965e63ec3689329ca26a8749a7313eaf5a03ab",
+    "size": 70
+  },
+  {
+    "path": "mixins/logging_mixin.py",
+    "sha256": "beeeb0402e4720fc255bc543e2f68969241e295db5008109da82fe0a90a161c4",
+    "size": 1479
+  },
+  {
+    "path": "optimize/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "optimize/analysis/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "optimize/analysis/base_analysis.py",
+    "sha256": "71cb02bd4932c66ce02a2b1334e9554f0939f13f84daef9503c6433dd6002364",
+    "size": 1928
+  },
+  {
+    "path": "optimize/analysis/lookahead.py",
+    "sha256": "e8563389934224b92aab62c54fc65690b1a1da4ea730fb2464f2b57fbf5c2314",
+    "size": 12526
+  },
+  {
+    "path": "optimize/analysis/lookahead_helpers.py",
+    "sha256": "faeb018a30551fa251222f4a03a138e006833fb9d3baf47536def911232851d9",
+    "size": 12181
+  },
+  {
+    "path": "optimize/analysis/recursive.py",
+    "sha256": "108e1af0aa1e4bfeb259d3f70b0a2c567bf46c1a46fb6a19ef80179b1b616d92",
+    "size": 9379
+  },
+  {
+    "path": "optimize/analysis/recursive_helpers.py",
+    "sha256": "626d60ca2ae520e7c8066acd8e57866d9a547b8c7d210d77603adcb8418414a8",
+    "size": 5205
+  },
+  {
+    "path": "optimize/backtest_caching.py",
+    "sha256": "c4df81ed9ff785d20d73847942cec8f32b2aeb4e8b36e33a1fd11154eeb1078d",
+    "size": 1497
+  },
+  {
+    "path": "optimize/backtesting.py",
+    "sha256": "2420410f96451cb993a7b475e9f7a4232d89480185cc25c59da8883551be6384",
+    "size": 82684
+  },
+  {
+    "path": "optimize/hyperopt/__init__.py",
+    "sha256": "d4ddc2367514c23a8448a6d291e0f85ceb4ba14f38d6a4602c28928e2e776338",
+    "size": 183
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt.py",
+    "sha256": "6887b35fc48bd0cc5c1b17d6e014e515b0d683a03169ffdf51bee8dbc9c922de",
+    "size": 12780
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt_auto.py",
+    "sha256": "ea178d77c81c14a2ebb16345eb399e2c0e9f91f8a018cf5f081254233872ae1e",
+    "size": 3638
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt_interface.py",
+    "sha256": "3f4f96ae279cbe9bb480f93a58c8536406ffa56df9d02f9306b5c566fa7afe2c",
+    "size": 8622
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt_logger.py",
+    "sha256": "68488b0701a628ca749da07b61f45883d3f3f732f15d4d20666d0da1222d6d79",
+    "size": 1722
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt_optimizer.py",
+    "sha256": "c397f485f8678e8f93839d8cb71b90c4dc35b3ba14beec19a3f3fe249b1a2b22",
+    "size": 19906
+  },
+  {
+    "path": "optimize/hyperopt/hyperopt_output.py",
+    "sha256": "704dd132900b63e24f4684fb2e1040ff9d5bc3882627f840eada0648e347487d",
+    "size": 5619
+  },
+  {
+    "path": "optimize/hyperopt_epoch_filters.py",
+    "sha256": "8c7a6cca188c657ff0973888483d278e476b58995d3cfe0817f5c5aef916e644",
+    "size": 4464
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_calmar.py",
+    "sha256": "42edd49cb6f86344ee3e5e2e30dedd5d02845364673c579d6fbb5b0a00f5eb21",
+    "size": 996
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_interface.py",
+    "sha256": "b0d6d67cc322e4030c0a65c90630559bd951b9b76197625c80954c3bf9e2b4af",
+    "size": 934
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_max_drawdown.py",
+    "sha256": "21e4d32fc2dda16c2d2769ce0968441c92f24a9b5ab0a5193aeef979719a054a",
+    "size": 1239
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_max_drawdown_per_pair.py",
+    "sha256": "31acbe272dbf63337694bb3dce1d46780fb30dc83e453e2f3462e5a23aafe1c8",
+    "size": 1931
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_max_drawdown_relative.py",
+    "sha256": "aca9deb36120cd464ef222cab9149dad8b10f6f73c65b92f849e3de450ceee71",
+    "size": 1382
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_multi_metric.py",
+    "sha256": "e5d92e9bfc1eab053d4c83ad1055a65befdbb2db9143e4b56cad5483b6f51200",
+    "size": 3887
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_onlyprofit.py",
+    "sha256": "87274c976f3c081025af57ef346bec523e608f2b9d25aa36fc8da8dfa1a9acd7",
+    "size": 716
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_profit_drawdown.py",
+    "sha256": "50192a266c57f979c785b22f350d448b586fd1c0d9c43347bd03466272ed9d68",
+    "size": 1140
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_sharpe.py",
+    "sha256": "95b3bfdadaedbd9b3573d272b9bd1ea07b068aa85ee251bc4d6e5bbc2ab05b6b",
+    "size": 989
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_sharpe_daily.py",
+    "sha256": "305c32bcfe0aaf8c9117e92e3a0d582b8a901148e3bf672709627b2d6c9720b4",
+    "size": 2106
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_short_trade_dur.py",
+    "sha256": "fbc0b1cad7849f778b48a0ec770dc9de040867d9a73d139882322922ccf23b8f",
+    "size": 1950
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_sortino.py",
+    "sha256": "22eed4e77ffb44586b962ae0779628146baa69bbc0583af6ca1bbe858e1be0e9",
+    "size": 1003
+  },
+  {
+    "path": "optimize/hyperopt_loss/hyperopt_loss_sortino_daily.py",
+    "sha256": "6a8d3b28afba4751a4b340102ba6c0cdf1ee1d850c9dc279255b0f70c6f855bc",
+    "size": 2566
+  },
+  {
+    "path": "optimize/hyperopt_tools.py",
+    "sha256": "d34c165ac38d889948109ceb0a37d792fbffaac95b2e09536501567742bbafe5",
+    "size": 17216
+  },
+  {
+    "path": "optimize/optimize_reports/__init__.py",
+    "sha256": "042d2c3200beb22e6edcf7895c639665176eded1dea98713fe393d3f773bb617",
+    "size": 862
+  },
+  {
+    "path": "optimize/optimize_reports/bt_output.py",
+    "sha256": "8367df3cd8e98f5dbdfade09261cfae93bdf4bba7882195a2f71cdb27a2a2883",
+    "size": 23869
+  },
+  {
+    "path": "optimize/optimize_reports/bt_storage.py",
+    "sha256": "1188cb6d128fbeb8b20c7b735bb7de6f8235872030c9eae466f9fe3536f40e18",
+    "size": 6305
+  },
+  {
+    "path": "optimize/optimize_reports/optimize_reports.py",
+    "sha256": "6ae98213facc41065248aa1415328bba37237ba2627f391bde7d84eb699febf6",
+    "size": 32615
+  },
+  {
+    "path": "optimize/space/__init__.py",
+    "sha256": "fa7aee9e2820a693d98108f8e789e752904d33fbbd480f07aa59e4c8354fb5d9",
+    "size": 410
+  },
+  {
+    "path": "optimize/space/decimalspace.py",
+    "sha256": "ab57a17e05e8f56e039521d6613c01958e427148e84234a3d01ccbb9287155d5",
+    "size": 1194
+  },
+  {
+    "path": "optimize/space/optunaspaces.py",
+    "sha256": "073bb0cd6d408d61b1d704ef9c394130ec6858bc26481719f05f8c05a8f02959",
+    "size": 1471
+  },
+  {
+    "path": "persistence/__init__.py",
+    "sha256": "2b79c2d16a202cfa19739931a4cdec9711a573e088cdfb8516c378a730c5da8d",
+    "size": 533
+  },
+  {
+    "path": "persistence/base.py",
+    "sha256": "2b26abdffc7e139d7dc2a28d0555303b388e66a2ddd50bc92400fa5ff1dbd152",
+    "size": 153
+  },
+  {
+    "path": "persistence/custom_data.py",
+    "sha256": "d9a24c42ed2ce4b84a7764172363675b39d55030826a6e02a157c13e6dfb4efc",
+    "size": 6625
+  },
+  {
+    "path": "persistence/db_migration.py",
+    "sha256": "02bbdb599f44cdce9e68b1d023e08fdebbbad8b476db19e795fd4f58784150a9",
+    "size": 2730
+  },
+  {
+    "path": "persistence/key_value_store.py",
+    "sha256": "b377fc0ab414bdc05f7989cd8c77460d6b106ad54eb5c808bbc5f2a64eb8cf41",
+    "size": 6864
+  },
+  {
+    "path": "persistence/migrations.py",
+    "sha256": "cc105b2892fe0ac5cd54644cf8116335e19f90dac0182609c49ad84079ef20ef",
+    "size": 20390
+  },
+  {
+    "path": "persistence/models.py",
+    "sha256": "729d261a8927f96dec2700f2f1f1dd16f2f91d43f880c30f48fb0a8d15c38bdf",
+    "size": 3815
+  },
+  {
+    "path": "persistence/pairlock.py",
+    "sha256": "75a13d4f691d51a51123dc56e3517d9711cc2afe538defad12f2605ec366a025",
+    "size": 3220
+  },
+  {
+    "path": "persistence/pairlock_middleware.py",
+    "sha256": "e2664cf4480bcbdf4c242eed5b299d93add8becb74b207c1098fd986bf8057c1",
+    "size": 6902
+  },
+  {
+    "path": "persistence/trade_model.py",
+    "sha256": "c884ff5ae0009c2f9ebc6c0fb9c8cbf297fdcb416f5b48ff6486a4727bc60f9d",
+    "size": 87038
+  },
+  {
+    "path": "persistence/usedb_context.py",
+    "sha256": "526653b523ef84f837c39662ebd9bfaf4fea827e11058f4103d1afbc1a968599",
+    "size": 967
+  },
+  {
+    "path": "persistence/wallet_history.py",
+    "sha256": "5973dbb7aa483015034b3a04a083b6b8ec553066d89bb23239b2315cf875d0a5",
+    "size": 2083
+  },
+  {
+    "path": "plot/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "plot/plotting.py",
+    "sha256": "74748e1f82584467dbc50ec58c76bcb4fab540cb4ea99db79f3bad1a76271ec6",
+    "size": 25703
+  },
+  {
+    "path": "plugins/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "plugins/pairlist/AgeFilter.py",
+    "sha256": "b36987e3b67e3eb5be11191501c5ecbaa7393f41e05a8ec37d51c4ea642fe3f5",
+    "size": 6356
+  },
+  {
+    "path": "plugins/pairlist/CrossMarketPairList.py",
+    "sha256": "fe6465fb2f7727c737f7f3cbe260dff82afed15a14ac72bba5e31967b60cd398",
+    "size": 5237
+  },
+  {
+    "path": "plugins/pairlist/DelistFilter.py",
+    "sha256": "c9cc5f2668253fbb56ac93634591d9b47967a97d5614f7c7082375d630f25a75",
+    "size": 2988
+  },
+  {
+    "path": "plugins/pairlist/FullTradesFilter.py",
+    "sha256": "0ee72d0faf31f2886292f95522ac17d9976e5eb6401b42b0ef1da36dc4ddfd27",
+    "size": 1351
+  },
+  {
+    "path": "plugins/pairlist/IPairList.py",
+    "sha256": "8b9c2b10f2ea34ae7eed179e7083c7bb8326680be001ef7853e215d7143c729d",
+    "size": 15266
+  },
+  {
+    "path": "plugins/pairlist/MarketCapPairList.py",
+    "sha256": "58844929801643497606859138b311b677c100562a813ef795d12766a48d5b08",
+    "size": 9007
+  },
+  {
+    "path": "plugins/pairlist/OffsetFilter.py",
+    "sha256": "5d170476de14bd7fed1915df3b965395171ea44e829c73d94ec2cf8d6751acbf",
+    "size": 2464
+  },
+  {
+    "path": "plugins/pairlist/PairInformationFilter.py",
+    "sha256": "4d580fb6b329125cc04ef6a8d49dc970b81153af7d3ca8ae9696c289c0308e86",
+    "size": 3560
+  },
+  {
+    "path": "plugins/pairlist/PercentChangePairList.py",
+    "sha256": "c8830f353d2d844a1948263a5c7d12ee40731393d2d8e07ed853d056c2e68a14",
+    "size": 11341
+  },
+  {
+    "path": "plugins/pairlist/PerformanceFilter.py",
+    "sha256": "3ba60dfa28fdf3bb153d25a49899db21eaac4b6fae7885492513802eabfb87b5",
+    "size": 3776
+  },
+  {
+    "path": "plugins/pairlist/PrecisionFilter.py",
+    "sha256": "5a5e453ddb49fd267d9492e97dedc15ecd3c27743cdd21f5f3c650170ce64529",
+    "size": 2958
+  },
+  {
+    "path": "plugins/pairlist/PriceFilter.py",
+    "sha256": "b42691230dd1342f14e2be6006e5b3afda974992e8abeb8517b4a564ba57b23f",
+    "size": 6600
+  },
+  {
+    "path": "plugins/pairlist/ProducerPairList.py",
+    "sha256": "c01188cb5cbcdee1db73e78b32b80e40f654b281fed60c7fa5b9fa6dbbec1ace",
+    "size": 3649
+  },
+  {
+    "path": "plugins/pairlist/RemotePairList.py",
+    "sha256": "bd8eac02a8b910f0c04a81137abc6c2d9bd43e64927823690637a8a135ea16b0",
+    "size": 11836
+  },
+  {
+    "path": "plugins/pairlist/ShuffleFilter.py",
+    "sha256": "de81d4c8481eb736e645ac68799357daa411171259b3c1c47938b8a322a2e5ff",
+    "size": 3355
+  },
+  {
+    "path": "plugins/pairlist/SpreadFilter.py",
+    "sha256": "f57e125b995888ad23c48cd249a33262d33ddacc9c619b3a089d65b6d2980655",
+    "size": 2839
+  },
+  {
+    "path": "plugins/pairlist/StaticPairList.py",
+    "sha256": "d3d75c5b6122332d36417f27ae619124220aedb2462f4d17fefc47a898245efd",
+    "size": 2933
+  },
+  {
+    "path": "plugins/pairlist/VolatilityFilter.py",
+    "sha256": "1d8ca3067e65ea6b313afde0a1651a27fd2c4262bcad9190c0d8fe56d0ccb88b",
+    "size": 6340
+  },
+  {
+    "path": "plugins/pairlist/VolumePairList.py",
+    "sha256": "a10ab46bb9f6eb204c0cccc9d23992cc5534714962a01fb57311fea70120f27e",
+    "size": 10642
+  },
+  {
+    "path": "plugins/pairlist/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "plugins/pairlist/pairlist_helpers.py",
+    "sha256": "c94feb7582e6558d78aecfb6763f82300d7176c290a90c137d9d53dad495c44f",
+    "size": 2322
+  },
+  {
+    "path": "plugins/pairlist/rangestabilityfilter.py",
+    "sha256": "ec97b24d6596381d15c60b3f9dae5f893ba34eea24dc4562cf2da9bb7f1b129f",
+    "size": 6551
+  },
+  {
+    "path": "plugins/pairlistmanager.py",
+    "sha256": "d046acf397867160b778e2594b950ae99432e317986f9de50e6f5c3e58397d7a",
+    "size": 9972
+  },
+  {
+    "path": "plugins/protectionmanager.py",
+    "sha256": "2aebf3a43e67f96995d15b522833032fbd7727dca38018402c8ca2afa64ad5fd",
+    "size": 4797
+  },
+  {
+    "path": "plugins/protections/__init__.py",
+    "sha256": "4f454d12dbbd1a0e8c0f11218ad001f08c77241542f5e06e524cb1a752240f69",
+    "size": 105
+  },
+  {
+    "path": "plugins/protections/cooldown_period.py",
+    "sha256": "fe1e3db75ec829b9bf423685046a73f9d03bc5fa267a3037ebc7e6070cbd8a58",
+    "size": 2723
+  },
+  {
+    "path": "plugins/protections/iprotection.py",
+    "sha256": "80d6beb7e50db63ed1d8e300193032335b7b2d75da9a6597d4001b923a66704d",
+    "size": 5139
+  },
+  {
+    "path": "plugins/protections/low_profit_pairs.py",
+    "sha256": "c80e8a8db59140f71fe97adf3755c5a4125dca9235c83cc57e7c3d0bcae862ed",
+    "size": 3705
+  },
+  {
+    "path": "plugins/protections/max_drawdown_protection.py",
+    "sha256": "614328466e2e90e3dc57dff909e18e7f87bc817cef5ac9b9d1d89ef94b1cccc7",
+    "size": 5095
+  },
+  {
+    "path": "plugins/protections/stoploss_guard.py",
+    "sha256": "db3adae62104271ad8a70773d45715718a547cb6447b4b82353b01a54af1ce66",
+    "size": 3943
+  },
+  {
+    "path": "resolvers/__init__.py",
+    "sha256": "995a15b80c5780d31cbda6c91b838f5b6aaf0aa67a6743f525f06359dde61299",
+    "size": 513
+  },
+  {
+    "path": "resolvers/exchange_resolver.py",
+    "sha256": "69b4f26f8174778bc34b038505de30e4ee53227c8ebee7a00e4a200fd987b64a",
+    "size": 3885
+  },
+  {
+    "path": "resolvers/freqaimodel_resolver.py",
+    "sha256": "a3151df7b703dc5c39c4f9e371a4bfc1f0d5476ec14ec64560c80e16ad8dad03",
+    "size": 1777
+  },
+  {
+    "path": "resolvers/hyperopt_resolver.py",
+    "sha256": "3b730b5d5e2470155723899ef670f6d4f5bb0c56ee57694561048a995daec3d4",
+    "size": 1653
+  },
+  {
+    "path": "resolvers/iresolver.py",
+    "sha256": "b8d34363ed11b5f241174fcdb21155586a5a785a973bdf86f54f88e8b3adef30",
+    "size": 11078
+  },
+  {
+    "path": "resolvers/pairlist_resolver.py",
+    "sha256": "4c1729fd6049396ca31b0f8ffd95ec8c6d75cca039e8b571e927be66a10b7b58",
+    "size": 1673
+  },
+  {
+    "path": "resolvers/protection_resolver.py",
+    "sha256": "6c52dafcad7d35007d11558b11a41f2f82b14db7cae021c5a5265b049c7489f0",
+    "size": 1235
+  },
+  {
+    "path": "resolvers/strategy_resolver.py",
+    "sha256": "394d55c6c1ce8f07bee80aac068deb560cf57897540b644d06000f7e68f94fe3",
+    "size": 13694
+  },
+  {
+    "path": "rpc/__init__.py",
+    "sha256": "49574af27dae2c28fb9a25b2b490b3ba9c22ec3dd85ef31389df2b6375633589",
+    "size": 111
+  },
+  {
+    "path": "rpc/api_server/__init__.py",
+    "sha256": "5fec8e8d48e4a254b5769749c2581eb4fcb5c8a5e4304f72aac15c7613ae5d8f",
+    "size": 47
+  },
+  {
+    "path": "rpc/api_server/api_analysis.py",
+    "sha256": "f578a7c0718cc02596b123e3c6ee968c4e88bea004f69affd53ca5906e2703e9",
+    "size": 8176
+  },
+  {
+    "path": "rpc/api_server/api_auth.py",
+    "sha256": "98fa625299fe6ae479303bd9064def70f239a69c3c7bc7956491b132cf998734",
+    "size": 5401
+  },
+  {
+    "path": "rpc/api_server/api_background_tasks.py",
+    "sha256": "35ed97d0f69e96004ab37704fc19ae6617c8bb962d8fd186f5aa25b6b59311f3",
+    "size": 2087
+  },
+  {
+    "path": "rpc/api_server/api_backtest.py",
+    "sha256": "9c85a2bba927b4fa5fa36d0e6bd02a12cc4242d13bb415774f50aae1be561ffb",
+    "size": 15628
+  },
+  {
+    "path": "rpc/api_server/api_download_data.py",
+    "sha256": "b82b9fd1c9f61e80b47ac8244bebc8cb3ef445bcb1120726ec35fa3aafa5ed5c",
+    "size": 3113
+  },
+  {
+    "path": "rpc/api_server/api_pair_history.py",
+    "sha256": "750b32d6c0ab43a68410bf67126653791e942b9c02354e0e1d37ee099bcfe22e",
+    "size": 2600
+  },
+  {
+    "path": "rpc/api_server/api_pairlists.py",
+    "sha256": "f3ee6caff0b6c47538f364848debf54942056c2e6bdfc8a64429cf0474d4288b",
+    "size": 4816
+  },
+  {
+    "path": "rpc/api_server/api_schemas.py",
+    "sha256": "8c0286360d6ead872fc29a0c780165fb982ed96fd04c4828d1c5c5fe82f2bc14",
+    "size": 19481
+  },
+  {
+    "path": "rpc/api_server/api_trading.py",
+    "sha256": "e8592d9ba1c1f7b920b06b77de4d193cb0f1572e74326bbab7737d55e0b99b21",
+    "size": 12393
+  },
+  {
+    "path": "rpc/api_server/api_v1.py",
+    "sha256": "3531d1a5090d90f13f63d73223a10826570baa896bb56e7389daf4fad3182bc2",
+    "size": 6916
+  },
+  {
+    "path": "rpc/api_server/api_webserver.py",
+    "sha256": "833b32493c0422c9d9e6df4a503caea9c06f8168dff16997bc7a19e953a3e216",
+    "size": 3561
+  },
+  {
+    "path": "rpc/api_server/api_ws.py",
+    "sha256": "3eec675814a7becc79b8120aaef27c48cffd6e8c3362559a0e3d0f629884d519",
+    "size": 4659
+  },
+  {
+    "path": "rpc/api_server/deps.py",
+    "sha256": "b05787676a9574e65b375d171ae90c63b64dc5716178825c32ba44a27c2e4e90",
+    "size": 2629
+  },
+  {
+    "path": "rpc/api_server/uvicorn_threaded.py",
+    "sha256": "e0637737b29a210a40248fbc5b5a87e88727aedcb8fbbd12b70f60287b34f591",
+    "size": 2091
+  },
+  {
+    "path": "rpc/api_server/web_ui.py",
+    "sha256": "da4411974e9a74f3b31cdb63d34b5c321c12d8b543a94d70d68ea91c0875d99f",
+    "size": 1813
+  },
+  {
+    "path": "rpc/api_server/webserver.py",
+    "sha256": "f8220bdf69382c1494b19ef772c2e21bc6d8ea9bcd801237a582b040e29f64c2",
+    "size": 12045
+  },
+  {
+    "path": "rpc/api_server/webserver_bgwork.py",
+    "sha256": "a679b799ba9717a0fb812e0e088a9f18c0ff026a036b3956456af1cf3e54a21b",
+    "size": 1859
+  },
+  {
+    "path": "rpc/api_server/ws/__init__.py",
+    "sha256": "66830d78edf1b0d2a6041e96f02cf846e72796a20677879d5432c9fddbf3e3e7",
+    "size": 422
+  },
+  {
+    "path": "rpc/api_server/ws/channel.py",
+    "sha256": "77ae25e3ee8eee10e00ffe2b289d8d988f5c41327cc5a938c2a8ed679ae8c2c4",
+    "size": 7459
+  },
+  {
+    "path": "rpc/api_server/ws/message_stream.py",
+    "sha256": "921d6c77f868502992a90ea091c70acc1de6b3490bdf1aac1dcd1c4de83e3718",
+    "size": 899
+  },
+  {
+    "path": "rpc/api_server/ws/proxy.py",
+    "sha256": "89823a632d69685544e1b97c8e19b37cbdccf78f7e3a0b06cef1ea5997837513",
+    "size": 2408
+  },
+  {
+    "path": "rpc/api_server/ws/serializer.py",
+    "sha256": "5e1885756fc8abc158bf813c14125661fa29b6914510c43c6e96e0abf87d3cb9",
+    "size": 1625
+  },
+  {
+    "path": "rpc/api_server/ws/ws_types.py",
+    "sha256": "415c5305a6882cdd0664465f808b7842954237a10b7073adef15cc484f4e81b6",
+    "size": 252
+  },
+  {
+    "path": "rpc/api_server/ws_schemas.py",
+    "sha256": "5574aac2abb11a1f70696a27acb0a213ca40f6fa1e9198e21adbf3ac134f5dfe",
+    "size": 1855
+  },
+  {
+    "path": "rpc/discord.py",
+    "sha256": "92b4470240e19bc4e9b717890a8cc6209dda0cce5743842f16699d0395de0ba1",
+    "size": 2054
+  },
+  {
+    "path": "rpc/external_message_consumer.py",
+    "sha256": "d8c43c11ad9902f80e5857dd0f57d0d7f5b92f0f8c008628cb685cc1c7052192",
+    "size": 14301
+  },
+  {
+    "path": "rpc/fiat_convert.py",
+    "sha256": "7b62b31e9918f0139f208499400eaa5ec15a4f8556ba7c5324cfb8de7718e96c",
+    "size": 6920
+  },
+  {
+    "path": "rpc/rpc.py",
+    "sha256": "3ecbefd64813cc66803a914198524def9ac1f75ddb1ed254c13c607bc228db41",
+    "size": 74814
+  },
+  {
+    "path": "rpc/rpc_manager.py",
+    "sha256": "c60e2178ace29ec3efaad057a30b75adaa057a74cd250f34b8bb09d02527d1fe",
+    "size": 5478
+  },
+  {
+    "path": "rpc/rpc_types.py",
+    "sha256": "4f63a98f670d4872649baabeed5d00fa0e28897ca60141b1f02eb6806731c38c",
+    "size": 3181
+  },
+  {
+    "path": "rpc/telegram.py",
+    "sha256": "a372a015583100a6dbf532a9c2491b92f1c3e941e1b648ecc48ae9b0f475fd8e",
+    "size": 93088
+  },
+  {
+    "path": "rpc/webhook.py",
+    "sha256": "859413017d6e1303ff91fd6eda69a59362320dd1a97dc56907982fd33e72a0f9",
+    "size": 5375
+  },
+  {
+    "path": "strategy/__init__.py",
+    "sha256": "cef6416573eb3f2054fdb8ef4509540744aee4994fc1e4b4c8fec33d96aae473",
+    "size": 1233
+  },
+  {
+    "path": "strategy/hyper.py",
+    "sha256": "9ca245fdadf9c0747a94098a113843a5363d7fc0cff3a5ac65ef7c841abd12df",
+    "size": 7647
+  },
+  {
+    "path": "strategy/informative_decorator.py",
+    "sha256": "8b2ea5ca1d4086f077e37fbe85d354e5675d008afc2ab3f459bf4ec4bec8b6ac",
+    "size": 12173
+  },
+  {
+    "path": "strategy/interface.py",
+    "sha256": "e372b562aabf5e39e444a222f36c7c14801b254fa42141f1431a4ba95d313bb0",
+    "size": 81379
+  },
+  {
+    "path": "strategy/parameters.py",
+    "sha256": "f0b9830e7652f49b9d782ae7ab082960b68db238d44d3cc96f59133fbf35505b",
+    "size": 15212
+  },
+  {
+    "path": "strategy/strategy_helper.py",
+    "sha256": "5435fb6752df7c8af2101e81b8ef86d0f3d8f17d285f63d895b2570732faa4e5",
+    "size": 9343
+  },
+  {
+    "path": "strategy/strategy_validation.py",
+    "sha256": "30f47b383a8e6d79bdc4ae794447c2544fde373001d6175af2d259ac0f850238",
+    "size": 1721
+  },
+  {
+    "path": "strategy/strategy_wrapper.py",
+    "sha256": "d88df604b425cd983acb4bc15c7c82fd63a0dafdb4cdfafd195d85c82fc39ca6",
+    "size": 2345
+  },
+  {
+    "path": "strategy/strategyupdater.py",
+    "sha256": "bad9a4f6f6a9b1c5b71bc8db2dc6576f77759dfd00323501156787f96c0c903f",
+    "size": 10796
+  },
+  {
+    "path": "system/__init__.py",
+    "sha256": "5224bc6213cd21bf88aa7c893da22c8d42b6084356fb16a4be8641d0d09c36b7",
+    "size": 384
+  },
+  {
+    "path": "system/asyncio_config.py",
+    "sha256": "ac20a35cd9938e9337ae0e9fa18a9af67d49d4d45dfce1a64b351be18fae8c98",
+    "size": 236
+  },
+  {
+    "path": "system/gc_setup.py",
+    "sha256": "14e113efa7cffaf95d7b2bc078d8adf2507c11ff4e2f311763459e8134792ff9",
+    "size": 458
+  },
+  {
+    "path": "system/set_mp_start_method.py",
+    "sha256": "5009e6eb31ded4cdb0884de07e66fe37470fadb4619070f86d4bbf8f68b3734a",
+    "size": 454
+  },
+  {
+    "path": "system/version_info.py",
+    "sha256": "716b53189be429e94c1fb3bede70fdd5aa17def77c3a019cc9c1e0c02929a602",
+    "size": 434
+  },
+  {
+    "path": "templates/FreqaiExampleHybridStrategy.py",
+    "sha256": "5fbbccd3431429ec5f86fc367b669d1cabb946e6ca79d051684923c83a1d90db",
+    "size": 12807
+  },
+  {
+    "path": "templates/FreqaiExampleStrategy.py",
+    "sha256": "294f7e1e7fe912a3bf73a2cb4a2ecffe80cae6228a3d28fc5b78d3fb0731f8d5",
+    "size": 11534
+  },
+  {
+    "path": "templates/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "templates/sample_hyperopt_loss.py",
+    "sha256": "5ea8583b15db7adf1274b8fea76217e466610ecb706dc0bbd920957e6af56888",
+    "size": 1871
+  },
+  {
+    "path": "templates/sample_strategy.py",
+    "sha256": "18d48d64b955dc9bd1b43f59115c16f2002a881c62c2851ceca64569a6f8651c",
+    "size": 17167
+  },
+  {
+    "path": "util/__init__.py",
+    "sha256": "e78eee4b83d3d674618bbd40c21cc37b8683eb1f36be215d0ebd8b59160da335",
+    "size": 1594
+  },
+  {
+    "path": "util/coin_gecko.py",
+    "sha256": "714452fbc6843263422bb43c608227a81ce322712f95ede5c1ea0821f8782f34",
+    "size": 410
+  },
+  {
+    "path": "util/datetime_helpers.py",
+    "sha256": "4cb4148a1e3090703b4cbe546d5816c2f896cfb7cfd119026581f77074a9e9c1",
+    "size": 3280
+  },
+  {
+    "path": "util/dry_run_wallet.py",
+    "sha256": "525217720db53904c3b7fe01cddc94496f0d8fa6f035bbf550814d0cfd85da79",
+    "size": 418
+  },
+  {
+    "path": "util/formatters.py",
+    "sha256": "2bdbb06c6eac6c2c59f8e1fc017164be1fe56e83b325c25ae141cbb8834604b4",
+    "size": 3178
+  },
+  {
+    "path": "util/ft_precise.py",
+    "sha256": "0338b928d761ad076f79ce6cb49a4894723170f79d7894212504e248de6fee07",
+    "size": 338
+  },
+  {
+    "path": "util/ft_ttlcache.py",
+    "sha256": "4ad9491cf54bdbc40a09e0c53591ffc13ee84a8324dfb92c8fe5e81b4c21f783",
+    "size": 332
+  },
+  {
+    "path": "util/measure_time.py",
+    "sha256": "47677fd9065bdd329e32189d84cfc02bde60394c17fb522fc4ad405304aea3b1",
+    "size": 1333
+  },
+  {
+    "path": "util/migrations/__init__.py",
+    "sha256": "a705312186256b44d3ea55d2ce294a0216830bafe2a9c6104e7a9006df9d678c",
+    "size": 719
+  },
+  {
+    "path": "util/migrations/funding_rate_mig.py",
+    "sha256": "699c33d3ae9273aa2dc120f24f621847eac007887b6e2504afa2a23045949e1d",
+    "size": 772
+  },
+  {
+    "path": "util/migrations/migrate_wallet_history.py",
+    "sha256": "c397ab4e069b0933c321e125f84993583e4ee8a7bd9ce6f6567592d29c677ea9",
+    "size": 8822
+  },
+  {
+    "path": "util/periodic_cache.py",
+    "sha256": "294624ecac5995bc29374cad413702a02978d59e422adca1ac72681ee12d0db6",
+    "size": 564
+  },
+  {
+    "path": "util/progress_tracker.py",
+    "sha256": "d68b00bb4ee3cfb265a5668a4cdcfe563ab7afefca47f9922936615915da3f9e",
+    "size": 878
+  },
+  {
+    "path": "util/rich_progress.py",
+    "sha256": "23235a1048b92e29ca1cd6998b226abbb29aad323b0f59f4773cead977f76382",
+    "size": 1727
+  },
+  {
+    "path": "util/rich_tables.py",
+    "sha256": "ee1c8f8fd9b430650df0bf753429721243d7a1f364443d7d24ca9846235b657e",
+    "size": 2035
+  },
+  {
+    "path": "util/singleton.py",
+    "sha256": "b7e7e711a24b3d08737b412cf5b85d5ed6bcef6206a4415c29a2cc44137630b2",
+    "size": 423
+  },
+  {
+    "path": "util/template_renderer.py",
+    "sha256": "7da87d82e5851415b65751ce4a3bdfaec72c16461b577d2845841637476f75e0",
+    "size": 924
+  },
+  {
+    "path": "vendor/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "vendor/qtpylib/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "size": 0
+  },
+  {
+    "path": "vendor/qtpylib/indicators.py",
+    "sha256": "c040927436bb510e2091a7bb7f6e51f25135292bf2e0d995fa344871f0d505a9",
+    "size": 789
+  },
+  {
+    "path": "wallets.py",
+    "sha256": "28a6c1e166520d4775a97b852049f136c41cdda97bd9f10b801c9c302d237db8",
+    "size": 21658
+  },
+  {
+    "path": "worker.py",
+    "sha256": "9c5a046404f69e061ead72595f8a48f84eb19d9025331f8ff91f3bfebf767f65",
+    "size": 8733
+  }
+]

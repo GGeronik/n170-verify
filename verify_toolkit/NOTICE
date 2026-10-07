@@ -1,0 +1,8 @@
+N170 Open Evidence Toolkit
+Copyright 2026 N170 contributors
+
+Original interoperability implementation, licensed under Apache-2.0.
+Freqtrade names and documented CSV fields identify the independently developed
+upstream product. No Freqtrade engine code or AuditZK implementation is included.
+No upstream endorsement, authenticated research claim or investment conclusion
+is implied.

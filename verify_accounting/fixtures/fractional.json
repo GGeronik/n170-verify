@@ -1,0 +1,36 @@
+{
+  "schema": "n170.accounting.events.v1",
+  "evidence_class": "synthetic_fixture",
+  "asset": "BTC",
+  "cash_currency": "USDT",
+  "opening": {
+    "timestamp": "2026-01-01T00:00:00Z",
+    "cash": "1"
+  },
+  "events": [
+    {
+      "event_id": "buy-1",
+      "timestamp": "2026-01-02T12:00:00Z",
+      "type": "BUY",
+      "quantity": "0.00000001",
+      "price": "0.00000001",
+      "fee": "0",
+      "fee_currency": "USDT"
+    }
+  ],
+  "closing": {
+    "timestamp": "2026-01-04T23:59:59Z",
+    "mark_price": "0.00000002",
+    "reported": {
+      "cash": "0.9999999999999999",
+      "quantity": "0.00000001",
+      "cost_basis": "0.0000000000000001",
+      "fees": "0",
+      "realized_pnl": "0",
+      "unrealized_pnl": "0.0000000000000001",
+      "external_flows": "0",
+      "net_pnl": "0.0000000000000001",
+      "nav": "1.0000000000000001"
+    }
+  }
+}

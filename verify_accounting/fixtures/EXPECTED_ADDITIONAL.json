@@ -1,0 +1,20 @@
+{
+  "schema": "n170.accounting.hand-oracles.v1",
+  "basis": "Supplementary hand calculations for zero balances, eight-decimal products and same-day FIFO. Original EXPECTED.json remains unchanged.",
+  "depletion": {
+    "calculation": "1000 buys 10 at 100 with zero fee. Closing price 0: cost 1000, cash 0, value 0, unrealized and net P&L -1000. No return metric is claimed.",
+    "cash":"0","quantity":"10","cost_basis":"1000","fees":"0","realized_pnl":"0","unrealized_pnl":"-1000","external_flows":"0","net_pnl":"-1000","nav":"0"
+  },
+  "funded": {
+    "calculation": "Start with zero cash, deposit 1000, then gain case. Closing NAV 1047 minus opening 0 minus contributions 1000 = profit 47.",
+    "cash":"717","quantity":"3","cost_basis":"300","fees":"3","realized_pnl":"20","unrealized_pnl":"30","external_flows":"1000","net_pnl":"47","nav":"1047"
+  },
+  "fractional": {
+    "calculation": "Start with 1; buy 0.00000001 at 0.00000001, costing 0.0000000000000001; no fee; closing mark 0.00000002 gives value 0.0000000000000002, gain 0.0000000000000001.",
+    "cash":"0.9999999999999999","quantity":"0.00000001","cost_basis":"0.0000000000000001","fees":"0","realized_pnl":"0","unrealized_pnl":"0.0000000000000001","external_flows":"0","net_pnl":"0.0000000000000001","nav":"1.0000000000000001"
+  },
+  "same_day_fifo": {
+    "calculation": "Start with 1000; buy 1 at 100, buy 1 at 150, buy 1 at 100 all same day; sell 2 at 120. FIFO consumes cost 250, realizes -10, cash 890. Remaining cost 100, mark 130, unrealized 30, net 20, NAV 1020.",
+    "cash":"890","quantity":"1","cost_basis":"100","fees":"0","realized_pnl":"-10","unrealized_pnl":"30","external_flows":"0","net_pnl":"20","nav":"1020"
+  }
+}

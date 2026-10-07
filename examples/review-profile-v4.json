@@ -1,0 +1,138 @@
+{
+  "schema_version": "n170.verify.track-record.v4",
+  "profile_id": "38db88948618700e4bfc9241c4ad1102fe53e74aa9018770645a7846c2080bd7",
+  "display_name": "Synthetic fixture - no real account",
+  "public_key": "BJZ789uPCxSJyMV9yMBSIfHN3Knpue5aej88mHoDbX3StPN_VfTRybodpJaqmTzkH00QT8K1BG6GTs_Yu03KN7Q",
+  "stamps": [
+    {
+      "payload": {
+        "schema_version": "n170.verify.performance-stamp.v4",
+        "calculation_version": "2.0.0",
+        "sequence": 1,
+        "profile_id": "38db88948618700e4bfc9241c4ad1102fe53e74aa9018770645a7846c2080bd7",
+        "display_name": "Synthetic fixture - no real account",
+        "previous_sha256": null,
+        "source_kind": "synthetic_demo",
+        "provider_authenticated": false,
+        "independent_timestamp": false,
+        "period": {
+          "start": "2025-01-02",
+          "end": "2025-01-07"
+        },
+        "periods_per_year": 252,
+        "relative_returns": [
+          {
+            "start": "2025-01-02",
+            "end": "2025-01-03",
+            "return_e8": 1000000
+          },
+          {
+            "start": "2025-01-03",
+            "end": "2025-01-06",
+            "return_e8": 1009901
+          },
+          {
+            "start": "2025-01-06",
+            "end": "2025-01-07",
+            "return_e8": -1000000
+          }
+        ],
+        "coverage": {
+          "nav_observations": 4,
+          "return_observations": 3,
+          "external_cash_flow_count": 1
+        },
+        "metrics": {
+          "total_return_twr_e8": 999800,
+          "annualized_volatility_e8": null,
+          "max_drawdown_e8": -1000000
+        },
+        "serialization_version": "1.0.0",
+        "event_type": "performance",
+        "correction": null,
+        "provenance": {
+          "kind": "manual",
+          "format": "manual-nav-flow",
+          "original_sha256": null,
+          "source_sha256": null,
+          "normalized_sha256": null,
+          "mapping": [],
+          "account_scope": "Not specified by owner",
+          "currency": "unspecified",
+          "completeness": "not_established",
+          "corrections": [],
+          "reviewed": false
+        }
+      },
+      "sha256": "79ca897ee280cd63e8e248dd0965b4612c0ca646b7f622f5d3bab9bc7aea16a8",
+      "signature": "95eob9Ii9UrjHT5_X5Anh6ZpT3JONJBzJGYTVmawwb8cgXhHPXbSgA4moal-_0i_b9E8hk7sVyb0Fb28lIPtsw"
+    },
+    {
+      "payload": {
+        "schema_version": "n170.verify.performance-stamp.v4",
+        "calculation_version": "2.0.0",
+        "sequence": 2,
+        "profile_id": "38db88948618700e4bfc9241c4ad1102fe53e74aa9018770645a7846c2080bd7",
+        "display_name": "Synthetic fixture - no real account",
+        "previous_sha256": "79ca897ee280cd63e8e248dd0965b4612c0ca646b7f622f5d3bab9bc7aea16a8",
+        "source_kind": "self_reported",
+        "provider_authenticated": false,
+        "independent_timestamp": false,
+        "period": {
+          "start": "2025-01-02",
+          "end": "2025-01-07"
+        },
+        "periods_per_year": 252,
+        "relative_returns": [
+          {
+            "start": "2025-01-02",
+            "end": "2025-01-03",
+            "return_e8": 1000000
+          },
+          {
+            "start": "2025-01-03",
+            "end": "2025-01-06",
+            "return_e8": 1009901
+          },
+          {
+            "start": "2025-01-06",
+            "end": "2025-01-07",
+            "return_e8": -1901446
+          }
+        ],
+        "coverage": {
+          "nav_observations": 4,
+          "return_observations": 3,
+          "external_cash_flow_count": 1
+        },
+        "metrics": {
+          "total_return_twr_e8": 80145,
+          "annualized_volatility_e8": null,
+          "max_drawdown_e8": -1901446
+        },
+        "serialization_version": "1.0.0",
+        "event_type": "correction",
+        "correction": {
+          "target_sequence": 1,
+          "target_sha256": "79ca897ee280cd63e8e248dd0965b4612c0ca646b7f622f5d3bab9bc7aea16a8",
+          "reason": "Synthetic correction demonstration: the final supplied valuation was transcribed incorrectly."
+        },
+        "provenance": {
+          "kind": "manual",
+          "format": "manual-nav-flow",
+          "original_sha256": null,
+          "source_sha256": null,
+          "normalized_sha256": null,
+          "mapping": [],
+          "account_scope": "Not specified by owner",
+          "currency": "unspecified",
+          "completeness": "not_established",
+          "corrections": [],
+          "reviewed": false
+        }
+      },
+      "sha256": "c5d5db6d36a4d5f07e74150d52b8bb80e0ccd0eafd9af98eeaffba542e70f420",
+      "signature": "PZDeqkZ8WIAf06k-W0xwsIMB7_9NLCJvp1udr6l5s45CFKjzJNZc14wUepOYqAULOY1ZeDVLL1kBHTmZJwnAsg"
+    }
+  ]
+}

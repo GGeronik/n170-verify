@@ -1,0 +1,77 @@
+{
+  "disclosure": {
+    "note": "Counts and declared scope may still disclose research information. Review before sharing.",
+    "source_text_included": false,
+    "strategy_labels_included": true
+  },
+  "evidence_class": "supplied_tool_output",
+  "example_declaration": "synthetic",
+  "limitations": [
+    "This is supplied tool output. N170 did not execute Freqtrade or authenticate its source.",
+    "No findings reported describes these CSV rows only; it does not establish absence of lookahead bias.",
+    "Untested signals, omitted strategies and earlier trials are not evidenced by this export.",
+    "Freqtrade exports can omit unsuccessful analyses and retain rows from earlier runs; run completeness and freshness are not established.",
+    "Reported indicators can include FreqAI targets, and order assumptions can cause false positives; findings require review.",
+    "This report does not assess data authenticity, point-in-time validity, statistical robustness, execution realism or investment performance.",
+    "Filenames, strategy names and indicator names are retained locally; review them before sharing this report."
+  ],
+  "reason_codes": [
+    "NO_TESTED_SIGNALS",
+    "DECLARED_STRATEGY_COUNT_MISMATCH"
+  ],
+  "rows": [
+    {
+      "display_label": "Strategy 1",
+      "reason_codes": [
+        "NO_TESTED_SIGNALS"
+      ],
+      "row_number": 1,
+      "status": "NOT_ASSESSABLE"
+    },
+    {
+      "biased_entry_signals": 0,
+      "biased_exit_signals": 0,
+      "biased_indicators": [],
+      "display_label": "SyntheticBeta",
+      "filename": "synthetic_beta.py",
+      "has_bias": false,
+      "reason_codes": [
+        "NO_FINDINGS_IN_SUPPLIED_ROW"
+      ],
+      "row_number": 2,
+      "status": "NO_FINDINGS_REPORTED",
+      "strategy": "SyntheticBeta",
+      "total_signals": 25
+    }
+  ],
+  "schema": "n170.tool-evidence.freqtrade-lookahead.v1",
+  "scope": {
+    "adapter_format_reference": {
+      "revision": "9f10e357a93c1dcf10c2a2b367659214d89c073e",
+      "version": "2026.8"
+    },
+    "analysis": "lookahead-analysis",
+    "context_authenticity": "unverified",
+    "declared_context": {
+      "expected_strategy_count": 2,
+      "freqtrade_version": "2026.8",
+      "run_config": {
+        "lookahead_allow_limit_orders": false,
+        "minimum_trade_amount": 10,
+        "targeted_trade_amount": 100,
+        "timeframe": "1h",
+        "timerange": "20250101-20250401"
+      },
+      "run_status": "COMPLETED"
+    },
+    "run_completeness": "not_established",
+    "run_freshness": "not_established",
+    "source_authenticity": "unverified",
+    "source_sha256": "1005a47b8eb6a8c294e3e9efdca55802361d3221257da893be310030abbf605a",
+    "tested_strategy_count_basis": "valid supplied rows with positive signal counts; not independently observed tests",
+    "tool_execution": "not_performed"
+  },
+  "status": "NOT_ASSESSABLE",
+  "tested_strategy_count": 1,
+  "tool": "freqtrade"
+}

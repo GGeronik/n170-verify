@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:n170:agent-handoff:v1",
+  "title": "N170 connected-agent handoff v1",
+  "description": "A private, sender-supplied JSON packet. It is not a source attestation. Semantic date, ordering, coverage, precision, and financial support checks are performed by parseAgentHandoff. Empty observations permit an honest blocked response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "synthetic", "source", "account_scope", "currency", "frequency", "requested_period", "coverage", "flow_timing", "observations", "mapping"],
+  "properties": {
+    "schema_version": { "const": "n170.agent-handoff.v1" },
+    "synthetic": { "type": "boolean" },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["broker", "connector", "tools", "retrieved_at"],
+      "properties": {
+        "broker": { "$ref": "#/$defs/label80" },
+        "connector": { "$ref": "#/$defs/label80" },
+        "tools": { "type": "array", "maxItems": 40, "uniqueItems": true, "items": { "$ref": "#/$defs/label80" }, "description": "Names the sender claims it actually called; empty when no retrieval occurred. Not proof of MCP execution or permissions." },
+        "retrieved_at": { "type": ["string", "null"], "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?(Z|[+-](0\\d|1[0-3]):[0-5]\\d|[+-]14:00)$", "description": "Untrusted sender-reported retrieval time, not independent timestamp evidence. Null means no retrieval was performed and blocks calculation readiness." }
+      }
+    },
+    "account_scope": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*\\S[^\\u0000-\\u001F\\u007F-\\u009F]*$", "description": "Public account alias/scope. Do not include actual account identifiers." },
+    "currency": { "enum": ["USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY"] },
+    "frequency": { "type": "integer", "enum": [252, 365, 52, 12, 4, 1] },
+    "requested_period": { "$ref": "#/$defs/period" },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pagination", "missing_periods", "unsupported_events"],
+      "properties": {
+        "pagination": { "enum": ["complete", "incomplete", "unknown"], "description": "Sender claim, never independent completeness evidence." },
+        "missing_periods": { "type": "array", "maxItems": 100, "items": { "type": "object", "additionalProperties": false, "required": ["start", "end", "reason"], "properties": { "start": { "$ref": "#/$defs/date" }, "end": { "$ref": "#/$defs/date" }, "reason": { "$ref": "#/$defs/explanation" } } } },
+        "unsupported_events": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/explanation" } }
+      }
+    },
+    "flow_timing": { "enum": ["interval_end", "intraperiod", "unknown"], "description": "interval_end asserts timing of EVERY actual external flow, including offsetting flows; zero net amounts do not establish absence. Owner must review. Intraperiod/unknown blocks readiness." },
+    "observations": { "type": "array", "maxItems": 500, "items": { "type": "object", "additionalProperties": false, "required": ["date", "nav", "external_flow", "source_ref"], "properties": { "date": { "$ref": "#/$defs/date" }, "nav": { "$ref": "#/$defs/decimal" }, "external_flow": { "$ref": "#/$defs/decimal" }, "source_ref": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*\\S[^\\u0000-\\u001F\\u007F-\\u009F]*$", "description": "Private reference into retained tool output; not authentication evidence. No credentials or account identifiers." } } }, "description": "Unique ascending dates; at least two observations and exact requested boundaries required for readiness. Never invent NAV, source references or zero flows. Use [] if no complete observations exist." },
+    "mapping": { "type": "object", "additionalProperties": false, "required": ["date", "nav", "external_flow"], "properties": { "date": { "$ref": "#/$defs/fieldPath" }, "nav": { "$ref": "#/$defs/fieldPath" }, "external_flow": { "$ref": "#/$defs/fieldPath" } }, "description": "Private field paths explaining source mapping. Use 'Unavailable' for a blocked no-data packet; never fabricate a tool path." }
+  },
+  "$defs": {
+    "label80": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*\\S[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "fieldPath": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*\\S[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "explanation": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*\\S[^\\u0000-\\u001F\\u007F-\\u009F]*$" },
+    "date": { "type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "period": { "type": "object", "additionalProperties": false, "required": ["start", "end"], "properties": { "start": { "$ref": "#/$defs/date" }, "end": { "$ref": "#/$defs/date" } } },
+    "decimal": { "type": "string", "minLength": 1, "maxLength": 50, "pattern": "^-?(?:0*(?:[0-9]{1,15}(?:\\.[0-9]{0,18})?|1000000000000000(?:\\.0{0,18})?)|\\.[0-9]{1,18})$", "description": "Exact plain decimal string, <=18 fractional places, magnitude <=10^15. No exponents, grouping separators, currency symbols, null or JSON numbers. Numerical support is checked separately; nonpositive NAV blocks calculation." }
+  }
+}

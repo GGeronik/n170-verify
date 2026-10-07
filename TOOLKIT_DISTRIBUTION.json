@@ -1,0 +1,146 @@
+{
+  "files": [
+    {
+      "bytes": 8159,
+      "path": "toolkit-tests/test_verify_toolkit_delivery.py",
+      "sha256": "fa86ab935cb37fd020067ea2f84fed3dc881c3a3583efaaf603790c41c185934"
+    },
+    {
+      "bytes": 12214,
+      "path": "toolkit-tests/test_verify_toolkit_freqtrade.py",
+      "sha256": "cdea5b8c51e2e7b34f930e925023944f65ba657581f0c5906017e58db696e84d"
+    },
+    {
+      "bytes": 19570,
+      "path": "toolkit-tests/test_verify_toolkit_run_review.py",
+      "sha256": "21b480d4d652f55a14dd7336efb9b5590d46b3521a91cc755599df9f74c6c624"
+    },
+    {
+      "bytes": 38739,
+      "path": "toolkit-tests/test_verify_toolkit_runner.py",
+      "sha256": "872ee2cb81b730755f07280659f975cc258f7e618fa25f9e380a616a53432d9f"
+    },
+    {
+      "bytes": 2326,
+      "path": "toolkit-tests/test_verify_toolkit_runner_limits.py",
+      "sha256": "3d66429ad2777b393919abc8c9679879b6e204021d86f4a871e746ce1107db77"
+    },
+    {
+      "bytes": 8123,
+      "path": "verify_toolkit/FREQTRADE.md",
+      "sha256": "8e4af57b3eccc30d89b537be05162ff6c15377d0748e4218c0dc07b30a3dbe4f"
+    },
+    {
+      "bytes": 11358,
+      "path": "verify_toolkit/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "bytes": 382,
+      "path": "verify_toolkit/NOTICE",
+      "sha256": "25b40a2bd937e1c6883908052eee0b9f3752a1cbe49ae09d899f490c55059759"
+    },
+    {
+      "bytes": 6711,
+      "path": "verify_toolkit/README.md",
+      "sha256": "06711c0da0832761768cc252af0a9b4c2f5965e765de735e505d2cd31dbdca44"
+    },
+    {
+      "bytes": 11681,
+      "path": "verify_toolkit/RUNNER.md",
+      "sha256": "d6199f0826ae554be82400f351b5232971196ea777011e389cb53064c700112c"
+    },
+    {
+      "bytes": 3743,
+      "path": "verify_toolkit/RUN_MANIFEST_V1.md",
+      "sha256": "7f9df72e117d2ca56611cc2f8bee2e912e0d822dbab2657dcd0267cdc92a576e"
+    },
+    {
+      "bytes": 7546,
+      "path": "verify_toolkit/RUN_REVIEW_V1.md",
+      "sha256": "5d5e099beb8e0b73e286cff19d3ede8dae2a376df559b804ad07f7a97aaff230"
+    },
+    {
+      "bytes": 103,
+      "path": "verify_toolkit/__init__.py",
+      "sha256": "13b066a89da3f202a6a4e10829f43feff2d8912d487d80d99873ebf23ea014f8"
+    },
+    {
+      "bytes": 10150,
+      "path": "verify_toolkit/__main__.py",
+      "sha256": "ff41f17e7eb128e289fd5acf7978910f257fb7f585c6c8f2aa3322ea72c16223"
+    },
+    {
+      "bytes": 2877,
+      "path": "verify_toolkit/conformance.py",
+      "sha256": "556b906923709db2b894d2140aae76256aa896c5523ba62d88dc061d26bf8ee8"
+    },
+    {
+      "bytes": 50816,
+      "path": "verify_toolkit/engine-source.json",
+      "sha256": "bb1e4029134c927c845e2a7b3eb5da722e9cee0777354a5d9416171c88697d1a"
+    },
+    {
+      "bytes": 10695,
+      "path": "verify_toolkit/engine_worker.py",
+      "sha256": "4dcf8caa9de5ac6322cb6835d847546a5e6814b6fe5a17c06867acee0ca317f7"
+    },
+    {
+      "bytes": 147,
+      "path": "verify_toolkit/examples/freqtrade-lookahead-clean.csv",
+      "sha256": "2a943bb06a7b2c0947a999738763de790341c384364ddfb49ea376c035b0be1f"
+    },
+    {
+      "bytes": 177,
+      "path": "verify_toolkit/examples/freqtrade-lookahead-findings.csv",
+      "sha256": "afd6e16fb612bccef56aa185218ab359186547a8472550387c5a4fc35380683c"
+    },
+    {
+      "bytes": 183,
+      "path": "verify_toolkit/examples/freqtrade-lookahead-not-assessable.csv",
+      "sha256": "e8b8acae49b06a64d8cb14bede37bf6d471a99411555295706eea9af6a7c0a27"
+    },
+    {
+      "bytes": 11854,
+      "path": "verify_toolkit/freqtrade.py",
+      "sha256": "abad7469450034eb93f125eac1fca02f7e394a4c44eac5e42b65dddb8ab3b78d"
+    },
+    {
+      "bytes": 4673,
+      "path": "verify_toolkit/integration_validation.py",
+      "sha256": "3bea500ccabdf2fcac81a9282be35893211014c985c8af754620a9b3e3e70861"
+    },
+    {
+      "bytes": 3084,
+      "path": "verify_toolkit/packaging.py",
+      "sha256": "ec44afba910f061dd2a6e6e85208c1bbd1a760d422d3c9df295af47e95733934"
+    },
+    {
+      "bytes": 7241,
+      "path": "verify_toolkit/reporting.py",
+      "sha256": "a3711bc20f77f7ffff2060618db44eaf4f558a1e2eba1fc777e2745b7c89163f"
+    },
+    {
+      "bytes": 18360,
+      "path": "verify_toolkit/run_contract.py",
+      "sha256": "4244b32b7cea8e2392b81d2c477a4d9606c7208c0e154256e932b791bfb9b45b"
+    },
+    {
+      "bytes": 29815,
+      "path": "verify_toolkit/run_review.py",
+      "sha256": "6b03a118005138f6394c3d7eb416e42f8e377a58ec7d6ea317f0daa4068e0528"
+    },
+    {
+      "bytes": 18827,
+      "path": "verify_toolkit/runner.py",
+      "sha256": "2cba29cc92bee8a4ef9e1d71a1cfd1aaea055cd39a041f25690bfacaeef199ad"
+    },
+    {
+      "bytes": 4997,
+      "path": "verify_toolkit/synthetic.py",
+      "sha256": "faad211aeb0d302563af0dc1a55cbc73322f67776771d327e74fcb3010babc17"
+    }
+  ],
+  "schema": "n170.toolkit.distribution.v1",
+  "scope": "Integration-baseline receipt of the original Python toolkit copy; three docs adapt the release layout and packaging has its reviewed delta. Maintainer edits need not match this retained receipt: the fresh source MANIFEST identifies current bytes. No upstream engine bundled."
+}

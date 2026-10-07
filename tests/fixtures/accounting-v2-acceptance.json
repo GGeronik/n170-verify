@@ -1,0 +1,1113 @@
+{
+  "schema": "n170.independent.accounting-v2-challenges.v1",
+  "created": "2026-09-18",
+  "authorship": "Original independent acceptance inputs; not generated from forthcoming implementation",
+  "execution_status": "PLANNED_ACCEPTANCE_NOT_RUN; retained_controls are historical research evidence",
+  "fee_policy": "quantity * price * 0.001 exactly from finite decimal spellings; quote fees expensed immediately",
+  "expectation_status_vocabulary": "Challenge-stage expectations, not invented production API result schemas",
+  "binary_reference": "Rationals decoded from binary64 hex; RN64 = nearest ties even; decimal quantization uses exact rational quotient/remainder; no fitted interval",
+  "engine_numeric_policy_accepted": false,
+  "ledger_cases": [
+    {
+      "id": "closed_gain",
+      "scope": "planned_closed_bridge_matrix",
+      "opening_cash": "1000",
+      "opening_quantity": "0",
+      "closing_mark": "110",
+      "completion_events": [
+        {
+          "completion_sequence": 1,
+          "event_id": "fill-1",
+          "order_id": "order-1",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:05:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "2",
+          "price": "100",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.2"
+        },
+        {
+          "completion_sequence": 2,
+          "event_id": "fill-2",
+          "order_id": "order-2",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:10:00Z",
+          "pair": "BTC/USDT",
+          "side": "SELL",
+          "quantity": "2",
+          "price": "110",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "exit_signal",
+          "exact_modeled_fee": "0.22"
+        }
+      ],
+      "final_closed_order_ids": [
+        "order-1",
+        "order-2"
+      ],
+      "expected_decimal": {
+        "cash": "1019.58",
+        "quantity": "0",
+        "cost_basis": "0",
+        "fees": "0.42",
+        "realized_pnl": "20",
+        "unrealized_pnl": "0",
+        "nav": "1019.58",
+        "net_pnl": "19.58",
+        "external_flows": "0"
+      },
+      "expected_event_checkpoints": [
+        {
+          "event_id": "fill-1",
+          "cash": "799.8",
+          "quantity": "2",
+          "fifo_cost_basis": "200",
+          "gross_realized_pnl": "0",
+          "fees": "0.2"
+        },
+        {
+          "event_id": "fill-2",
+          "cash": "1019.58",
+          "quantity": "0",
+          "fifo_cost_basis": "0",
+          "gross_realized_pnl": "20",
+          "fees": "0.42"
+        }
+      ],
+      "native_numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE",
+      "oracle_execution_status": "NOT_RUN"
+    },
+    {
+      "id": "closed_loss",
+      "scope": "planned_closed_bridge_matrix",
+      "opening_cash": "1000",
+      "opening_quantity": "0",
+      "closing_mark": "90",
+      "completion_events": [
+        {
+          "completion_sequence": 1,
+          "event_id": "fill-1",
+          "order_id": "order-1",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:05:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "2",
+          "price": "100",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.2"
+        },
+        {
+          "completion_sequence": 2,
+          "event_id": "fill-2",
+          "order_id": "order-2",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:10:00Z",
+          "pair": "BTC/USDT",
+          "side": "SELL",
+          "quantity": "2",
+          "price": "90",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "exit_signal",
+          "exact_modeled_fee": "0.18"
+        }
+      ],
+      "final_closed_order_ids": [
+        "order-1",
+        "order-2"
+      ],
+      "expected_decimal": {
+        "cash": "979.62",
+        "quantity": "0",
+        "cost_basis": "0",
+        "fees": "0.38",
+        "realized_pnl": "-20",
+        "unrealized_pnl": "0",
+        "nav": "979.62",
+        "net_pnl": "-20.38",
+        "external_flows": "0"
+      },
+      "expected_event_checkpoints": [
+        {
+          "event_id": "fill-1",
+          "cash": "799.8",
+          "quantity": "2",
+          "fifo_cost_basis": "200",
+          "gross_realized_pnl": "0",
+          "fees": "0.2"
+        },
+        {
+          "event_id": "fill-2",
+          "cash": "979.62",
+          "quantity": "0",
+          "fifo_cost_basis": "0",
+          "gross_realized_pnl": "-20",
+          "fees": "0.38"
+        }
+      ],
+      "native_numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE",
+      "oracle_execution_status": "NOT_RUN"
+    },
+    {
+      "id": "nineteen_place_fees",
+      "scope": "planned_closed_bridge_matrix",
+      "opening_cash": "10",
+      "opening_quantity": "0",
+      "closing_mark": "1.00000003",
+      "completion_events": [
+        {
+          "completion_sequence": 1,
+          "event_id": "fill-1",
+          "order_id": "order-1",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:05:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "1.00000001",
+          "price": "1.00000001",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.0010000000200000001"
+        },
+        {
+          "completion_sequence": 2,
+          "event_id": "fill-2",
+          "order_id": "order-2",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:10:00Z",
+          "pair": "BTC/USDT",
+          "side": "SELL",
+          "quantity": "1.00000001",
+          "price": "1.00000003",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "exit_signal",
+          "exact_modeled_fee": "0.0010000000400000003"
+        }
+      ],
+      "final_closed_order_ids": [
+        "order-1",
+        "order-2"
+      ],
+      "expected_decimal": {
+        "cash": "9.9980000199400001996",
+        "quantity": "0",
+        "cost_basis": "0",
+        "fees": "0.0020000000600000004",
+        "realized_pnl": "0.0000000200000002",
+        "unrealized_pnl": "0",
+        "nav": "9.9980000199400001996",
+        "net_pnl": "-0.0019999800599998004",
+        "external_flows": "0"
+      },
+      "expected_event_checkpoints": [
+        {
+          "event_id": "fill-1",
+          "cash": "8.9989999799799998999",
+          "quantity": "1.00000001",
+          "fifo_cost_basis": "1.0000000200000001",
+          "gross_realized_pnl": "0",
+          "fees": "0.0010000000200000001"
+        },
+        {
+          "event_id": "fill-2",
+          "cash": "9.9980000199400001996",
+          "quantity": "0",
+          "fifo_cost_basis": "0",
+          "gross_realized_pnl": "0.0000000200000002",
+          "fees": "0.0020000000600000004"
+        }
+      ],
+      "native_numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE",
+      "oracle_execution_status": "NOT_RUN"
+    },
+    {
+      "id": "fifo_partial_checkpoint_then_closed",
+      "scope": "planned_decimal_ledger_only; overlapping same-pair positions are not granted engine support",
+      "opening_cash": "1000",
+      "opening_quantity": "0",
+      "closing_mark": "250",
+      "completion_events": [
+        {
+          "completion_sequence": 1,
+          "event_id": "fill-1",
+          "order_id": "order-1",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:05:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "1",
+          "price": "100",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.1"
+        },
+        {
+          "completion_sequence": 2,
+          "event_id": "fill-2",
+          "order_id": "order-2",
+          "trade_id": "T2",
+          "timestamp": "2026-02-01T00:10:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "1",
+          "price": "200",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.2"
+        },
+        {
+          "completion_sequence": 3,
+          "event_id": "fill-3",
+          "order_id": "order-3",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:15:00Z",
+          "pair": "BTC/USDT",
+          "side": "SELL",
+          "quantity": "1",
+          "price": "150",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "exit_signal",
+          "exact_modeled_fee": "0.15"
+        },
+        {
+          "completion_sequence": 4,
+          "event_id": "fill-4",
+          "order_id": "order-4",
+          "trade_id": "T2",
+          "timestamp": "2026-02-01T00:20:00Z",
+          "pair": "BTC/USDT",
+          "side": "SELL",
+          "quantity": "1",
+          "price": "250",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "exit_signal",
+          "exact_modeled_fee": "0.25"
+        }
+      ],
+      "final_closed_order_ids": [
+        "order-1",
+        "order-2",
+        "order-3",
+        "order-4"
+      ],
+      "expected_decimal": {
+        "cash": "1099.3",
+        "quantity": "0",
+        "cost_basis": "0",
+        "fees": "0.7",
+        "realized_pnl": "100",
+        "unrealized_pnl": "0",
+        "nav": "1099.3",
+        "net_pnl": "99.3",
+        "external_flows": "0"
+      },
+      "expected_event_checkpoints": [
+        {
+          "event_id": "fill-1",
+          "cash": "899.9",
+          "quantity": "1",
+          "fifo_cost_basis": "100",
+          "gross_realized_pnl": "0",
+          "fees": "0.1"
+        },
+        {
+          "event_id": "fill-2",
+          "cash": "699.7",
+          "quantity": "2",
+          "fifo_cost_basis": "300",
+          "gross_realized_pnl": "0",
+          "fees": "0.3"
+        },
+        {
+          "event_id": "fill-3",
+          "cash": "849.55",
+          "quantity": "1",
+          "fifo_cost_basis": "200",
+          "gross_realized_pnl": "50",
+          "fees": "0.45"
+        },
+        {
+          "event_id": "fill-4",
+          "cash": "1099.3",
+          "quantity": "0",
+          "fifo_cost_basis": "0",
+          "gross_realized_pnl": "100",
+          "fees": "0.7"
+        }
+      ],
+      "native_numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE",
+      "oracle_execution_status": "NOT_RUN"
+    },
+    {
+      "id": "open_holding_diagnostic_only",
+      "scope": "unsupported_engine_open_holdings; decimal diagnostic only",
+      "opening_cash": "1000",
+      "opening_quantity": "0",
+      "closing_mark": "110",
+      "completion_events": [
+        {
+          "completion_sequence": 1,
+          "event_id": "fill-1",
+          "order_id": "order-1",
+          "trade_id": "T1",
+          "timestamp": "2026-02-01T00:05:00Z",
+          "pair": "BTC/USDT",
+          "side": "BUY",
+          "quantity": "2",
+          "price": "100",
+          "fee_rate": "0.001",
+          "fee_currency_model": "USDT",
+          "remaining": "0",
+          "status": "closed",
+          "exit_tag": "",
+          "exact_modeled_fee": "0.2"
+        }
+      ],
+      "final_closed_order_ids": [],
+      "expected_decimal": {
+        "cash": "799.8",
+        "quantity": "2",
+        "cost_basis": "200",
+        "fees": "0.2",
+        "realized_pnl": "0",
+        "unrealized_pnl": "20",
+        "nav": "1019.8",
+        "net_pnl": "19.8",
+        "external_flows": "0"
+      },
+      "expected_event_checkpoints": [
+        {
+          "event_id": "fill-1",
+          "cash": "799.8",
+          "quantity": "2",
+          "fifo_cost_basis": "200",
+          "gross_realized_pnl": "0",
+          "fees": "0.2"
+        }
+      ],
+      "native_numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE",
+      "oracle_execution_status": "NOT_RUN"
+    }
+  ],
+  "numeric_cases": [
+    {
+      "id": "decimal_spelling_is_not_binary_value",
+      "scope": "mathematical_primitive",
+      "decimal_spelling": "0.1",
+      "captured_hex": "0x1.999999999999ap-4",
+      "expected_pair_consistency": true,
+      "expected_exact_decimal": {
+        "numerator": "1",
+        "denominator": "10"
+      },
+      "expected_exact_binary": {
+        "hex": "0x1.999999999999ap-4",
+        "exact": {
+          "numerator": "3602879701896397",
+          "denominator": "36028797018963968"
+        },
+        "exact_decimal": "0.1000000000000000055511151231257827021181583404541015625"
+      },
+      "expected_binary_minus_decimal": {
+        "numerator": "1",
+        "denominator": "180143985094819840"
+      },
+      "exact_equality": false
+    },
+    {
+      "id": "repr_hex_disagree",
+      "scope": "capture_validation",
+      "decimal_spelling": "0.1",
+      "captured_hex": "0x1.999999999999ap-3",
+      "expected": "REJECT_CAPTURE_BEFORE_FINANCIAL_COMPARISON"
+    },
+    {
+      "id": "eight_place_positive_even_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "0x1.0000000000000p-9",
+        "exact": {
+          "numerator": "1",
+          "denominator": "512"
+        },
+        "exact_decimal": "0.001953125"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "0.00195312",
+      "expected_output_binary64": {
+        "hex": "0x1.ffffaa19c4774p-10",
+        "exact": {
+          "numerator": "2251794049077725",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "0.001953120000000000029694025016624436830170452594757080078125"
+      },
+      "expected_quantization_error": {
+        "numerator": "-1",
+        "denominator": "200000000"
+      }
+    },
+    {
+      "id": "eight_place_positive_odd_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "0x1.8000000000000p-8",
+        "exact": {
+          "numerator": "3",
+          "denominator": "512"
+        },
+        "exact_decimal": "0.005859375"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "0.00585938",
+      "expected_output_binary64": {
+        "hex": "0x1.800015798ee23p-8",
+        "exact": {
+          "numerator": "6755405205663267",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "0.005859379999999999970305974983375563169829547405242919921875"
+      },
+      "expected_quantization_error": {
+        "numerator": "1",
+        "denominator": "200000000"
+      }
+    },
+    {
+      "id": "eight_place_negative_even_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "-0x1.0000000000000p-9",
+        "exact": {
+          "numerator": "-1",
+          "denominator": "512"
+        },
+        "exact_decimal": "-0.001953125"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "-0.00195312",
+      "expected_output_binary64": {
+        "hex": "-0x1.ffffaa19c4774p-10",
+        "exact": {
+          "numerator": "-2251794049077725",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "-0.001953120000000000029694025016624436830170452594757080078125"
+      },
+      "expected_quantization_error": {
+        "numerator": "1",
+        "denominator": "200000000"
+      }
+    },
+    {
+      "id": "eight_place_negative_odd_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "-0x1.8000000000000p-8",
+        "exact": {
+          "numerator": "-3",
+          "denominator": "512"
+        },
+        "exact_decimal": "-0.005859375"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "-0.00585938",
+      "expected_output_binary64": {
+        "hex": "-0x1.800015798ee23p-8",
+        "exact": {
+          "numerator": "-6755405205663267",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "-0.005859379999999999970305974983375563169829547405242919921875"
+      },
+      "expected_quantization_error": {
+        "numerator": "-1",
+        "denominator": "200000000"
+      }
+    },
+    {
+      "id": "eight_place_one_ulp_below_positive_even_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "0x1.fffffffffffffp-10",
+        "exact": {
+          "numerator": "9007199254740991",
+          "denominator": "4611686018427387904"
+        },
+        "exact_decimal": "0.00195312499999999978315956550289911319850943982601165771484375"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "0.00195312",
+      "expected_output_binary64": {
+        "hex": "0x1.ffffaa19c4774p-10",
+        "exact": {
+          "numerator": "2251794049077725",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "0.001953120000000000029694025016624436830170452594757080078125"
+      },
+      "expected_quantization_error": {
+        "numerator": "-9007199254350367",
+        "denominator": "1801439850948198400000000"
+      }
+    },
+    {
+      "id": "eight_place_one_ulp_above_positive_even_tie",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "input_binary64": {
+        "hex": "0x1.0000000000001p-9",
+        "exact": {
+          "numerator": "4503599627370497",
+          "denominator": "2305843009213693952"
+        },
+        "exact_decimal": "0.0019531250000000004336808689942017736029811203479766845703125"
+      },
+      "operation": "round exact binary input to decimal 1e-8 quantum, nearest ties even, then RN-even binary64 conversion",
+      "expected_decimal_quantized": "0.00195313",
+      "expected_output_binary64": {
+        "hex": "0x1.00002af31dc46p-9",
+        "exact": {
+          "numerator": "2251805578292771",
+          "denominator": "1152921504606846976"
+        },
+        "exact_decimal": "0.001953129999999999970305974983375563169829547405242919921875"
+      },
+      "expected_quantization_error": {
+        "numerator": "4503599626979871",
+        "denominator": "900719925474099200000000"
+      }
+    },
+    {
+      "id": "conversion_loses_difference_before_subtraction",
+      "scope": "mathematical_primitive; not declared realizable engine fills",
+      "close_leg_decimal": "10000000000000001",
+      "open_leg_decimal": "10000000000000000",
+      "exact_decimal_difference": "1",
+      "operation": "RN64(close_leg) minus RN64(open_leg), then RN64",
+      "expected_native_difference": {
+        "hex": "0x0.0p+0",
+        "exact": {
+          "numerator": "0",
+          "denominator": "1"
+        },
+        "exact_decimal": "0"
+      },
+      "expected_decimal_equality": false
+    },
+    {
+      "id": "large_opening_absorbs_gain",
+      "scope": "mathematical_primitive; native per-trade PnL supplied as stage input",
+      "opening_cash": "18014398509481984",
+      "trade_profit_decimal_spelling": "0.01",
+      "trade_profit_binary64": {
+        "hex": "0x1.47ae147ae147bp-7",
+        "exact": {
+          "numerator": "5764607523034235",
+          "denominator": "576460752303423488"
+        },
+        "exact_decimal": "0.01000000000000000020816681711721685132943093776702880859375"
+      },
+      "exact_model_cash": "18014398509481984.01",
+      "operation": "RN64(opening_cash + captured binary64 trade_profit)",
+      "expected_native_cash": {
+        "hex": "0x1.0000000000000p+54",
+        "exact": {
+          "numerator": "18014398509481984",
+          "denominator": "1"
+        },
+        "exact_decimal": "18014398509481984"
+      },
+      "expected_native_cash_minus_exact_model": {
+        "numerator": "-1",
+        "denominator": "100"
+      },
+      "expected_cash_decimal_equality": false,
+      "required": "Do not derive net PnL as native cash minus opening; preserve the nonzero captured profit."
+    },
+    {
+      "id": "large_opening_absorbs_loss",
+      "scope": "mathematical_primitive; native per-trade PnL supplied as stage input",
+      "opening_cash": "18014398509481984",
+      "trade_profit_decimal_spelling": "-0.01",
+      "trade_profit_binary64": {
+        "hex": "-0x1.47ae147ae147bp-7",
+        "exact": {
+          "numerator": "-5764607523034235",
+          "denominator": "576460752303423488"
+        },
+        "exact_decimal": "-0.01000000000000000020816681711721685132943093776702880859375"
+      },
+      "exact_model_cash": "18014398509481983.99",
+      "operation": "RN64(opening_cash + captured binary64 trade_profit)",
+      "expected_native_cash": {
+        "hex": "0x1.0000000000000p+54",
+        "exact": {
+          "numerator": "18014398509481984",
+          "denominator": "1"
+        },
+        "exact_decimal": "18014398509481984"
+      },
+      "expected_native_cash_minus_exact_model": {
+        "numerator": "1",
+        "denominator": "100"
+      },
+      "expected_cash_decimal_equality": false,
+      "required": "Do not derive net PnL as native cash minus opening; preserve the nonzero captured profit."
+    },
+    {
+      "id": "close_order_absorbed",
+      "scope": "mathematical_primitive; serial RN64 fold only, engine accumulator still requires source proof",
+      "ordered_profit_integers": [
+        "9007199254740992",
+        "1",
+        "-9007199254740992"
+      ],
+      "exact_sum": "1",
+      "operation": "left fold RN64(accumulator + next profit), initial 0",
+      "expected_trace": [
+        {
+          "hex": "0x1.0000000000000p+53",
+          "exact": {
+            "numerator": "9007199254740992",
+            "denominator": "1"
+          },
+          "exact_decimal": "9007199254740992"
+        },
+        {
+          "hex": "0x1.0000000000000p+53",
+          "exact": {
+            "numerator": "9007199254740992",
+            "denominator": "1"
+          },
+          "exact_decimal": "9007199254740992"
+        },
+        {
+          "hex": "0x0.0p+0",
+          "exact": {
+            "numerator": "0",
+            "denominator": "1"
+          },
+          "exact_decimal": "0"
+        }
+      ],
+      "expected_native_sum": {
+        "hex": "0x0.0p+0",
+        "exact": {
+          "numerator": "0",
+          "denominator": "1"
+        },
+        "exact_decimal": "0"
+      },
+      "forbid": "Sorting profits or replacing this operation graph with compensated/exact summation while claiming same policy."
+    },
+    {
+      "id": "close_order_retained",
+      "scope": "mathematical_primitive; serial RN64 fold only, engine accumulator still requires source proof",
+      "ordered_profit_integers": [
+        "9007199254740992",
+        "-9007199254740992",
+        "1"
+      ],
+      "exact_sum": "1",
+      "operation": "left fold RN64(accumulator + next profit), initial 0",
+      "expected_trace": [
+        {
+          "hex": "0x1.0000000000000p+53",
+          "exact": {
+            "numerator": "9007199254740992",
+            "denominator": "1"
+          },
+          "exact_decimal": "9007199254740992"
+        },
+        {
+          "hex": "0x0.0p+0",
+          "exact": {
+            "numerator": "0",
+            "denominator": "1"
+          },
+          "exact_decimal": "0"
+        },
+        {
+          "hex": "0x1.0000000000000p+0",
+          "exact": {
+            "numerator": "1",
+            "denominator": "1"
+          },
+          "exact_decimal": "1"
+        }
+      ],
+      "expected_native_sum": {
+        "hex": "0x1.0000000000000p+0",
+        "exact": {
+          "numerator": "1",
+          "denominator": "1"
+        },
+        "exact_decimal": "1"
+      },
+      "forbid": "Sorting profits or replacing this operation graph with compensated/exact summation while claiming same policy."
+    },
+    {
+      "id": "round_each_trade_before_accumulation",
+      "scope": "mathematical_primitive; engine-path support pending",
+      "unrounded_trade_binary64": [
+        {
+          "hex": "0x1.0000000000000p-9",
+          "exact": {
+            "numerator": "1",
+            "denominator": "512"
+          },
+          "exact_decimal": "0.001953125"
+        },
+        {
+          "hex": "0x1.0000000000000p-9",
+          "exact": {
+            "numerator": "1",
+            "denominator": "512"
+          },
+          "exact_decimal": "0.001953125"
+        }
+      ],
+      "operation": "Each trade quantized to 8 decimal places, converted RN64, then serial RN64 sum",
+      "expected_each_decimal": "0.00195312",
+      "expected_sum": {
+        "hex": "0x1.ffffaa19c4774p-9",
+        "exact": {
+          "numerator": "2251794049077725",
+          "denominator": "576460752303423488"
+        },
+        "exact_decimal": "0.00390624000000000005938805003324887366034090518951416015625"
+      },
+      "incorrect_round_after_sum_decimal": "0.00390625",
+      "correct_decimal_sum_of_rounded_profits": "0.00390624"
+    },
+    {
+      "id": "numpy_float64_normalized_at_capture",
+      "scope": "collector scalar normalization; mathematical encoding reference",
+      "observed_source_repr": "np.float64(1e-08)",
+      "source_scalar_type": "numpy.float64",
+      "required_capture_repr": "1e-08",
+      "required_capture_hex": "0x1.5798ee2308c3ap-27",
+      "expanded_decimal_spelling": "0.00000001",
+      "exact_binary_value": {
+        "numerator": "3022314549036573",
+        "denominator": "302231454903657293676544"
+      },
+      "expect": "Trusted collector normalizes the actual scalar using finite binary64 conversion, then repr and hex of that same float; preserve source type only as diagnostic metadata. No eval or wrapper-string interpretation."
+    },
+    {
+      "id": "numpy_wrapper_rejected_as_numeric_input",
+      "scope": "untrusted capture validation",
+      "capture_repr": "np.float64(1e-08)",
+      "capture_hex": "0x1.5798ee2308c3ap-27",
+      "expect": "REJECT_NONCANONICAL_NATIVE_SPELLING; a correct hex does not make the wrapper expression valid decimal syntax"
+    }
+  ],
+  "domain_cases": [
+    {
+      "id": "expand_fee_exponent_exactly",
+      "field": "modeled_fee",
+      "input": "1e-19",
+      "expanded": "0.0000000000000000001",
+      "expect": "NUMERIC_REPRESENTATION_IN_DOMAIN; event fee must still match operands"
+    },
+    {
+      "id": "fee_twentieth_place",
+      "field": "modeled_fee",
+      "input": "0.00000000000000000001",
+      "expect": "UNSUPPORTED_PRECISION; never round to zero"
+    },
+    {
+      "id": "quantity_ninth_place",
+      "field": "quantity",
+      "input": "1.000000001",
+      "expect": "UNSUPPORTED_PRECISION; never round to eight places"
+    },
+    {
+      "id": "fee_wrong_rate",
+      "field": "fee_rate",
+      "input": "0.002",
+      "expect": "UNSUPPORTED_ENGINE_MODEL; do not reuse fixed-0.001 bound"
+    },
+    {
+      "id": "fee_boundary",
+      "field": "modeled_fee",
+      "input": "1000000000000000000000",
+      "expect": "NUMERIC_MAGNITUDE_BOUNDARY_ONLY; no claim operands realize it"
+    },
+    {
+      "id": "fee_above_boundary",
+      "field": "modeled_fee",
+      "input": "1000000000000000000000.0000000000000000001",
+      "expect": "UNSUPPORTED_MAGNITUDE"
+    },
+    {
+      "id": "result_above_boundary",
+      "field": "result",
+      "input": "1000000000000000000000000000000.0000000000000000001",
+      "expect": "UNSUPPORTED_MAGNITUDE"
+    },
+    {
+      "id": "nonfinite_native",
+      "field": "native_float",
+      "inputs": [
+        "NaN",
+        "Infinity",
+        "-Infinity"
+      ],
+      "expect": "REJECT_CAPTURE"
+    },
+    {
+      "id": "negative_zero_native",
+      "field": "native_float",
+      "decimal_spelling": "-0.0",
+      "hex": "-0x0.0p+0",
+      "expect": "Explicit signed-zero policy required; do not claim repr/hex bitwise identity after silently erasing sign"
+    }
+  ],
+  "capture_challenges": [
+    {
+      "id": "duplicate_completed_order",
+      "base": "closed_gain",
+      "mutation": "Append an exact copy of completion_events[1], retaining its order_id and sequence",
+      "expect": "REJECT_CAPTURE; duplicated completion cannot be counted once silently"
+    },
+    {
+      "id": "omitted_completed_exit",
+      "base": "closed_gain",
+      "mutation": "Remove completion_events[1]; retain final_closed_order_ids and native closed-trade count=1",
+      "expect": "REJECT_CAPTURE; bijection fails"
+    },
+    {
+      "id": "reordered_completion_array",
+      "base": "closed_gain",
+      "mutation": "Swap completion_events[0] and [1]; retain original completion_sequence and timestamps",
+      "expect": "REJECT_CAPTURE; do not sort before checking capture order"
+    },
+    {
+      "id": "same_timestamp_fifo_order",
+      "base": "fifo_partial_checkpoint_then_closed",
+      "mutation": "Set all timestamps to 2026-02-01T00:05:00Z; retain sequences1,2,3,4",
+      "expect": "Decimal FIFO checkpoints unchanged; engine scope still unsupported"
+    },
+    {
+      "id": "changed_fill_vs_closed_order",
+      "base": "closed_gain",
+      "mutation": "Change captured SELL quantity from2 to1 while final order still reports2 and remaining0",
+      "expect": "REJECT_CAPTURE; do not rebuild a fill from trade average"
+    },
+    {
+      "id": "partial_exit",
+      "base": "closed_gain",
+      "mutation": "SELL quantity1, remaining1; preserve BUY quantity2",
+      "expect": "UNSUPPORTED_ENGINE_SCOPE; residual asset and partial fill visible"
+    },
+    {
+      "id": "base_currency_fee",
+      "base": "closed_gain",
+      "mutation": "Set nonzero fee_base=0.002 BTC on entry",
+      "expect": "UNSUPPORTED_ENGINE_SCOPE; no quote conversion guess"
+    },
+    {
+      "id": "forced_exit",
+      "base": "closed_gain",
+      "mutation": "Set SELL exit_tag=force_exit, retain pre-liquidation holding and final-candle open/time",
+      "expect": "FORCED_LIQUIDATION_UNSUPPORTED; retain modeled exit but never label natural exit"
+    },
+    {
+      "id": "interrupted_capture",
+      "base": "closed_gain",
+      "mutation": "Collector finalization absent or capture_truncated=true despite two present events",
+      "expect": "NOT_ASSESSABLE; no successful completeness state"
+    },
+    {
+      "id": "consistent_omission_without_independent_anchor",
+      "base": "closed_gain",
+      "mutation": "Remove an unobserved entire trade and all its corroborating fields consistently from a hypothetical larger capture",
+      "expect": "No guaranteed detection; source completeness/authenticity must remain unestablished even when supplied accounting balances"
+    },
+    {
+      "id": "cash_cost_is_not_sell_credit",
+      "base": "closed_gain",
+      "mutation": "Supply sell Order.cost=q*p*(1+fee_rate), but keep actual fill/rate operands",
+      "expect": "Decimal cash uses q*p*(1-fee_rate); Order.cost cannot become a native cash credit or fee receipt"
+    },
+    {
+      "id": "cancelled_worker_with_parseable_capture",
+      "base": "closed_gain",
+      "mutation": "Retain complete-looking events but record worker cancellation/timeout and nonfinalized capture",
+      "expect": "NOT_ASSESSABLE; preserved diagnostic numbers never become a completed accounting result"
+    }
+  ],
+  "status_cases": [
+    {
+      "id": "oracle_match_missing_native_metrics",
+      "base": "closed_gain",
+      "native_supplied": [
+        "cash",
+        "quantity",
+        "net_pnl"
+      ],
+      "native_missing": [
+        "cost_basis",
+        "external_flows",
+        "fees",
+        "nav",
+        "realized_pnl",
+        "unrealized_pnl"
+      ],
+      "oracle_observation": "MATCHED exact modeled ledger",
+      "expected": "All six missing native fields remain NOT_SUPPLIED; overall reconciliation NOT_ASSESSABLE; oracle match cannot fill them"
+    },
+    {
+      "id": "oracle_failure",
+      "base": "closed_gain",
+      "native_supplied": "all supported fields hypothetically available",
+      "oracle_observation": "nonzero exit, truncated output, wrong identity or timeout",
+      "expected": "Oracle unavailable/failed separately; never report MATCHED or completed oracle validation"
+    },
+    {
+      "id": "native_numeric_claim_without_policy_proof",
+      "base": "nineteen_place_fees",
+      "oracle_observation": "MATCHED exact modeled ledger",
+      "native_observation": "numerically close but unequal",
+      "expected": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE; neither replay match nor bounded match until that specific operation-level policy is independently accepted; no fitted epsilon"
+    },
+    {
+      "id": "native_outside_independently_approved_interval",
+      "condition": "Future interval has a proved directed operation graph and rational endpoints L,U",
+      "native_observation": "exact decoded float rational <L or >U",
+      "expected": "MISMATCH; never widen interval or borrow oracle agreement"
+    },
+    {
+      "id": "capture_binding_tampered",
+      "base": "closed_gain",
+      "mutation": "Change capture bytes while retaining independently supplied expected digest",
+      "expected": "REJECT_INTEGRITY before accounting"
+    },
+    {
+      "id": "strict_replay_acceptance_is_not_decimal_equality",
+      "condition": "Future independently accepted replay has fully pinned operation graph, source bindings, scalar normalization and runtime rounding semantics",
+      "native_observation": "every provided native metric has the exact expected binary64 representation",
+      "expected": "May report separate native replay agreement only; retain decimal-model differences, missing native metrics and oracle status; no exact decimal reconciliation claim"
+    }
+  ],
+  "retained_controls": [
+    {
+      "id": "retained_closed",
+      "capture_relative_path": "../freqtrade-accounting-probe/closed-capture.json",
+      "sha256": "a9a058f7ad5b81afed8c9c5625b506fed46abf58671125818966fe9d064a6c3b",
+      "basis": "previous actual 30-candle synthetic engine research probe; not production v2 acceptance",
+      "observed_native_cash": {
+        "encoding": "python-float",
+        "finite": true,
+        "hex": "0x1.dcd64e2000000p+29",
+        "repr": "999999940.0"
+      },
+      "expected_decimal": {
+        "cash": "999999940",
+        "net_pnl": "-60",
+        "fees": "60",
+        "quantity": "0"
+      },
+      "expected_overall": "NOT_ASSESSABLE: six native metrics missing; original oracle matched only exact model"
+    },
+    {
+      "id": "retained_smooth",
+      "capture_relative_path": "../freqtrade-accounting-probe/smooth-capture.json",
+      "sha256": "284632fb653d8d3d0d08b4c4a7fabb187cb2304936f0bd09e0b866c30bd36c61",
+      "basis": "previous actual 30-candle synthetic engine research probe; not production v2 acceptance",
+      "observed_native_cash": {
+        "encoding": "python-float",
+        "finite": true,
+        "hex": "0x1.dcd64e18d90c4p+29",
+        "repr": "999999939.1059804"
+      },
+      "expected_decimal": {
+        "cash": "999999939.10598038302514435",
+        "net_pnl": "-60.89401961697485565",
+        "fees": "59.99910485319064565",
+        "gross_realized_pnl": "-0.89491476378421"
+      },
+      "first_fee_operands": {
+        "quantity": "98.399578",
+        "price": "101.62645209",
+        "rate": "0.001",
+        "exact_fee": "9.99999999929321802"
+      },
+      "observed_native_cash_exact_binary": {
+        "hex": "0x1.dcd64e18d90c4p+29",
+        "exact": {
+          "numerator": "2097151872295985",
+          "denominator": "2097152"
+        },
+        "exact_decimal": "999999939.105980396270751953125"
+      },
+      "expected_exact_binary_minus_model": {
+        "numerator": "4238594433",
+        "denominator": "320000000000000000"
+      },
+      "expected_exact_binary_minus_model_decimal": "0.000000013245607603125",
+      "expected_display_decimal_minus_model": "0.00000001697485565",
+      "decimal_sum_of_exported_trade_profit_spellings": "-60.89401962",
+      "numeric_policy_status": "NOT_ASSESSABLE_PENDING_NATIVE_POLICY_ACCEPTANCE"
+    },
+    {
+      "id": "retained_forced",
+      "capture_relative_path": "../freqtrade-accounting-probe/forced-capture.json",
+      "sha256": "326d48220ebfdff2ffe8923105113837cc74d0330ffefbfd5df501ee66204ab3",
+      "basis": "previous actual 30-candle synthetic engine research probe; not production v2 acceptance",
+      "observed_native_cash": {
+        "encoding": "python-float",
+        "finite": true,
+        "hex": "0x1.dcd64f6000000p+29",
+        "repr": "999999980.0"
+      },
+      "expected_bridge_status": "FORCED_LIQUIDATION_UNSUPPORTED",
+      "observed_pre_liquidation_cash": "999990000",
+      "modeled_immediate_fee_cash": "999989990",
+      "forced_sale": {
+        "price": "100",
+        "timestamp": "2026-01-01T01:25:00Z",
+        "price_semantics": "final candle open, not close"
+      }
+    }
+  ],
+  "native_policy_candidates": [
+    "strict deterministic binary64 replay, conditional on verified operation order and pinned runtime semantics",
+    "directed interval policy only if separately proved and independently accepted"
+  ]
+}

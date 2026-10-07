@@ -1,0 +1,38 @@
+{
+  "schema": "n170.integration-license-inventory.v1",
+  "integration": "AuditZK",
+  "status": "pending",
+  "ownerReportedForthcomingGrant": true,
+  "writtenGrant": {
+    "documentPath": null,
+    "sha256": null,
+    "issuer": null,
+    "issuedAt": null
+  },
+  "coveredSource": {
+    "repository": null,
+    "revision": null,
+    "components": [],
+    "fileInventorySha256": null
+  },
+  "rights": {
+    "use": "pending",
+    "modification": "pending",
+    "sourceRedistribution": "pending",
+    "binaryRedistribution": "pending",
+    "downstreamModification": "pending",
+    "downstreamSelfHosting": "pending",
+    "downstreamRedistribution": "pending"
+  },
+  "requiredNotices": [],
+  "requiredNoticesStatus": "pending",
+  "applicableComponentLicense": null,
+  "applicableMitRevision": null,
+  "upstreamCodeIncluded": false,
+  "originalFilesLicense": "Apache-2.0",
+  "review": {
+    "reviewer": null,
+    "reviewedAt": null,
+    "decision": "Not evaluated: written grant and covered source are not supplied."
+  }
+}

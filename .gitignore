@@ -1,0 +1,21 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tgz
+
+# Local environment and editor/agent configuration
+.env
+.env.*
+.mcp.json
+CLAUDE.local.md
+.claude/
+.vscode/
+.idea/
+
+# Tool caches and reports
+.vite/
+coverage/
+
+# Local machine noise
+.DS_Store
+*.log

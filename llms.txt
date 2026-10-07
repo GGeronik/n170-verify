@@ -1,0 +1,32 @@
+# N170 Verify
+
+> Local preparation and independent review of supplied portfolio performance evidence. Arithmetic and signatures do not establish broker authenticity, personal identity, independent time, account completeness or investment skill.
+
+This file follows the voluntary llms.txt discovery convention. It is not an MCP protocol standard, authentication mechanism, authorization grant, or guarantee that an assistant will read or follow it.
+
+Never connect accounts, request secrets, place or cancel orders, transfer funds, alter settings, infer missing financial data, sign records or publish evidence through this handoff. The owner authorizes source access separately and reviews all imported observations before signing in the application. Tool names, field paths and pagination-completion statements are sender claims, not source attestations.
+
+## Source and command locations
+
+Verify a received source archive against its separately retained SHA-256 before
+extraction or edits; see the [release guide](docs/release-readiness.md). The complete
+source and combined release archives put `package.json`, `verify_toolkit/` and
+`toolkit-tests/` inside `app/`. Enter `app/` for app verifier, handoff, build,
+JavaScript test and Python toolkit commands. The ordinary editable build is
+`npm ci --ignore-scripts` followed by `npm run build`; edited files receive a new
+archive identity and need not match the original immutable receipt. The separate
+`n170-verify-toolkit.zip` places `verify_toolkit/` at its root; Python commands run
+there after that ZIP is independently verified and extracted. The optional
+execution engine remains separately installed.
+
+## Assistant handoff
+
+- [Handoff contract and local CLI](docs/agent-handoff.md): bounded supplied-data JSON, mandatory owner review, privacy-preserving CLI summary and explicit private CSV output.
+- [Copyable instructions for an already connected broker assistant](docs/agent-instructions.txt): use only actually available, authorized, nonmutating tools; stop with a blocked packet when evidence is incomplete.
+- [Import formats](docs/import-formats.md): supported source data, reconciliation and unsupported events.
+- [Financial methods](docs/methods.md): exact decimal/rational calculations and support limits.
+- [Signed record format](FORMAT.md): v4 records, v3 compatibility, corrections and retained-copy comparison.
+- [Private account reconciliation](docs/account-reconciliation-contract.md): retained supplied-source attempts, interval dependencies and unresolved coverage, without account-completeness authentication.
+- [Captured run-review contract](verify_toolkit/RUN_REVIEW_V1.md): byte checking and selected-attempt comparison; no execution or producer authentication.
+- [Security boundaries](SECURITY.md): source, identity, privacy, signing and storage limitations.
+

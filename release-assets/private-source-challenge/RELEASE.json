@@ -1,0 +1,37 @@
+{
+  "schema": "n170.private-source-challenge-public-release.v1",
+  "date": "2026-09-27",
+  "status": "prepared_and_locally_accepted_not_published",
+  "files": [
+    {
+      "path": "n170-private-source-challenge-v1.zip",
+      "bytes": 543799,
+      "sha256": "e7471919bdf7f5b42ab233d6c89c834a2a3f1952fd0aa268a5931a4b53b35f57"
+    },
+    {
+      "path": "verify_pack.py",
+      "bytes": 8733,
+      "sha256": "2eda69531c3c079f71e1bbfb9e6dc3a6683deddd3bdab7e3ca0b2bcf45e75d72"
+    },
+    {
+      "path": "accepted-offline-toolkit.zip",
+      "bytes": 765697,
+      "sha256": "24ad3cc8f88c3b01b076d99b33017f9b090259dffa18e0cb500130d87bf37863"
+    }
+  ],
+  "pack_manifest_sha256": "5abe3172731422206ac4418f8c0b8f056b2e8b93d85d6d3624c7747549da2c83",
+  "root_acceptance_sha256": "bebf0e1df27132787c5d2ea13f27d5b5a540fe31958b4e7972f55e0288312d07",
+  "fresh_execution": {
+    "attempts": 1,
+    "cases": 68,
+    "conditional_positive_cases": 31,
+    "raw_passes": 51,
+    "raw_flags": 17,
+    "expected_status_exit_matches": 68,
+    "exact_historical_case_output_files": 204,
+    "unresolved_cases": 0
+  },
+  "outside_human_review": false,
+  "personal_account_verified": false,
+  "published": false
+}

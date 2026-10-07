@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the calculator, track record or inspector doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic numbers only. Never paste real account data, broker exports, NAV histories or profile files that could identify you.
+        Security problems belong in a private report. See SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce with synthetic data
+      description: The bundled example or invented numbers that still show the problem.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: e.g. Firefox 142 on macOS
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Verify version or commit
+      placeholder: e.g. a commit SHA, or "hosted copy on 2026-09-13"
+  - type: checkboxes
+    id: data-check
+    attributes:
+      label: Data check
+      options:
+        - label: This report contains no real account data, balances or identifying profile files.
+          required: true

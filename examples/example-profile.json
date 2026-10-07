@@ -1,0 +1,102 @@
+{
+  "schema_version": "n170.verify.track-record.v3",
+  "profile_id": "71dc2b628045f792681bd1ee3431723112f24308cf4a303809dd8ad8d263a32f",
+  "display_name": "Example profile",
+  "public_key": "BBrkoIeqROGM5LTB-Y5r2n49-ScUJ9p9DefgrG11dbQ8FqYgLRsEINILS9Cpyp6TOXLA2wxZ_0iOEsh2Ih_us58",
+  "stamps": [
+    {
+      "payload": {
+        "schema_version": "n170.verify.performance-stamp.v3",
+        "calculation_version": "1.0.0",
+        "sequence": 1,
+        "profile_id": "71dc2b628045f792681bd1ee3431723112f24308cf4a303809dd8ad8d263a32f",
+        "display_name": "Example profile",
+        "previous_sha256": null,
+        "source_kind": "synthetic_demo",
+        "provider_authenticated": false,
+        "independent_timestamp": false,
+        "period": {
+          "start": "2025-01-02",
+          "end": "2025-01-07"
+        },
+        "periods_per_year": 252,
+        "relative_returns": [
+          {
+            "start": "2025-01-02",
+            "end": "2025-01-03",
+            "return_e8": 1000000
+          },
+          {
+            "start": "2025-01-03",
+            "end": "2025-01-06",
+            "return_e8": 1009901
+          },
+          {
+            "start": "2025-01-06",
+            "end": "2025-01-07",
+            "return_e8": -1000000
+          }
+        ],
+        "coverage": {
+          "nav_observations": 4,
+          "return_observations": 3,
+          "external_cash_flow_count": 1
+        },
+        "metrics": {
+          "total_return_twr_e8": 999800,
+          "annualized_volatility_e8": 18375843,
+          "max_drawdown_e8": -1000000
+        }
+      },
+      "sha256": "ef8581ab4870834ffede0a185ec56f6b00703e2b9f5db33389a7c2ce20cee4ef",
+      "signature": "r_ZmgSEJT4TiVpn8_rJkK-CEm1QknSIpUddph-jm7wdrXWV6IzO-720pJdB3lQKruWgwCADDKVIrlc9IJiYbSg"
+    },
+    {
+      "payload": {
+        "schema_version": "n170.verify.performance-stamp.v3",
+        "calculation_version": "1.0.0",
+        "sequence": 2,
+        "profile_id": "71dc2b628045f792681bd1ee3431723112f24308cf4a303809dd8ad8d263a32f",
+        "display_name": "Example profile",
+        "previous_sha256": "ef8581ab4870834ffede0a185ec56f6b00703e2b9f5db33389a7c2ce20cee4ef",
+        "source_kind": "self_reported",
+        "provider_authenticated": false,
+        "independent_timestamp": false,
+        "period": {
+          "start": "2025-01-07",
+          "end": "2025-01-10"
+        },
+        "periods_per_year": 252,
+        "relative_returns": [
+          {
+            "start": "2025-01-07",
+            "end": "2025-01-08",
+            "return_e8": 559244
+          },
+          {
+            "start": "2025-01-08",
+            "end": "2025-01-09",
+            "return_e8": 3003945
+          },
+          {
+            "start": "2025-01-09",
+            "end": "2025-01-10",
+            "return_e8": -3240193
+          }
+        ],
+        "coverage": {
+          "nav_observations": 4,
+          "return_observations": 3,
+          "external_cash_flow_count": 1
+        },
+        "metrics": {
+          "total_return_twr_e8": 223797,
+          "annualized_volatility_e8": 49948622,
+          "max_drawdown_e8": -3240193
+        }
+      },
+      "sha256": "aec5160f1d1a5d201daefb87d01e5cd52ddc012124e0cae8824b80421d5abaff",
+      "signature": "pWTWHSJQfPLBIGocNzqkR9LHJmjpwo3XpZfFDwDWqimzkTA1HVzqf14y_fPAUKqpJX6_6xTEASAFwvww3VIRLA"
+    }
+  ]
+}

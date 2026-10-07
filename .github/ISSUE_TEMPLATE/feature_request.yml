@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an improvement to the calculator, signed records or documentation.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        N170 Verify runs entirely in the browser and never asks for account credentials, so broker logins and uploads are out of scope. Use synthetic examples only.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered

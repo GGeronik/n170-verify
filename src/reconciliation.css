@@ -1,0 +1,16 @@
+.account-reconciliation { min-width: 0; }
+.account-reconciliation pre { font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.account-reconciliation td { white-space: normal; }
+.account-reconciliation td details { min-width: 0; }
+.account-reconciliation .hash { overflow-wrap: anywhere; }
+@media (max-width: 650px) {
+  .account-reconciliation .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .account-reconciliation table { min-width: 0; width: 100%; table-layout: fixed; }
+  .account-reconciliation thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .account-reconciliation tbody, .account-reconciliation tr, .account-reconciliation td { display: block; width: 100%; box-sizing: border-box; }
+  .account-reconciliation tr { border: 1px solid var(--line, #d4ded7); margin-block: 1rem; padding: .7rem; border-radius: .3rem; }
+  .account-reconciliation td { border: 0; padding: .45rem 0; overflow-wrap: anywhere; }
+  .account-reconciliation td::before { content: attr(data-label); display: block; font-weight: 600; margin-bottom: .2rem; color: var(--muted, #52675d); }
+  .account-reconciliation td ul { padding-left: 1rem; }
+  .account-reconciliation td pre { font-size: .75rem; }
+}

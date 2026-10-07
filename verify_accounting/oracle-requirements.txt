@@ -1,0 +1,7 @@
+# Optional separate oracle environment; never a dependency of the original checker.
+# Source archive hash is pinned; build tooling is not a hermetic toolchain.
+beancount @ https://github.com/beancount/beancount/archive/9747213802acb733ce53acc6e963f5961f47d6cd.tar.gz#sha256=e37dd47e6ae7540db448e8f82b4302f996ca01a71aa0d6e0befc5f05c58ea686
+click==8.5.0
+python-dateutil==2.9.0.post0
+regex==2026.9.10
+six==1.17.0
