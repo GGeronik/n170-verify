@@ -1,0 +1,36 @@
+{
+  "schema": "n170.verify.statistics-fixture.v1",
+  "id": "F09c",
+  "returns_e8": [
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    1000000,
+    4000000,
+    4000000,
+    4000000,
+    4000000
+  ],
+  "periods_per_year": 252,
+  "schedule_compatible": true,
+  "rf_per_interval": 0,
+  "construction": {
+    "method": "20-point series exactly at Pearson's inequality bound",
+    "seed": null,
+    "generator": "Author A private build_fixtures.py; recipe in notes",
+    "notes_file": "F09c.notes.md"
+  },
+  "design_targets": {}
+}

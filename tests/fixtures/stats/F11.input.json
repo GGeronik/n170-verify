@@ -1,0 +1,24 @@
+{
+  "schema": "n170.verify.statistics-phi-fixture.v1",
+  "id": "F11",
+  "construction": {
+    "method": "E12 standard-library erfc values",
+    "seed": null,
+    "generator": "stats_oracle.py phi/vectors",
+    "notes_file": "F11.notes.md"
+  },
+  "z_values": [
+    -8.2,
+    -5.7,
+    -3.0,
+    -2.0526,
+    -1.0,
+    0.0,
+    1.0,
+    1.7238,
+    2.0526,
+    3.0,
+    5.7,
+    8.2
+  ]
+}

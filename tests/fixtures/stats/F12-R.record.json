@@ -1,0 +1,126 @@
+{
+  "schema_version": "n170.verify.track-record.v4",
+  "profile_id": "afc357bc04a205b85d4bce0b5224b7849d6889367c941cfbcce036ebbd930657",
+  "display_name": "Synthetic statistics integration",
+  "public_key": "BO5Xow7wE0juqMUa3pNI7PkZHtRkzfYe-flxqFrr5CWcdqkgcrX0-kvMPyE97yJTVoOAlRbYeE7GQmyNIIexqgo",
+  "stamps": [
+    {
+      "payload": {
+        "schema_version": "n170.verify.performance-stamp.v4",
+        "calculation_version": "2.0.0",
+        "sequence": 1,
+        "profile_id": "afc357bc04a205b85d4bce0b5224b7849d6889367c941cfbcce036ebbd930657",
+        "display_name": "Synthetic statistics integration",
+        "previous_sha256": null,
+        "source_kind": "synthetic_demo",
+        "provider_authenticated": false,
+        "independent_timestamp": false,
+        "period": {
+          "start": "2024-01-31",
+          "end": "2025-03-31"
+        },
+        "periods_per_year": 12,
+        "relative_returns": [
+          {
+            "start": "2024-01-31",
+            "end": "2024-02-29",
+            "return_e8": 390270
+          },
+          {
+            "start": "2024-02-29",
+            "end": "2024-03-31",
+            "return_e8": -54436
+          },
+          {
+            "start": "2024-03-31",
+            "end": "2024-04-30",
+            "return_e8": 416789
+          },
+          {
+            "start": "2024-04-30",
+            "end": "2024-05-31",
+            "return_e8": 169247
+          },
+          {
+            "start": "2024-05-31",
+            "end": "2024-06-30",
+            "return_e8": -32935
+          },
+          {
+            "start": "2024-06-30",
+            "end": "2024-07-31",
+            "return_e8": 2018069
+          },
+          {
+            "start": "2024-07-31",
+            "end": "2024-08-31",
+            "return_e8": 1103663
+          },
+          {
+            "start": "2024-08-31",
+            "end": "2024-09-30",
+            "return_e8": 1772341
+          },
+          {
+            "start": "2024-09-30",
+            "end": "2024-10-31",
+            "return_e8": -280240
+          },
+          {
+            "start": "2024-10-31",
+            "end": "2024-11-30",
+            "return_e8": 240549
+          },
+          {
+            "start": "2024-11-30",
+            "end": "2024-12-31",
+            "return_e8": 2089009
+          },
+          {
+            "start": "2024-12-31",
+            "end": "2025-01-31",
+            "return_e8": -1596788
+          },
+          {
+            "start": "2025-01-31",
+            "end": "2025-02-28",
+            "return_e8": 62773
+          },
+          {
+            "start": "2025-02-28",
+            "end": "2025-03-31",
+            "return_e8": -1286230
+          }
+        ],
+        "coverage": {
+          "nav_observations": 15,
+          "return_observations": 14,
+          "external_cash_flow_count": 0
+        },
+        "metrics": {
+          "total_return_twr_e8": 5048481,
+          "annualized_volatility_e8": null,
+          "max_drawdown_e8": -2801503
+        },
+        "serialization_version": "1.0.0",
+        "event_type": "performance",
+        "correction": null,
+        "provenance": {
+          "kind": "manual",
+          "format": "manual-nav-flow",
+          "original_sha256": null,
+          "source_sha256": null,
+          "normalized_sha256": null,
+          "mapping": [],
+          "account_scope": "Synthetic fixture only",
+          "currency": "unspecified",
+          "completeness": "not_established",
+          "corrections": [],
+          "reviewed": false
+        }
+      },
+      "sha256": "0de319a21ca59ee2a2203d1435ec47d9541578da561b04e05b41d519244e29b3",
+      "signature": "YCXEhEx__IXbHGRYKGByRtLyFNG0_uR25FJwxPGvxjjA5Iu7rntTx8alLLWyntNVS4MONiBHYUyH433KGR2deA"
+    }
+  ]
+}
