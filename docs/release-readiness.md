@@ -161,6 +161,6 @@ required for the standard-library package-verification workflow.
 
 A future authorized pilot should measure whether owners reconcile supported
 inputs without losing failures, recipients explain the source/identity/time
-limits, and retained-copy comparisons reveal the supplied changes. Local agent
+limits, and retained-copy comparisons reveal the supplied changes. Local automated
 checks do not substitute for participants. Publication, deployment, account
 access and contacting participants are separate actions, not build steps.

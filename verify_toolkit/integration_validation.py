@@ -61,7 +61,7 @@ def validate(destination, *, acknowledge_local_code=False, image=DEFAULT_IMAGE):
         verification = verify_run(root / name)
         checks.append({"case": name + "_not_clean", "passed": verification["status"] == "NOT_ASSESSABLE"})
         runs.append({"path": name, "manifest_sha256": digest(read_file(root / name / "manifest.json"))})
-    result = {"schema": "n170.freqtrade-real-integration.v1", "scope": "original synthetic engineering controls; agent-run, not external human review",
+    result = {"schema": "n170.freqtrade-real-integration.v1", "scope": "original synthetic engineering controls; automated, not external human review",
               "real_engine_required": True, "checks": checks, "runs": runs,
               "passed": all(check["passed"] for check in checks)}
     (root / "validation-summary.json").write_bytes(json_bytes(result))

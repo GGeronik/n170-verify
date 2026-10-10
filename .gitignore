@@ -3,17 +3,14 @@ node_modules/
 dist/
 *.tgz
 
-# Local environment and editor/agent configuration
+# Local configuration: hidden directories other than .github, environment files and local notes
+.*/
+!.github/
 .env
 .env.*
-.mcp.json
-CLAUDE.local.md
-.claude/
-.vscode/
-.idea/
+*.local.md
 
 # Tool caches and reports
-.vite/
 coverage/
 
 # Local machine noise

@@ -59,8 +59,8 @@ def path_name(value):
     if (not path.parts or path.is_absolute() or str(path) != value or '..' in path.parts
             or any(ord(c) < 32 or ord(c) > 126 for c in value)
             or any(p in {'.git', 'node_modules', 'dist', 'private', 'secrets', '__pycache__'}
-                   or p.casefold() == '.claude'
                    or p == '.env' or p.startswith('.env.') for p in path.parts)
+            or any(p.startswith('.') and p != '.github' for p in path.parts[:-1])
             or path.suffix.lower() in {'.pem', '.key', '.p12', '.pfx', '.pyc'}):
         raise ValueError('unsafe public path: ' + value)
     return path.parts
@@ -127,18 +127,18 @@ def collect_source(root=ROOT):
     # Vite can consume these paths even when absent from a source ZIP. Fail
     # before running build code. Other unlisted docs/tests are never promoted.
     for entry in root.iterdir():
-        if entry.name == '.claude':
-            # Local developer metadata may coexist with the app. Inspect only
-            # this entry's type; never enumerate, read or package its contents.
-            if not stat.S_ISDIR(entry.lstat().st_mode):
-                raise ValueError('.claude must be a real directory')
-            continue
         if entry.name == 'public' or entry.name == '.env' or entry.name.startswith('.env.'):
             raise ValueError('unreviewed Vite public/environment input: ' + entry.name)
         roots = {name.split('/')[0] for name in names} | {'node_modules', 'dist', '.git', '.DS_Store'}
-        if entry.name not in roots:
-            raise ValueError('unlisted top-level build input: ' + entry.name)
-    for prefix in ('src', 'worker', '.openai', 'verify_toolkit', 'verify_accounting', 'release-assets'):
+        if entry.name in roots:
+            continue
+        if entry.name.startswith('.'):
+            # Local configuration directories may coexist with the app. Inspect only this entry's type; never enumerate, read or package its contents.
+            if not stat.S_ISDIR(entry.lstat().st_mode):
+                raise ValueError('hidden top-level input must be a real directory: ' + entry.name)
+            continue
+        raise ValueError('unlisted top-level build input: ' + entry.name)
+    for prefix in ('src', 'worker', 'verify_toolkit', 'verify_accounting', 'release-assets'):
         for directory, dirs, files in os.walk(root / prefix, followlinks=False):
             for name in dirs + files:
                 item = Path(directory) / name
