@@ -1,0 +1,36 @@
+{
+  "schema": "n170.verify.statistics-fixture.v1",
+  "id": "F09c-tuned",
+  "returns_e8": [
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    1041565,
+    4041565,
+    4041565,
+    4041565,
+    4041565
+  ],
+  "periods_per_year": 252,
+  "schedule_compatible": true,
+  "rf_per_interval": 0,
+  "construction": {
+    "method": "Integer common-shift search at Pearson's bound",
+    "seed": null,
+    "generator": "Author A private build_fixtures.py; recipe in notes",
+    "notes_file": "F09c-tuned.notes.md"
+  },
+  "design_targets": {}
+}
