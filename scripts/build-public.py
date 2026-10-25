@@ -106,8 +106,8 @@ def collect_source(root=ROOT):
     downloads = policy.get('downloads', {})
     destinations = [entry['path'] for entry in downloads.values()]
     unique_paths(list(policy['documents'].values()) + destinations)
-    if any(len(path_name(name)) != 2 or path_name(name)[0] not in {'challenge-kit', 'private-source-challenge'} for name in destinations):
-        raise ValueError('download destination must be an explicit challenge-kit or private-source-challenge file')
+    if any(len(path_name(name)) != 2 or path_name(name)[0] not in {'private-source-challenge'} for name in destinations):
+        raise ValueError('download destination must be an explicit private-source-challenge file')
     reserved = {'assets', 'index.html', 'third-party-licenses.txt', 'n170-verify-source.zip', 'n170-verify-source.zip.sha256', 'n170-verify-toolkit.zip', 'n170-verify-toolkit.zip.sha256', 'verify_release.py'}
     if any('/' in name or name.casefold() in reserved for name in policy['documents'].values()):
         raise ValueError('document destination collides with generated build output')
@@ -180,7 +180,7 @@ def source_archive(contents):
     payload['verify_release.py'] = contents['scripts/verify-release.py']
     payload['DEPENDENCIES.json'] = encoded(dependency_inventory(contents))
     payload['COMPONENTS.json'] = encoded({'app': {'source_sha256': identity},
-        'scope': 'Editable public app and original offline toolkit source. Optional upstream execution engine and accounting oracle are separately installed; neither implementation is bundled. The older challenge kit retains its own tested source identity.',
+        'scope': 'Editable public app and original offline toolkit source. Optional upstream execution engine and accounting oracle are separately installed; neither implementation is bundled.',
         'published': False, 'external_human_audit': False})
     manifest = {'schema': 'n170.release.archive.v1', 'source_freeze_sha256': identity,
                 'files': {name: {'bytes': len(raw), 'sha256': digest(raw)} for name, raw in sorted(payload.items())},

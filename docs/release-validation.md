@@ -1,6 +1,6 @@
 # Validation scope and reproduction
 
-This public guide describes checks to run; it is not a result report. Apart from the separately pinned synthetic challenge packs, historical
+This public guide describes checks to run; it is not a result report. Apart from the separately pinned synthetic challenge pack, historical
 internal logs, screenshots and handoffs are outside the public inventory. Keep
 results tied to the exact received source ZIP hash or the distinct hash of a
 modified build. Automated checks are not an external audit or an
@@ -64,7 +64,7 @@ six downloads together. The
 provide the verifier and runner commands, required runtimes and fixed identities.
 This workflow uses the included accepted checker without rebuilding the app,
 installing npm dependencies or running a financial engine. It is separate from
-the earlier 175-case kit and from tests of a newly rebuilt combined application.
+the earlier 175-case kit, which is not distributed here, and from tests of a newly rebuilt combined application.
 
 Keep the accepted challenge ZIP SHA-256
 `e7471919bdf7f5b42ab233d6c89c834a2a3f1952fd0aa268a5931a4b53b35f57`

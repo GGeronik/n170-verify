@@ -208,7 +208,7 @@ test("documentation charset preserves Unicode bytes and non-charset parameters i
     ["/guide.md", null, "text/markdown; charset=utf-8"],
     ["/notes.txt", null, "text/plain; charset=utf-8"],
     ["/NOTICE", null, "text/plain; charset=utf-8"],
-    ["/challenge-kit/README.md", 'text/markdown; variant="CommonMark;plain"; charset="ISO-8859-1"', 'text/markdown; variant="CommonMark;plain"; charset=utf-8'],
+    ["/private-source-challenge/README.md", 'text/markdown; variant="CommonMark;plain"; charset="ISO-8859-1"', 'text/markdown; variant="CommonMark;plain"; charset=utf-8'],
     ["/guide.md", "text/x-markdown; charset=windows-1252", "text/x-markdown; charset=utf-8"],
     ["/third-party-licenses.txt", "text/plain; charset=UTF-8", "text/plain; charset=utf-8"],
   ]) {
@@ -259,8 +259,8 @@ test("documentation charset reaches actual Vite preview before static serving wi
       ["LICENSE.txt", "text/plain; charset=utf-8"],
       ["agent-instructions.txt", "text/plain; charset=utf-8"],
       ["NOTICE", "text/plain; charset=utf-8"],
-      ["challenge-kit/README.md", "text/markdown; charset=utf-8"],
-      ["challenge-kit/SHA256SUMS", "text/plain; charset=utf-8"],
+      ["private-source-challenge/README.md", "text/markdown; charset=utf-8"],
+      ["private-source-challenge/SHA256SUMS", "text/plain; charset=utf-8"],
       ["n170-verify-toolkit.zip.sha256", "text/plain; charset=utf-8"],
     ]) {
       const expected = await readFile(new URL(`../dist/client/${name}`, import.meta.url));

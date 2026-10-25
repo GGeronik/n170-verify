@@ -10,7 +10,7 @@ This source candidate has not been published or deployed. Supported signed v3/v4
 
 The [captured-run viewer](docs/tool-evidence.md) checks portable package bytes and selected-attempt relationships under the [run-review contract](verify_toolkit/RUN_REVIEW_V1.md). Separate CSV observation reports remain supplied unsigned research evidence. [Private account reconciliation](docs/account-reconciliation-contract.md) retains source attempts, unresolved intervals and input dependencies under owner-stated scope; it does not prove complete accounts. Neither workflow changes signed v3/v4 records or authenticates a producer. The original [AuditZK interface](docs/auditzk-adapter.md) is disabled or explicitly synthetic mock-only; no upstream implementation or authentic TEE verification is included.
 
-The additive [accounting release guide](docs/accounting-release.md) describes v2 captured-run receipts, offline review and an optional separately installed accounting oracle. The browser keeps capture support, exact-decimal calculations, native compatibility and supplied oracle evidence separate. Only cash, quantity and accumulated net PnL have supplied native comparisons; the other six metrics remain `NOT_SUPPLIED`, so overall accounting remains `NOT_ASSESSABLE`. These receipts do not authenticate execution or establish financial realism. The Methods page offers a separate [68-case private-source challenge](release-assets/private-source-challenge/README.md) with its accepted checker and fixed evidence, followed by the frozen 175-case kit for an earlier baseline. The older kit still excludes continuity and accounting.
+The additive [accounting release guide](docs/accounting-release.md) describes v2 captured-run receipts, offline review and an optional separately installed accounting oracle. The browser keeps capture support, exact-decimal calculations, native compatibility and supplied oracle evidence separate. Only cash, quantity and accumulated net PnL have supplied native comparisons; the other six metrics remain `NOT_SUPPLIED`, so overall accounting remains `NOT_ASSESSABLE`. These receipts do not authenticate execution or establish financial realism. The Methods page offers a separate [68-case private-source challenge](release-assets/private-source-challenge/README.md) with its accepted checker and fixed evidence. An earlier 175-case kit for an older baseline is retained outside this distribution with its documented `INCOMPLETE` / exit `2` result; it excludes continuity and accounting.
 
 ## Use it
 
@@ -172,7 +172,7 @@ npm run preview -- --host 127.0.0.1 --port 4174 --strictPort
 
 `npm ci` installs the locked dependencies. The included `.npmrc` disables install scripts and checks the Node engine requirement. A first installation needs registry access unless a complete matching npm cache is already available; dependencies are not included in the source ZIP. The preview serves the built app and its configured security headers. Use `npm run dev` separately for development; development mode does not have the production security boundary. `npm run check` additionally runs registry checks and therefore needs network access.
 
-The conventional `npm run build` invokes the explicit public build. It produces the browser app in `dist/client`, the host worker in `dist/server`, selected public documentation and two downloads: `dist/client/n170-verify-source.zip` contains complete editable app and toolkit source under `app/`; `dist/client/n170-verify-toolkit.zip` contains `verify_toolkit/`, `verify_accounting/` and their two test directories at the archive root, plus the four private-source CLI modules in `scripts/`, its guide and result schema in `docs/`, and root `LICENSE`/`NOTICE`. Each ZIP has a detached `.sha256` file and includes an independent archive verifier and metadata. The build also serves `verify_release.py`, the six unchanged private-source challenge files and the four unchanged earlier challenge-kit delivery files described below. Each challenge pack retains its own identity; these delivery changes create a new app/source archive identity without changing either pack. [The exact public source inventory](scripts/public-source-inventory.json) determines which files may enter these ZIPs. Apart from the explicitly pinned synthetic challenge packs, historical internal reports, screenshots, private handoffs and the obsolete prototype are outside the public inventory. No dependency upgrade or account access is part of building.
+The conventional `npm run build` invokes the explicit public build. It produces the browser app in `dist/client`, the host worker in `dist/server`, selected public documentation and two downloads: `dist/client/n170-verify-source.zip` contains complete editable app and toolkit source under `app/`; `dist/client/n170-verify-toolkit.zip` contains `verify_toolkit/`, `verify_accounting/` and their two test directories at the archive root, plus the four private-source CLI modules in `scripts/`, its guide and result schema in `docs/`, and root `LICENSE`/`NOTICE`. Each ZIP has a detached `.sha256` file and includes an independent archive verifier and metadata. The build also serves `verify_release.py` and the six unchanged private-source challenge files described below. The challenge pack retains its own identity; delivering it creates a new app/source archive identity without changing the pack. [The exact public source inventory](scripts/public-source-inventory.json) determines which files may enter these ZIPs. Apart from the explicitly pinned synthetic challenge pack, historical internal reports, screenshots, private handoffs and the obsolete prototype are outside the public inventory. No dependency upgrade or account access is part of building.
 
 ### Offline toolkit review
 
@@ -247,26 +247,16 @@ exits 1 because the flags remain. Keep unsuccessful runs and read each result.
 This finite synthetic challenge does not establish source authenticity, complete
 accounts, investment performance, outside human review or outside-user
 reproduction. It retains its own accepted checker, separate from the current
-rebuilt toolkit and the older kit below.
+rebuilt toolkit.
 
-### Frozen public challenge kit
+### Earlier challenge kit
 
-Choose **Methods → Run the frozen challenge kit** for the four delivery files:
-[README](release-assets/challenge-kit/README.md),
-[checksums](release-assets/challenge-kit/SHA256SUMS),
-[ZIP](release-assets/challenge-kit/public-challenge-kit.zip) and
-[independent archive verifier](release-assets/challenge-kit/verify_archive.py).
-They preserve the earlier wave2 compatibility-v4 tested source with SHA-256
-`efa705edb9782568aba7561cea448f4e824f1a58cb745930471fb6cee39fe3e5`
-and challenge ZIP SHA-256
-`5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22`.
-All 175 original expected cases remain in the kit. Its documented no-scored-failure
-result is `INCOMPLETE` / exit `2`; the kit's frozen report leaves separate engine
-and public-build challenges unrun. It excludes continuity and accounting and is not validation of
-this combined source. Eight recorded engine executions of four synthetic
-controls, the five separate engine challenge cases, and the 77 wrapper self-tests
-are distinct counts, not an aggregate accuracy score. Follow the kit README and
-retain each run's actual results, including failures.
+An earlier 175-case challenge kit preserved the wave2 compatibility-v4 tested
+source. Its documented no-scored-failure result is `INCOMPLETE` / exit `2`,
+because its frozen report leaves separate engine and public-build challenges
+unrun. It excludes continuity and accounting and is not validation of this
+source. The kit is not part of this distribution. Its four delivery files keep
+their original identities in private records.
 
 ### Maintainer changes are new source
 

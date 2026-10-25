@@ -18,18 +18,12 @@ ${body}
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 }
-test("older challenge downloads retain all four accepted receipts and their original source baseline", () => check(String.raw`
-pins = {'README.md':'ed89f81f7562b45b1d03a83d7151f57c2b938d3d3d7520a616a6df2fd69694b0',
-'SHA256SUMS':'e41b5e2fdac20ea18c6bf6eb1969cf0822e2439e463ca9bf1165f2071e190c4e',
-'public-challenge-kit.zip':'5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22',
-'verify_archive.py':'0fb1cd2bd5da6ec6b8f809121ab76219ac36560a2d7cfca056c03eaab5c6fda1'}
-assert {name for name in policy['downloads'] if name.startswith('release-assets/challenge-kit/')} == {'release-assets/challenge-kit/'+name for name in pins}
-for name, expected in pins.items():
- raw = (app/'dist/client/challenge-kit'/name).read_bytes()
- assert hashlib.sha256(raw).hexdigest() == expected, name
- assert raw == (app/'release-assets/challenge-kit'/name).read_bytes(), name
-with zipfile.ZipFile(app/'dist/client/challenge-kit/public-challenge-kit.zip') as kit:
- assert hashlib.sha256(kit.read('payload/accepted-source.zip')).hexdigest() == 'efa705edb9782568aba7561cea448f4e824f1a58cb745930471fb6cee39fe3e5'
+test("the earlier challenge kit is not distributed", () => check(String.raw`
+assert not any(name.startswith('release-assets/challenge-kit/') for name in policy['files'])
+assert not any(name.startswith('release-assets/challenge-kit/') for name in policy['downloads'])
+assert not (app/'dist/client/challenge-kit').exists()
+with zipfile.ZipFile(app/'dist/client/n170-verify-source.zip') as archive:
+ assert not any(name.startswith('app/release-assets/challenge-kit/') for name in archive.namelist())
 `));
 test("public build refuses a changed pinned download, path collision, or extra active release asset", () => check(String.raw`
 original, contents = build.collect_source(app)
@@ -37,16 +31,16 @@ with tempfile.TemporaryDirectory() as directory:
  root = Path(directory)
  for name, raw in contents.items():
   path = root/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
- target = root/'release-assets/challenge-kit/README.md'; old = target.read_bytes()
+ target = root/'release-assets/private-source-challenge/README.md'; old = target.read_bytes()
  def refuses():
   try: build.collect_source(root)
   except ValueError: return
   raise AssertionError('unsafe download change accepted')
  target.write_bytes(old+b'changed'); refuses(); target.write_bytes(old)
- extra=root/'release-assets/challenge-kit/unlisted.txt'; extra.write_text('synthetic'); refuses(); extra.unlink()
- changed=json.loads(json.dumps(original)); changed['downloads']['release-assets/challenge-kit/README.md']['path']='assets/injected.js'
+ extra=root/'release-assets/private-source-challenge/unlisted.txt'; extra.write_text('synthetic'); refuses(); extra.unlink()
+ changed=json.loads(json.dumps(original)); changed['downloads']['release-assets/private-source-challenge/README.md']['path']='assets/injected.js'
  (root/build.INVENTORY).write_text(json.dumps(changed)); refuses()
- changed['downloads']['release-assets/challenge-kit/README.md']['path']='challenge-kit/SHA256SUMS'
+ changed['downloads']['release-assets/private-source-challenge/README.md']['path']='private-source-challenge/SHA256SUMS'
  (root/build.INVENTORY).write_text(json.dumps(changed)); refuses()
  (root/build.INVENTORY).write_text(json.dumps(original))
  hidden=root/'.local-config'; hidden.mkdir(); (hidden/'notes.txt').write_text('synthetic')
