@@ -102,30 +102,9 @@ starts that process. `SUPPLIED_MATCHED` records agreement in supplied oracle
 evidence, not witnessed or authenticated execution, and does not fill the six
 missing native metrics.
 
-## Keep the frozen challenge baseline separate
+## Earlier challenge baseline
 
-The Methods page offers four unchanged public delivery files:
-[README](../release-assets/challenge-kit/README.md),
-[SHA256SUMS](../release-assets/challenge-kit/SHA256SUMS),
-[public-challenge-kit.zip](../release-assets/challenge-kit/public-challenge-kit.zip)
-and [verify_archive.py](../release-assets/challenge-kit/verify_archive.py).
-Follow that README with Python 3.11+ and Node 22.12+, keeping output directories
-new. Its verifier uses `--expected-sha256`, distinct from the combined toolkit
-archive verifier's `--sha256` option.
-
-The kit preserves the earlier wave2 compatibility-v4 tested source with SHA-256
-`efa705edb9782568aba7561cea448f4e824f1a58cb745930471fb6cee39fe3e5`.
-The challenge ZIP SHA-256 is
-`5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22`.
-It excludes continuity and accounting. Do not substitute this combined app as the
-kit's fixed tested source or treat the kit as validation of these additions.
-
-The 175 original expected cases keep their separate pass, partial, unsupported
-and unrun outcomes. The documented no-scored-failure result is `INCOMPLETE`, exit
-`2`; the kit's frozen report leaves separate engine and public-build challenges unrun. Read the actual
-report and retain failures. The eight recorded engine executions concern four
-synthetic controls, not the five distinct engine challenge cases. The 77 wrapper
-self-tests and six calculation probes have their own denominators and are not
-additional members of the 175 cases. None is an aggregate accuracy percentage.
-The kit's frozen report also leaves the optional Go recipe unrun. Its public synthetic receipts are
-distinct from private acceptance logs and user financial data.
+An earlier 175-case challenge kit for the wave2 compatibility-v4 baseline is
+retained outside this distribution with its original identity. Its documented
+result is `INCOMPLETE`, exit `2`; it excludes continuity and accounting, and it
+is not validation of this toolkit or of the accounting additions.

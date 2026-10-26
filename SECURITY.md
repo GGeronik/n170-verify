@@ -84,9 +84,7 @@ contain source code, settings, data, paths and logs; deliberate sharing requires
 review of those bytes. A reading summary omits those artifacts and cannot stand
 in for them. The public source/toolkit archives contain the explicitly reviewed
 source inventory, not private acceptance logs or user financial evidence. The
-separate frozen challenge kit contains its selected public synthetic receipts
-and older tested source; it excludes continuity and accounting and is not a
-security assessment of this combined source.
+separately pinned 68-case private-source challenge pack contains synthetic fixtures and its accepted checker; it is not a security assessment of this combined source.
 
 ## Configured controls versus executed evidence
 

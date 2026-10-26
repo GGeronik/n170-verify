@@ -48,10 +48,6 @@
     "llms.txt",
     "package-lock.json",
     "package.json",
-    "release-assets/challenge-kit/README.md",
-    "release-assets/challenge-kit/SHA256SUMS",
-    "release-assets/challenge-kit/public-challenge-kit.zip",
-    "release-assets/challenge-kit/verify_archive.py",
     "release-assets/private-source-challenge/README.md",
     "release-assets/private-source-challenge/RELEASE.json",
     "release-assets/private-source-challenge/SHA256SUMS",
@@ -276,28 +272,8 @@
       "version": "0.27.0"
     }
   ],
-  "scope": "Exact public app, original offline toolkit and accounting source allowlist. Four separately pinned older wave2 challenge-kit deliverables and six separately pinned private-source challenge deliverables retain their original bytes and distinct accepted identities. Other historical private evidence is not copied; modified current source produces new archive identities.",
+  "scope": "Exact public app, original offline toolkit and accounting source allowlist. Six separately pinned private-source challenge deliverables retain their original bytes and distinct accepted identities. Other historical private evidence is not copied; modified current source produces new archive identities.",
   "downloads": {
-    "release-assets/challenge-kit/README.md": {
-      "path": "challenge-kit/README.md",
-      "bytes": 1883,
-      "sha256": "ed89f81f7562b45b1d03a83d7151f57c2b938d3d3d7520a616a6df2fd69694b0"
-    },
-    "release-assets/challenge-kit/SHA256SUMS": {
-      "path": "challenge-kit/SHA256SUMS",
-      "bytes": 175,
-      "sha256": "e41b5e2fdac20ea18c6bf6eb1969cf0822e2439e463ca9bf1165f2071e190c4e"
-    },
-    "release-assets/challenge-kit/public-challenge-kit.zip": {
-      "path": "challenge-kit/public-challenge-kit.zip",
-      "bytes": 4979175,
-      "sha256": "5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22"
-    },
-    "release-assets/challenge-kit/verify_archive.py": {
-      "path": "challenge-kit/verify_archive.py",
-      "bytes": 19983,
-      "sha256": "0fb1cd2bd5da6ec6b8f809121ab76219ac36560a2d7cfca056c03eaab5c6fda1"
-    },
     "release-assets/private-source-challenge/README.md": {
       "path": "private-source-challenge/README.md",
       "bytes": 3170,

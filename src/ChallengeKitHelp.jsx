@@ -29,25 +29,9 @@ export default function ChallengeKitHelp() {
       <p>This pack retains its own accepted checker and evidence identities. It is separate from the earlier 175-case kit below and does not certify every part of the combined application.</p>
     </details>
   </section>
-  <section className="paper recipient-help" aria-labelledby="challenge-kit-heading">
-    <h2 id="challenge-kit-heading">Run the frozen challenge kit</h2>
-    <p>Download a portable set of checks for the earlier wave2 compatibility-v4 app and toolkit. It preserves all 175 original expected cases and its fixed tested source. <strong>It excludes continuity and accounting</strong> and does not validate the combined source in this preview.</p>
-    <p className="actions">
-      <a className="button secondary" href="/challenge-kit/public-challenge-kit.zip" download>Download challenge kit</a>
-      <a href="/challenge-kit/README.md" download>Download kit instructions</a>
-      <a href="/challenge-kit/SHA256SUMS" download>Download kit checksums</a>
-      <a href="/challenge-kit/verify_archive.py" download>Download kit verifier</a>
-    </p>
-    <p>Retain the expected ZIP digest through a trusted channel and obtain or review the verifier through a trusted source. Files downloaded together cannot authenticate their own publisher. Use Python 3.11+ and Node 22.12+; the documented workflow does not fetch dependencies or run an engine.</p>
-    <details>
-      <summary>Verify the download and run the documented checks</summary>
-      <p>Start in the directory containing the four downloaded files. Each output directory must be new. These commands use the kit’s frozen source and separately pinned synthetic receipt inputs:</p>
-      <pre><code>{'python3 -B verify_archive.py public-challenge-kit.zip \\\n  --expected-sha256 5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22 \\\n  --extract challenge-kit\ncd challenge-kit\npython3 -B prepare_source.py --output ../accepted-source\npython3 -B run_challenges.py --source ../accepted-source \\\n  --receipts receipts \\\n  --receipt-freeze-sha256 f510104c165d61705472197ad5b21a765d180071410b4392a1ca430b81707ec7 \\\n  --output ../challenge-results'}</code></pre>
-      <p>Read <code>../challenge-results/report.json</code> from that working directory and retain the actual outcome, including any failed run. The documented no-scored-failure outcome is <code>INCOMPLETE</code>, exit <code>2</code>; the kit’s frozen report leaves separate engine and public-build challenges unrun. Unsupported and partial results stay separate.</p>
-      <p>Fixed tested-source SHA-256:</p>
-      <code className="hash">efa705edb9782568aba7561cea448f4e824f1a58cb745930471fb6cee39fe3e5</code>
-    </details>
-    <p>The eight recorded engine executions cover four synthetic controls; they are not the five separate engine challenge cases. The 77 wrapper self-tests and six calculation probes also have separate counts. The 175-case total is not an accuracy percentage or an external audit.</p>
+  <section className="paper recipient-help" aria-labelledby="earlier-kit-heading">
+    <h2 id="earlier-kit-heading">Earlier challenge kit</h2>
+    <p>An earlier 175-case kit tested the wave2 compatibility-v4 app and toolkit. Its documented no-scored-failure result is <code>INCOMPLETE</code>, exit <code>2</code>, because its frozen report leaves separate engine and public-build challenges unrun. It excludes continuity and accounting and is not validation of the current source. The kit is not served here; it is retained with its original identity outside this distribution.</p>
     <p>For the current combined toolkit and v2 accounting receipt workflow, read the <a href="/accounting-release.md">accounting release guide</a>. Keep package integrity, supported calculations and evidence limits separate.</p>
   </section>
   </>;
