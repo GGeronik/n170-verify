@@ -28,7 +28,7 @@ function compareNumber(actual, expected, field, expectedResult) {
   if (field === 'mintrl' || INPUT_FIELDS.includes(field)) {
     assert.equal(actual, expected, `${field}: exact`);
   } else if (field === 'psr0' || field === 'phi') {
-    const z = field === 'phi' ? expectedResult.z : expectedResult.z;
+    const z = expectedResult.z;
     const tolerance = Math.abs(z) <= 8 ? 1e-15 : 1e-12 * Math.abs(expected);
     assert(Math.abs(actual - expected) <= tolerance, `${field}: ${actual} versus ${expected}, tolerance ${tolerance}`);
   } else if (expected === 0) {
@@ -212,7 +212,11 @@ let renderPanel;
 async function statisticsMarkup(props) {
   if (!renderPanel) {
     const [{ build }, { createElement }, { renderToStaticMarkup }] = await Promise.all([import('esbuild'), import('react'), import('react-dom/server')]);
-    const bundle = await build({ entryPoints: [path.join(ROOT, 'src/StatisticsPanel.jsx')], bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', write: false, logLevel: 'silent' });
+    const bundle = await build({ entryPoints: [path.join(ROOT, 'src/StatisticsPanel.jsx')], bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', write: false, logLevel: 'silent',
+      // Keep React hooks on the same instance as the server renderer. The data
+      // module needs file URLs because it has no package-resolution directory.
+      plugins: [{ name: 'shared-react', setup(builder) { builder.onResolve({ filter: /^react(?:\/|$)/ }, args => ({ path: import.meta.resolve(args.path), external: true })); } }],
+    });
     const { default: StatisticsPanel } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
     renderPanel = value => renderToStaticMarkup(createElement(StatisticsPanel, value));
   }
