@@ -36,8 +36,7 @@ establishes unknown attempt/account completeness. Original toolkit source and
 tests ship with the app inside `app/`, and a separate toolkit ZIP supports local
 CLI use without the browser build or an execution engine.
 
-AuditZK is a collaboration candidate. Written special-license terms, covered
-revision and downstream permissions are pending. No upstream implementation is
+AuditZK is a collaboration candidate. No upstream implementation is
 part of this cut. The included original disabled/mock interface does not constitute
 real integration or confidential-computing attestation.
 

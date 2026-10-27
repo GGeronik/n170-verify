@@ -135,8 +135,8 @@ component license. All grant rights remain `pending`. An exact applicable MIT
 revision can be evaluated if identified; none is asserted here. No upstream
 implementation code was copied, so no upstream code is included by this adapter.
 The original N170 files use the app's Apache-2.0 license. The inventory does not
-relicense any future upstream component or treat an owner-reported forthcoming
-grant as a grant already received.
+relicense any future upstream component or claim any unrecorded upstream
+permission.
 
 Public primary documentation read on 18 September 2026:
 
@@ -158,5 +158,5 @@ Public primary documentation read on 18 September 2026:
   task. No fresh source/license inspection or permission conclusion is claimed.
 
 The mock interface is original and intentionally narrower than the referenced
-product claims. Receipt of the grant is not required to use the separate local
+product claims. Upstream integration is not required to use the separate local
 performance and tool-observation workflows.

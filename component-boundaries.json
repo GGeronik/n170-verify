@@ -29,9 +29,9 @@
     "notes": "Original adapter/runner interoperability does not relicense the upstream engine. No broker access or live trading is part of this release."
   },
   "auditzk": {
-    "status": "grant_pending",
+    "status": "not_integrated",
     "upstream_code_bundled": false,
-    "notes": "Owner reports a forthcoming special grant. Written terms, covered revision, redistribution and downstream permissions are unrecorded. This candidate includes an original disabled/mock interface, not TEE attestation or real AuditZK integration. No upstream AuditZK code is included."
+    "notes": "This source includes an original disabled/mock interface under Apache-2.0, not TEE attestation or real AuditZK integration. No upstream AuditZK code is included."
   },
   "data": {
     "included": "Original synthetic examples and the separately pinned 68-case private-source challenge pack with its accepted checker and synthetic fixtures. Current accounting and continuity evidence packages are not bundled.",

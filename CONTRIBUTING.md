@@ -74,5 +74,4 @@ binaries. See [README.md](README.md) and
 
 Original N170 code is licensed under [Apache-2.0](LICENSE), with [NOTICE](NOTICE).
 Preserve dependency notices and component license boundaries. AuditZK's original
-mock interface does not grant rights to upstream implementation code; written
-special-license terms and downstream rights remain pending.
+mock interface does not include or grant rights to upstream implementation code.

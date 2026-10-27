@@ -82,7 +82,9 @@ function checkPublicMarkers(files) {
 function checkAuditBoundary(files) {
   const inventory = JSON.parse(files.get("auditzk-license-inventory.json"));
   const boundaries = JSON.parse(files.get("component-boundaries.json"));
-  assert.equal(inventory.status, "pending");
+  assert.equal(inventory.status, "no_upstream_code_included");
+  assert.equal(inventory.ownerReportedForthcomingGrant, false);
+  assert.equal(inventory.review.decision, "No upstream code is included; only the original Apache-2.0 mock interface is present.");
   assert.equal(inventory.upstreamCodeIncluded, false);
   assert.equal(inventory.requiredNoticesStatus, "pending");
   assert.equal(inventory.applicableComponentLicense, null);
@@ -94,7 +96,7 @@ function checkAuditBoundary(files) {
     "use", "modification", "sourceRedistribution", "binaryRedistribution",
     "downstreamModification", "downstreamSelfHosting", "downstreamRedistribution",
   ].map(name => [name, "pending"])));
-  assert.equal(boundaries.auditzk.status, "grant_pending");
+  assert.equal(boundaries.auditzk.status, "not_integrated");
   assert.equal(boundaries.auditzk.upstream_code_bundled, false);
   assert.equal(boundaries.freqtrade.engine_bundled, false);
   assert.equal(boundaries.release.published, false);

@@ -169,7 +169,8 @@ test("mock execution needs no network, storage, credentials or account/report im
 
 test("license inventory has no implied grant or claimed upstream code inclusion", async () => {
   const inventory = JSON.parse(await readFile(new URL("../docs/auditzk-license-inventory.json", import.meta.url), "utf8"));
-  assert.equal(inventory.status, "pending");
+  assert.equal(inventory.status, "no_upstream_code_included");
+  assert.equal(inventory.ownerReportedForthcomingGrant, false);
   assert.equal(inventory.writtenGrant.documentPath, null);
   assert.equal(inventory.coveredSource.repository, null);
   assert.equal(inventory.coveredSource.revision, null);
