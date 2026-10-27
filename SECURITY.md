@@ -1,6 +1,6 @@
 # Security policy and trust boundaries
 
-Updated 18 September 2026 for the standalone N170 Verify local candidate with additive continuity support under acceptance review. This policy describes implementation and intended reporting scope; it does not certify a deployment or imply that remote security controls have executed.
+Updated 27 October 2026 for N170 Verify with additive continuity support under acceptance review. This policy describes implementation and intended reporting scope; it does not certify a deployment or imply that remote security controls have executed.
 
 ## Supported code and evidence
 
@@ -8,7 +8,7 @@ Maintenance targets the current application. No older software release has a sep
 
 ## Reporting
 
-Use the actual repository's private vulnerability-reporting route only after confirming that it is available and enabled. This local archive does not establish a reachable repository or reporting endpoint. If no verified route is available, request a private contact channel from the maintainer without posting vulnerability details. Do not publish sensitive findings in an issue or PR.
+Use the repository's private vulnerability-reporting form (https://github.com/GGeronik/n170-verify/security/advisories/new) only after confirming that it is available and enabled; this file cannot establish that it is reachable. If no verified route is available, request a private contact channel from the maintainer without posting vulnerability details. Do not publish sensitive findings in an issue or PR.
 
 A useful report identifies the affected source revision/build, browser and operating system, observed versus expected behavior, required attacker capabilities, and minimal synthetic reproduction steps. Do not include financial account credentials, real account files or private keys. Response and resolution times are best effort; no response SLA is promised.
 

@@ -181,10 +181,10 @@ def source_archive(contents):
     payload['DEPENDENCIES.json'] = encoded(dependency_inventory(contents))
     payload['COMPONENTS.json'] = encoded({'app': {'source_sha256': identity},
         'scope': 'Editable public app and original offline toolkit source. Optional upstream execution engine and accounting oracle are separately installed; neither implementation is bundled.',
-        'published': False, 'external_human_audit': False})
+        'publication_asserted': False, 'external_human_audit': False})
     manifest = {'schema': 'n170.release.archive.v1', 'source_freeze_sha256': identity,
                 'files': {name: {'bytes': len(raw), 'sha256': digest(raw)} for name, raw in sorted(payload.items())},
-                'trust': 'Unsigned byte commitment, not producer authentication or an external audit.', 'published': False}
+                'trust': 'Unsigned byte commitment, not producer authentication or an external audit.', 'publication_asserted': False}
     payload['MANIFEST.json'] = encoded(manifest)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
@@ -201,7 +201,7 @@ def toolkit_archive(contents):
                if name.startswith(('verify_toolkit/', 'toolkit-tests/', 'verify_accounting/', 'accounting-tests/'))}
     payload.update({name: contents[name] for name in TOOLKIT_SUPPLEMENTAL_FILES})
     payload['verify_release.py'] = contents['scripts/verify-release.py']
-    payload['COMPONENTS.json'] = encoded({'scope': 'Original offline toolkit and accounting source with both Python test suites, plus the standalone Node private-source reconciliation CLI, its complete local module closure, guide, result schema and notices. Upstream engine and accounting oracle are separately installed.', 'published': False})
+    payload['COMPONENTS.json'] = encoded({'scope': 'Original offline toolkit and accounting source with both Python test suites, plus the standalone Node private-source reconciliation CLI, its complete local module closure, guide, result schema and notices. Upstream engine and accounting oracle are separately installed.', 'publication_asserted': False})
     payload['DEPENDENCIES.json'] = encoded({'schema': 'n170.release.dependencies.v1', 'packages': [],
         'node': {'status': 'separately_installed',
                  'engines': strict_json(contents['package.json'])['engines']['node'],
@@ -211,7 +211,7 @@ def toolkit_archive(contents):
     identity = digest(encoded({name: digest(raw) for name, raw in sorted(payload.items())}))
     manifest = {'schema': 'n170.release.archive.v1', 'source_freeze_sha256': identity,
                 'files': {name: {'bytes': len(raw), 'sha256': digest(raw)} for name, raw in sorted(payload.items())},
-                'trust': 'Unsigned byte commitment, not producer authentication or external audit.', 'published': False}
+                'trust': 'Unsigned byte commitment, not producer authentication or external audit.', 'publication_asserted': False}
     payload['MANIFEST.json'] = encoded(manifest)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
@@ -374,7 +374,7 @@ def main():
         toolkit, _ = toolkit_archive(contents)
         (out / 'n170-verify-toolkit.zip').write_bytes(toolkit)
         (out / 'n170-verify-toolkit.zip.sha256').write_text(digest(toolkit) + '  n170-verify-toolkit.zip\n')
-        print(json.dumps({'status': 'built', 'source_archive_sha256': digest(archive), 'source_identity': manifest['source_freeze_sha256'], 'public_links': check_client(out, contents, policy['documents'], policy.get('downloads', {})), 'published': False}))
+        print(json.dumps({'status': 'built', 'source_archive_sha256': digest(archive), 'source_identity': manifest['source_freeze_sha256'], 'public_links': check_client(out, contents, policy['documents'], policy.get('downloads', {})), 'publication_asserted': False}))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, 'Public build refused: ' + str(error) + '\n')
 

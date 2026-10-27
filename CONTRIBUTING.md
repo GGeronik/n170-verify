@@ -1,8 +1,6 @@
 # Contributing to N170 Verify
 
-This is a local source candidate. An issue tracker, contribution endpoint and
-private vulnerability-reporting route must be confirmed on the actual repository
-before use; this archive does not establish that they are available. While
+An issue tracker, contribution endpoint and private vulnerability-reporting route must be confirmed on the repository before use; this file does not establish that they are available. While
 contribution terms are being set up, pull requests are limited to repository
 collaborators. Describe proposed fixes through the maintainer's available channel.
 Use [SECURITY.md](SECURITY.md) for security reports and never post sensitive

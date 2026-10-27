@@ -1,10 +1,6 @@
 # Accounting receipts and the combined offline toolkit
 
-This local source candidate adds v2 captured-run accounting review while keeping
-the signed v3/v4 records, bounded continuity envelopes and v1 run-review interface
-separate. It has not been published or deployed. This guide describes packaging
-and interpretation; it does not claim completed release acceptance, an external
-audit or real-market validation.
+This source adds v2 captured-run accounting review while keeping the signed v3/v4 records, bounded continuity envelopes and v1 run-review interface separate. This guide describes packaging and interpretation; it does not claim publication, completed release acceptance, an external audit or real-market validation.
 
 ## Get and verify the toolkit
 
