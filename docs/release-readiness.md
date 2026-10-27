@@ -145,8 +145,7 @@ Lost-key recovery, independent time, authenticated broker acquisition and global
 history discovery remain separate unimplemented capabilities. See
 [security boundaries](../SECURITY.md).
 
-The AuditZK adapter is original disabled/mock-only code. The reported special
-license's written terms, exact revision and downstream rights remain pending.
+The AuditZK adapter is original disabled/mock-only code under Apache-2.0.
 No upstream implementation or real TEE verification is included. Optional
 Freqtrade is separately installed GPL software; its engine is in neither ZIP.
 The optional pinned accounting oracle is also installed separately and is not

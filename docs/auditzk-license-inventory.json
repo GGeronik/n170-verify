@@ -1,8 +1,8 @@
 {
   "schema": "n170.integration-license-inventory.v1",
   "integration": "AuditZK",
-  "status": "pending",
-  "ownerReportedForthcomingGrant": true,
+  "status": "no_upstream_code_included",
+  "ownerReportedForthcomingGrant": false,
   "writtenGrant": {
     "documentPath": null,
     "sha256": null,
@@ -33,6 +33,6 @@
   "review": {
     "reviewer": null,
     "reviewedAt": null,
-    "decision": "Not evaluated: written grant and covered source are not supplied."
+    "decision": "No upstream code is included; only the original Apache-2.0 mock interface is present."
   }
 }
