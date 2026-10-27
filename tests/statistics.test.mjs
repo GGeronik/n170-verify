@@ -161,6 +161,53 @@ test('statistics refusals preserve integer-equality precedence and null all figu
   }
 });
 
+test('precomputation refusals preserve the supplied schedule flag at unsupported frequencies', () => {
+  const cases = [
+    [[], {}, 'STATS_SAMPLE_INSUFFICIENT'],
+    [[1, 2, 3], {}, 'STATS_SAMPLE_INSUFFICIENT'],
+    [Array(24).fill(88731), {}, 'STATS_ZERO_VARIANCE'],
+    [[1.5, ...Array(20).fill(7)], {}, 'STATS_NON_FINITE'],
+    [[NaN], {}, 'STATS_NON_FINITE'],
+    [null, {}, 'STATS_NON_FINITE'],
+    [Array(24).fill(88731), { rfPerInterval: Infinity }, 'STATS_NON_FINITE'],
+    [[1, 2, 3], { periodsPerYear: 0 }, 'STATS_NON_FINITE'],
+  ];
+  for (const scheduleCompatible of [true, false]) {
+    for (const [returns, overrides, status] of cases) {
+      const settings = { periodsPerYear: 26, scheduleCompatible, ...overrides };
+      const result = computeStatistics(returns, settings);
+      assert.equal(result.status, status);
+      assert.equal(result.schedule_compatible, scheduleCompatible);
+      assert.equal(result.periods_per_year, settings.periodsPerYear);
+      assert(Object.isFrozen(result));
+      for (const field of FIGURE_FIELDS) assert.equal(result[field], null, field);
+    }
+  }
+});
+
+test('computed paths use the effective unsupported-frequency schedule', () => {
+  const returns = Array.from({ length: 28 }, (_, index) => index % 2 ? -1234567 : 1234567);
+  const result = computeStatistics(returns, { periodsPerYear: 26, scheduleCompatible: true });
+  assert.equal(result.status, 'OK');
+  assert.equal(result.schedule_compatible, false);
+  assert.equal(result.annualization_code, 'SCHEDULE_ANNUALIZATION_REFUSED');
+  for (const field of ['sharpe_annualized_nominal', 'lo_eta', 'sharpe_annualized_adjusted']) assert.equal(result[field], null, field);
+  assert.equal(result.mean, 0);
+  assert.equal(result.sharpe_per_interval, 0);
+  assert.equal(result.V, 1);
+  assert.equal(result.psr0, 0.5);
+  assert.equal(result.mintrl_code, 'MINTRL_UNDEFINED_NONPOSITIVE_EXCESS');
+
+  // Distinct integers can collapse to the same binary64 return after E1.
+  // This is a computation refusal, so it retains the effective schedule.
+  const collapsed = computeStatistics([9007199254740990, ...Array(19).fill(9007199254740991)], {
+    periodsPerYear: 26, scheduleCompatible: true,
+  });
+  assert.equal(collapsed.status, 'STATS_NON_FINITE');
+  assert.equal(collapsed.schedule_compatible, false);
+  for (const field of FIGURE_FIELDS) assert.equal(collapsed[field], null, field);
+});
+
 test('one thousand generated statistics calls never throw and return only closed statuses', () => {
   let state = 0x170;
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state; };

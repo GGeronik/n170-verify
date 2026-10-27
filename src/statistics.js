@@ -101,7 +101,7 @@ export function computeStatistics(returnsE8, options) {
     T = isArray ? returnsE8.length : null;
     const { periodsPerYear, scheduleCompatible, rfPerInterval = 0 } = options ?? {};
     if (Number.isSafeInteger(periodsPerYear)) periods_per_year = periodsPerYear;
-    if (typeof scheduleCompatible === 'boolean') schedule_compatible = scheduleCompatible && FREQUENCIES.has(periodsPerYear);
+    if (typeof scheduleCompatible === 'boolean') schedule_compatible = scheduleCompatible;
     if (Number.isFinite(rfPerInterval)) rf_per_interval = rfPerInterval;
     if (!isArray || !Number.isSafeInteger(periodsPerYear) || periodsPerYear <= 0
       || typeof scheduleCompatible !== 'boolean' || !Number.isFinite(rfPerInterval)) return refuse('STATS_NON_FINITE');
@@ -116,6 +116,9 @@ export function computeStatistics(returnsE8, options) {
     if (T < 20) return refuse('STATS_SAMPLE_INSUFFICIENT');
     // Q5: test signed integers before any conversion or risk-free arithmetic.
     if (integers.every(value => value === integers[0])) return refuse('STATS_ZERO_VARIANCE');
+    // Early refusals echo the caller's schedule flag. A computed result uses
+    // the effective schedule, including Q5's unsupported-frequency refusal.
+    schedule_compatible = schedule_compatible && FREQUENCIES.has(periods_per_year);
     const returns = integers.map(value => value / 100000000);
     const mean = finite(fsum(returns) / T);
     const deviations = returns.map(value => finite(value - mean));
