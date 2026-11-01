@@ -46,10 +46,10 @@
     ]
   },
   "release": {
-    "published": false,
+    "publication_asserted": false,
     "external_human_audit": false,
     "source_authentication": false,
-    "claims": "Local candidate preparation and reproducible supplied-byte checks only."
+    "claims": "Local record preparation and reproducible supplied-byte checks only."
   },
   "beancount": {
     "status": "separately_installed_optional",

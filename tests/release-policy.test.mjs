@@ -99,7 +99,8 @@ function checkAuditBoundary(files) {
   assert.equal(boundaries.auditzk.status, "not_integrated");
   assert.equal(boundaries.auditzk.upstream_code_bundled, false);
   assert.equal(boundaries.freqtrade.engine_bundled, false);
-  assert.equal(boundaries.release.published, false);
+  assert.equal(boundaries.release.publication_asserted, false);
+  assert.equal(Object.hasOwn(boundaries.release, "published"), false);
   assert.equal(boundaries.release.external_human_audit, false);
 }
 

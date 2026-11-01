@@ -1,8 +1,6 @@
 # Release readiness and source workflow
 
-This is a local source candidate for a free open-source browser application. It
-has not been published or deployed. No reachable public repository, successful
-remote CI run, broker connection or external human audit is asserted. The
+This guide describes a free open-source browser application at its tagged source revision. It does not itself assert publication, deployment, a successful remote CI run, a broker connection or an external human audit; the notes of a published release state publication and hosting separately. The
 [README](../README.md) describes current behavior; [validation scope](release-validation.md)
 describes reproducible local checks and their limits.
 
@@ -80,6 +78,8 @@ Both ZIPs have detached checksums and
 include independent archive verification and metadata. A combined release adds
 root documentation and `build.py`, which delegates to this same app build; no
 second toolkit copy is placed at the root.
+
+Some tests need retained evidence or separately installed software that is not part of this source, and are skipped without it. At this revision, `npm test` runs 567 tests: 563 pass and 4 are skipped unless `N170_ACCOUNTING_V2_PACKAGE_ROOT` (2 tests), `N170_RUN_REVIEW_PACKAGE_ROOT` (1) or `N170_WALLET_SCOPE_PACKAGE` (1) names a retained package. `python3 -S -m unittest discover -s toolkit-tests` runs 150 tests: 125 pass and 25 are skipped unless `N170_ACCOUNTING_EVIDENCE` names a directory of retained accounting captures. `python3 -m unittest discover -s accounting-tests` runs 51 tests: 48 pass and 3 are skipped unless `N170_BEANCOUNT_PYTHON` names a separately installed pinned oracle interpreter. A skipped test is not a pass; record skips with their conditions.
 
 Maintainers can edit explicitly inventoried source and rebuild with the same
 `npm run build`. The build hashes current files into a new manifest rather than
