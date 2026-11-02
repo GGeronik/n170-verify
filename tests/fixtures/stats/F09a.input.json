@@ -1,0 +1,36 @@
+{
+  "schema": "n170.verify.statistics-fixture.v1",
+  "id": "F09a",
+  "returns_e8": [
+    "NaN",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "periods_per_year": 252,
+  "schedule_compatible": true,
+  "rf_per_interval": 0,
+  "construction": {
+    "method": "Deliberately corrupted series; symbolic NaN injection",
+    "seed": null,
+    "generator": "Author A private build_fixtures.py; recipe in notes",
+    "notes_file": "F09a.notes.md"
+  },
+  "design_targets": {}
+}

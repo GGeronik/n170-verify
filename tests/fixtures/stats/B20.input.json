@@ -1,0 +1,36 @@
+{
+  "schema": "n170.verify.statistics-fixture.v1",
+  "id": "B20",
+  "returns_e8": [
+    390270,
+    -54436,
+    416789,
+    169247,
+    -32935,
+    2018069,
+    1103663,
+    1772341,
+    -280240,
+    240549,
+    2089009,
+    -1596788,
+    62773,
+    -1286230,
+    -1304997,
+    1278221,
+    1391211,
+    964738,
+    217813,
+    -1972176
+  ],
+  "periods_per_year": 12,
+  "schedule_compatible": true,
+  "rf_per_interval": 0,
+  "construction": {
+    "method": "First 20 G60 draws",
+    "seed": 2026101060,
+    "generator": "Author A private build_fixtures.py; recipe in notes",
+    "notes_file": "B20.notes.md"
+  },
+  "design_targets": {}
+}
