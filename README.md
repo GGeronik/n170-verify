@@ -71,6 +71,8 @@ A correction appends a signed event identifying the exact target hash and reason
 
 ## Independently verify a file
 
+For the verifier-derived evidence headline, run `node scripts/verify-headline.mjs CURRENT [PREVIOUS]`. Optional receipt checking requires an explicitly selected event digest and recipient-supplied trusted witness keys and allowed broker hosts; see [witness receipts](docs/witness-receipt.md). Headline exits are 0 for a supported tier, 1 for rejection, 2 for conflict and 3 for usage/read failure. The original record, private-source and continuity commands retain their own output status names and exit codes.
+
 First verify the received source archive as described below. Run these commands in the folder containing `package.json` (`app/` after extracting a source archive). Node's standard cryptography and a separate arithmetic/serialization implementation are sufficient; the verifier does not import application code or require npm installation:
 
 ```sh

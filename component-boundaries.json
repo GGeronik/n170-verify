@@ -13,7 +13,11 @@
       "scripts/verify-reconciliation.mjs",
       "scripts/reconciliation-input.mjs",
       "scripts/reconciliation-source.mjs",
-      "scripts/verify-record.mjs"
+      "scripts/verify-record.mjs",
+      "scripts/headline.mjs",
+      "scripts/verify-headline.mjs",
+      "scripts/verify-witness-receipt.mjs",
+      "scripts/verify-continuity.mjs"
     ],
     "notes": "Original N170 code only. Component LICENSE and NOTICE files are retained. Names and marks receive no additional license."
   },

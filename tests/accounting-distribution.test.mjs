@@ -56,6 +56,7 @@ with zipfile.ZipFile(app/'dist/client/n170-verify-toolkit.zip') as archive:
  manifest=json.loads(archive.read('MANIFEST.json'))
  supplemental={'scripts/verify-reconciliation.mjs','scripts/reconciliation-input.mjs',
  'scripts/reconciliation-source.mjs','scripts/verify-record.mjs',
+ 'scripts/headline.mjs', 'scripts/verify-headline.mjs', 'scripts/verify-witness-receipt.mjs', 'scripts/verify-continuity.mjs', 'docs/witness-receipt.md', 'schemas/witness-receipt-v1.schema.json',
  'docs/verify-reconciliation.md','docs/verify-reconciliation-result.schema.json','LICENSE','NOTICE'}
  assert supplemental <= set(policy['files'])
  expected={name for name in policy['files'] if name.startswith(('verify_toolkit/','toolkit-tests/','verify_accounting/','accounting-tests/'))} | supplemental
@@ -79,6 +80,10 @@ with zipfile.ZipFile(app/'dist/client/n170-verify-toolkit.zip') as archive:
   assert result.returncode==0,result.stderr
   assert result.stdout.startswith('Usage: node scripts/verify-reconciliation.mjs '), result.stdout
   assert result.stderr=='',result.stderr
+  for script in ('verify-headline.mjs','verify-witness-receipt.mjs'):
+   result=subprocess.run([node,'scripts/'+script,'--help'],cwd=directory,env=node_env,capture_output=True,text=True,timeout=10)
+   assert result.returncode==0,(script,result.stderr)
+   assert result.stdout.startswith('Usage: node scripts/'+script),result.stdout
   for module in ('verify_toolkit.run_review_v2','verify_toolkit.accounting_collector','verify_accounting'):
    result=subprocess.run([sys.executable,'-B','-m',module,'--help'],cwd=directory,env=env,capture_output=True,text=True,timeout=10)
    assert result.returncode==0,(module,result.stderr)
