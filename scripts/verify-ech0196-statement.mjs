@@ -109,7 +109,7 @@ export function canonicalizeXmlC14n(xmlInput, options = {}) {
   let text = String(xmlInput ?? '').replace(/\r\n?/g, '\n');
   text = text.replace(/^\uFEFF/, '').replace(/^<\?xml[^>]*\?>\s*/i, '');
 
-  const tokenRe = /<!--([\s\S]*?)-->|<\/([A-Za-z_][A-Za-z0-9_.:-]*)\s*>|<([A-Za-z_][A-Za-z0-9_.:-]*)((?:\s+[A-Za-z_][A-Za-z0-9_.:-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
+  const tokenRe = /<!--([\s\S]*?)--!?>|<\/([A-Za-z_][A-Za-z0-9_.:-]*)\s*>|<([A-Za-z_][A-Za-z0-9_.:-]*)((?:\s+[A-Za-z_][A-Za-z0-9_.:-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
 
   const nsStack = [{ ...inheritedNs }];
   let isRootElement = true;
@@ -721,7 +721,7 @@ export function verifyEch0196StatementXml(xmlText, options = {}) {
   if (refUriMatch && refUriMatch[1] !== '') {
     throw new Ech0196Error(
       'REFUSE_UNSUPPORTED_XMLDSIG_ALGORITHM',
-      `eCH-0196 requires whole-document enveloped <Reference URI="">, got URI="${refUriMatch[1]}"`
+      `eCH-0196 requires whole-document enveloped Reference URI, got non-empty URI (${refUriMatch[1]})`
     );
   }
 

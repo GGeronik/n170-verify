@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
@@ -832,10 +832,6 @@ export function runCli(args) {
   let rawBytes;
   let text;
   try {
-    const stat = lstatSync(args[0]);
-    if (!stat.isFile() || stat.size > MAX_INPUT_BYTES) {
-      return cliError('UNREADABLE_INPUT');
-    }
     rawBytes = readFileSync(args[0]);
     if (rawBytes.length > MAX_INPUT_BYTES) {
       return cliError('UNREADABLE_INPUT');
