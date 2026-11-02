@@ -31,6 +31,7 @@
     "docs/release-validation.md",
     "docs/research-decisions.md",
     "docs/reviewer-journey.md",
+    "docs/specs/ITERATION_1_SPEC.md",
     "docs/tool-evidence.md",
     "docs/verify-reconciliation-result.schema.json",
     "docs/verify-reconciliation.md",
