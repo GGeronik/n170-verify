@@ -1,0 +1,2270 @@
+[
+  {
+    "id": "W-OK",
+    "input": "tests/fixtures/witness/W-OK.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "F13a",
+    "input": "tests/fixtures/witness/F13a.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_KEY_ID_MISMATCH"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_KEY_ID_MISMATCH"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "F13b",
+    "input": "tests/fixtures/witness/F13b.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_SIGNATURE_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_SIGNATURE_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "F14",
+    "input": "tests/fixtures/witness/F14.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_MISMATCH",
+      "reasons": [
+        "RECEIPT_RECONCILIATION_MISMATCH",
+        "FLOW_MISCLASSIFICATION"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_MISMATCH"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_RECONCILIATION_MISMATCH",
+        "FLOW_MISCLASSIFICATION"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_MISMATCH",
+      "code": "WITNESS_MISMATCH",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "F15",
+    "input": "tests/fixtures/witness/F15.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "EVENT_HASH_UNBOUND"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "EVENT_HASH_UNBOUND"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-NA",
+    "input": "tests/fixtures/witness/W-NA.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_NOT_ASSESSABLE",
+      "reasons": [
+        "RECEIPT_RECONCILIATION_NOT_ASSESSABLE",
+        "CASH_REPORT_SECTION_MISSING"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_NOT_ASSESSABLE"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_RECONCILIATION_NOT_ASSESSABLE",
+        "CASH_REPORT_SECTION_MISSING"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+      "code": null,
+      "exit": 0,
+      "sublabel": null,
+      "qualifications": [
+        {
+          "code": "WITNESS_NOT_ASSESSABLE",
+          "reasons": [
+            "RECEIPT_RECONCILIATION_NOT_ASSESSABLE",
+            "CASH_REPORT_SECTION_MISSING"
+          ],
+          "text": "WITNESS_NOT_ASSESSABLE: The supplied witness receipt could not establish the source."
+        }
+      ],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-HOST",
+    "input": "tests/fixtures/witness/W-HOST.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_NOT_ASSESSABLE",
+      "reasons": [
+        "BROKER_HOST_NOT_ALLOWED"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_NOT_ASSESSABLE"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "BROKER_HOST_NOT_ALLOWED"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+      "code": null,
+      "exit": 0,
+      "sublabel": null,
+      "qualifications": [
+        {
+          "code": "WITNESS_NOT_ASSESSABLE",
+          "reasons": [
+            "BROKER_HOST_NOT_ALLOWED"
+          ],
+          "text": "WITNESS_NOT_ASSESSABLE: The supplied witness receipt could not establish the source."
+        }
+      ],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-UNTRUSTED",
+    "input": "tests/fixtures/witness/W-UNTRUSTED.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "4c48-7ab1-4d88-280a-4b5e"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_KEY_NOT_TRUSTED"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_KEY_NOT_TRUSTED"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-HASH",
+    "input": "tests/fixtures/witness/W-HASH.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_HASH_MISMATCH"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_HASH_MISMATCH"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-DUP",
+    "input": "tests/fixtures/witness/W-DUP.receipt.raw",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-TOKEN",
+    "input": "tests/fixtures/witness/W-TOKEN.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-NUM",
+    "input": "tests/fixtures/witness/W-NUM.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-VER",
+    "input": "tests/fixtures/witness/W-VER.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_VERSION_UNSUPPORTED"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_VERSION_UNSUPPORTED"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-HIGHS",
+    "input": "tests/fixtures/witness/W-HIGHS.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-PROFILEKEY",
+    "input": "tests/fixtures/witness/W-PROFILEKEY.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "2483-dca2-b961-cfe6-40fc"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_KEY_NOT_TRUSTED"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_KEY_NOT_TRUSTED"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-STAMPSIG",
+    "input": "tests/fixtures/witness/W-STAMPSIG.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_SIGNATURE_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_SIGNATURE_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-OPTS",
+    "input": "tests/fixtures/witness/W-OPTS.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_NOT_ASSESSABLE",
+      "reasons": [
+        "VERIFIER_INPUT_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_NOT_ASSESSABLE"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "VERIFIER_INPUT_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+      "code": null,
+      "exit": 0,
+      "sublabel": null,
+      "qualifications": [
+        {
+          "code": "WITNESS_NOT_ASSESSABLE",
+          "reasons": [
+            "VERIFIER_INPUT_INVALID"
+          ],
+          "text": "WITNESS_NOT_ASSESSABLE: The supplied witness receipt could not establish the source."
+        }
+      ],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-KEYINVALID",
+    "input": "tests/fixtures/witness/W-KEYINVALID.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "WITNESS_KEY_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "WITNESS_KEY_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-UTF8",
+    "input": "tests/fixtures/witness/W-UTF8.receipt.raw",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-ESC-DUP",
+    "input": "tests/fixtures/witness/W-ESC-DUP.receipt.raw",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_RECEIPT_INVALID",
+      "reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_RECEIPT_INVALID"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_SCHEMA_INVALID"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_RECEIPT_INVALID",
+      "code": "WITNESS_RECEIPT_INVALID",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "T-NONE",
+    "input": "tests/fixtures/witness/T-NONE.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "notes": "Detached header-only Iteration 1 fixture; not a full proof, no attestation or confirmation asserted.",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "T-PEND",
+    "input": "tests/fixtures/witness/T-PEND.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "PENDING",
+        "reasons": [
+          "TIMESTAMP_CONFIRMATION_NOT_VERIFIED"
+        ]
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "timestamp_input": "tests/fixtures/witness/T-PEND.ots-header",
+    "notes": "Detached header-only Iteration 1 fixture; not a full proof, no attestation or confirmation asserted.",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "PENDING",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "Receipt timestamp proof binds the receipt; confirmation not verified"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "T-UNB",
+    "input": "tests/fixtures/witness/T-UNB.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "INVALID",
+        "reasons": [
+          "TIMESTAMP_PROOF_UNBOUND"
+        ]
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "timestamp_input": "tests/fixtures/witness/T-UNB.ots-header",
+    "notes": "Detached header-only Iteration 1 fixture; not a full proof, no attestation or confirmation asserted.",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "INVALID",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "Supplied timestamp proof does not bind the receipt"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "T-BAD",
+    "input": "tests/fixtures/witness/T-BAD.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESSED",
+      "reasons": [],
+      "timestamp_proof": {
+        "status": "INVALID",
+        "reasons": [
+          "TIMESTAMP_PROOF_MALFORMED"
+        ]
+      }
+    },
+    "record": "tests/fixtures/witness/REC-W.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "timestamp_input": "tests/fixtures/witness/T-BAD.ots-header",
+    "notes": "Detached header-only Iteration 1 fixture; not a full proof, no attestation or confirmation asserted.",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "INVALID",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "WITNESSED RECORD",
+      "code": null,
+      "exit": 0,
+      "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "Supplied timestamp proof does not bind the receipt"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  },
+  {
+    "id": "W-SUPERSEDED-MISMATCH",
+    "input": "tests/fixtures/witness/W-SUPERSEDED-MISMATCH.receipt.json",
+    "options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "expected": {
+      "result": "WITNESS_MISMATCH",
+      "reasons": [
+        "RECEIPT_RECONCILIATION_MISMATCH",
+        "FLOW_MISCLASSIFICATION"
+      ],
+      "timestamp_proof": {
+        "status": "NONE",
+        "reasons": []
+      }
+    },
+    "record": "tests/fixtures/witness/REC-SUPERSEDED.json",
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "headline_facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_MISMATCH"
+    },
+    "headline_context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_RECONCILIATION_MISMATCH",
+        "FLOW_MISCLASSIFICATION"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "expected_headline": {
+      "version": "n170.verify.headline.v1",
+      "headline": "REJECTED: WITNESS_MISMATCH",
+      "code": "WITNESS_MISMATCH",
+      "exit": 1,
+      "sublabel": null,
+      "qualifications": [],
+      "ladder": [
+        {
+          "row": "Calculations",
+          "text": "Reproduced from disclosed returns"
+        },
+        {
+          "row": "Signatures and history",
+          "text": "Valid for this key · no retained copy checked"
+        },
+        {
+          "row": "Source",
+          "text": "Self-reported · not authenticated"
+        },
+        {
+          "row": "Key",
+          "text": "Not established"
+        },
+        {
+          "row": "Time",
+          "text": "No independent evidence"
+        },
+        {
+          "row": "Coverage",
+          "text": "Supplied observations for the declared account only; lifetime inception unverified"
+        }
+      ]
+    }
+  }
+]
