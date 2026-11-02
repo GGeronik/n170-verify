@@ -1,0 +1,59 @@
+{
+  "schema": "n170.verify.counterfactual-input.v1",
+  "id": "CF08",
+  "periods_per_year": 252,
+  "books": {
+    "ACTUAL": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 400000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -200000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 350000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 280000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": -150000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 310000
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "return_e8": 420000
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "return_e8": 290000
+      }
+    ]
+  },
+  "construction": {
+    "method": "Refusal probe with nested prohibited disclosure key",
+    "seed": 2026110208,
+    "notes_file": "CF08.notes.md",
+    "audit_metadata": {
+      "tickers": [
+        "SYNTH"
+      ]
+    }
+  }
+}

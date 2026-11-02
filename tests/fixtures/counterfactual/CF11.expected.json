@@ -1,0 +1,14 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF11",
+  "fixture_sha256": "abc0ca5ebd2da04b0f59deefee16a87c1fff80f847179ad9ccbbe9581620c566",
+  "status": "CF_DECISION_CHAIN_BROKEN",
+  "reason_code": "CHAIN_HASH_MISMATCH_AT_3",
+  "T": 8,
+  "periods_per_year": 252,
+  "calendar_sha256": "14ed56f1ac40cc8737c6ab135456d6313df08ac739eb82a74b1af5706e33d9cf",
+  "books": null,
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}

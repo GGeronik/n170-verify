@@ -1,0 +1,14 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF08",
+  "fixture_sha256": "6e605e9b43aa6d7713ac47913878523a950af1c83befb553e07afec6737d99b3",
+  "status": "CF_PROHIBITED_DISCLOSURE_FIELD",
+  "reason_code": "PROHIBITED_FIELD:tickers",
+  "T": 8,
+  "periods_per_year": 252,
+  "calendar_sha256": null,
+  "books": null,
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}
