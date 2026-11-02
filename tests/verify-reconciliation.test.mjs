@@ -64,8 +64,8 @@ test('explicit event digest grammar rejects ambiguous selection', () => {
 });
 
 test('independent checker modules only statically import builtins and listed standalone modules', () => {
-  const allowed = new Set(['./verify-record.mjs', './reconciliation-source.mjs', './reconciliation-input.mjs']);
-  for (const name of ['verify-reconciliation.mjs', 'reconciliation-source.mjs', 'reconciliation-input.mjs']) {
+  const allowed = new Set(['./verify-record.mjs', './reconciliation-source.mjs', './reconciliation-input.mjs','./verify-continuity.mjs','./verify-reconciliation.mjs','./verify-witness-receipt.mjs','./headline.mjs']);
+  for (const name of ['verify-reconciliation.mjs', 'reconciliation-source.mjs', 'reconciliation-input.mjs','headline.mjs','verify-headline.mjs','verify-witness-receipt.mjs']) {
     const text = readFileSync(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
     for (const match of text.matchAll(/\b(?:import|export)\s[^;]*?\bfrom\s*['"]([^'"]+)['"]/g)) assert.ok(match[1].startsWith('node:') || allowed.has(match[1]), `${name} imports outside standalone boundary`);
     assert.ok(!/\bimport\s*\(|\beval\s*\(|\bnew\s+Function\s*\(/.test(text), `${name} must not load input-derived code`);
