@@ -1,0 +1,29 @@
+{
+  "schema": "n170.verify.counterfactual-input.v1",
+  "id": "CF15",
+  "periods_per_year": 252,
+  "books": {
+    "ACTUAL": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 300000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -150000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 420000
+      }
+    ]
+  },
+  "construction": {
+    "method": "Refusal probe with T=3 (< 4 minimum intervals)",
+    "seed": 2026110215,
+    "notes_file": "CF15.notes.md"
+  }
+}

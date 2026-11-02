@@ -388,7 +388,7 @@ export function canonicalizeFlexXml(rawXml, options = {}) {
   const stmtRegex = /<FlexStatement\b([^>]*)>([\s\S]*?)<\/FlexStatement>/g;
   const stmtMatches = [...text.matchAll(stmtRegex)];
   if (stmtsContainerAttrs.count !== undefined && Number(stmtsContainerAttrs.count) !== stmtMatches.length) {
-    throw new Error(`REFUSE_INVALID_XML_ENVELOPE: FlexStatements count="${stmtsContainerAttrs.count}" != ${stmtMatches.length}`);
+    throw new Error(`REFUSE_INVALID_XML_ENVELOPE: FlexStatements declared count (${stmtsContainerAttrs.count}) != ${stmtMatches.length}`);
   }
 
   const flags = [];

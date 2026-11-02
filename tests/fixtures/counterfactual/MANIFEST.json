@@ -1,0 +1,300 @@
+{
+  "schema": "n170.verify.fixture-manifest.v1",
+  "created_utc": "2026-11-02T14:05:00.000000Z",
+  "oracle": {
+    "path": "tests/counterfactual_oracle.py",
+    "sha256": "520718b84f7809a13a271585655ed9fb32aa57d6babfe878a62136c782873972"
+  },
+  "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "files": [
+    {
+      "path": "tests/fixtures/counterfactual/CF01.expected.json",
+      "role": "expected",
+      "bytes": 6225,
+      "sha256": "5aec7cbfd5b87dc9215de64e05513e4a92c86885c7d2c9892e5b3a80b84785f3"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF01.input.json",
+      "role": "input",
+      "bytes": 19798,
+      "sha256": "e08bc1cafdaf4964f7b6dbcb559c247dbddc43445e7999dbbf087950335a4e67"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF01.notes.md",
+      "role": "notes",
+      "bytes": 486,
+      "sha256": "f4b26660efd098c66a65c335d4ec3a55d06f63eda4e902ddadbfd3c4858952bb"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF02.expected.json",
+      "role": "expected",
+      "bytes": 6231,
+      "sha256": "3cfd719605b9af3fcea966fa2810eb14cc6360020e0aaacd46cecd3ccebe2227"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF02.input.json",
+      "role": "input",
+      "bytes": 16706,
+      "sha256": "9d19ee97ea41d5705cc6af7da998ede7185aa03e29c1ddb140047a6cde26640f"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF02.notes.md",
+      "role": "notes",
+      "bytes": 409,
+      "sha256": "5579f2025ce60470428e172b8d74bb10c019c64c6214a5f8cc807cb519ec3278"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF03.expected.json",
+      "role": "expected",
+      "bytes": 5199,
+      "sha256": "eabaed4dd8da7169f57dfc0a179df676484c5770159a9e1589dbba41c28be4b7"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF03.input.json",
+      "role": "input",
+      "bytes": 10598,
+      "sha256": "23ca1c248f77cbe3984d730ce46eeead8641c0372a7339c912019de90be2b477"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF03.notes.md",
+      "role": "notes",
+      "bytes": 428,
+      "sha256": "25b2a18a257a7b7fc9fe908e183639bed5fa124c777d03f4b9b6d2007f2ee6e4"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF04.expected.json",
+      "role": "expected",
+      "bytes": 2256,
+      "sha256": "bb52ee4c9b090da6958af4b14fbbbc60904eac2313568ecce67a3200e83492c7"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF04.input.json",
+      "role": "input",
+      "bytes": 3692,
+      "sha256": "5475330ce891d6687d331590bd4adc94e6e1d014d2d2c1838a4defecd16370bb"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF04.notes.md",
+      "role": "notes",
+      "bytes": 423,
+      "sha256": "ce40607b7a3e4628f3c57c93b8c2cd3bbeef6e556cb1fb9436b3f9a5296ffd44"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF05.expected.json",
+      "role": "expected",
+      "bytes": 1373,
+      "sha256": "c03e8d47c1a693a808224849cf21efbc7e2879087365e37db4ca0a43ff3b3128"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF05.input.json",
+      "role": "input",
+      "bytes": 1578,
+      "sha256": "f4c343a54d5a615886390f35b7c10dbe2ee8401996c68e45d6419a732c688b68"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF05.notes.md",
+      "role": "notes",
+      "bytes": 393,
+      "sha256": "c21b2ed5e18ee86d5ea08d0b05e34864a1a11ac542e48e858ca3ddd738658a12"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF06.expected.json",
+      "role": "expected",
+      "bytes": 6279,
+      "sha256": "8b377f9eafd3c7c84d47b5a09412bc00d94701d0855e6c22f642e79a72e5667d"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF06.input.json",
+      "role": "input",
+      "bytes": 11270,
+      "sha256": "2cabd810cb5e8db72e2eb4813dad11a7f6c8f8ff793860e62a765c2d1ef2bc53"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF06.notes.md",
+      "role": "notes",
+      "bytes": 379,
+      "sha256": "585f72fdd397f07255c08e9fb41b14a0d2954bde708b0952f41b08d55c7c3b93"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF07.expected.json",
+      "role": "expected",
+      "bytes": 5058,
+      "sha256": "3834eb681f960333aadfe4e443d5f9c3625ce2b3ea5b395d4c48e37da687c0b2"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF07.input.json",
+      "role": "input",
+      "bytes": 7163,
+      "sha256": "07aa3bea408ac7bba47d1ad40149580c603c26e0d5576e7dff80ad2f67e2f09d"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF07.notes.md",
+      "role": "notes",
+      "bytes": 467,
+      "sha256": "ae78811f2eef1215d0e0e24c54fb0b81071d8123f2414c9242e4faa4a9bf83df"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF08.expected.json",
+      "role": "expected",
+      "bytes": 434,
+      "sha256": "5bc15e3bdc0790c4cf8f9003e8de4adc9d24d7a90d1e6fe45f1ad41099f46c64"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF08.input.json",
+      "role": "input",
+      "bytes": 1204,
+      "sha256": "6e605e9b43aa6d7713ac47913878523a950af1c83befb553e07afec6737d99b3"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF08.notes.md",
+      "role": "notes",
+      "bytes": 394,
+      "sha256": "b70295693205ff18af01a7b8f1f2b71fcbbb769a9e03ecb825f585fb0afec7d2"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF09.expected.json",
+      "role": "expected",
+      "bytes": 422,
+      "sha256": "5c8df8e9ca16a2c4eb14383efcee34a7fee662ef05ac880c4ce039209923625d"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF09.input.json",
+      "role": "input",
+      "bytes": 3757,
+      "sha256": "e6d717aaf412168828835e34b9a2d2770353ef07e80531a0a4efb434881c2aed"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF09.notes.md",
+      "role": "notes",
+      "bytes": 393,
+      "sha256": "8e527aed5077e77e5923069c425c801724001dd2fcc9ac280fb733f5052fbc1f"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF10.expected.json",
+      "role": "expected",
+      "bytes": 427,
+      "sha256": "1ddf6e71f1a46382550cc477833dafa4115248c05c2cd8a39dcd436e584d8c55"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF10.input.json",
+      "role": "input",
+      "bytes": 1147,
+      "sha256": "1eb655ff381224eaf40a9a1201bf5517ea47e9bce4e25490640e4f8a50e677b4"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF10.notes.md",
+      "role": "notes",
+      "bytes": 397,
+      "sha256": "674079cf7ae2c0f38b37f17d99d787e8ae302b6293cb9aee04846eb86f7b6ac6"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF11.expected.json",
+      "role": "expected",
+      "bytes": 490,
+      "sha256": "bc2d0bb66230d34147af361dae12297d1f7446a956a5877e5d0c1a495e22dd79"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF11.input.json",
+      "role": "input",
+      "bytes": 6740,
+      "sha256": "abc0ca5ebd2da04b0f59deefee16a87c1fff80f847179ad9ccbbe9581620c566"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF11.notes.md",
+      "role": "notes",
+      "bytes": 425,
+      "sha256": "5a534805e2eaa28c51372351e1172a070ef092ffef0068a9f4b240ee89eabbd4"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF12.expected.json",
+      "role": "expected",
+      "bytes": 490,
+      "sha256": "4df2cb913141390cad124dab4baa9a129c010b7f225a33cccdaf43218490d3c8"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF12.input.json",
+      "role": "input",
+      "bytes": 6728,
+      "sha256": "3ba175cb143edbb6a0acd4dd6cdc8faa798d862f8e8fa3f020fdc50803b883f0"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF12.notes.md",
+      "role": "notes",
+      "bytes": 393,
+      "sha256": "bf673176fe4b12dc68106dbe718a8c1e0484f31af42043443b35ea20b4cf649f"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF13.expected.json",
+      "role": "expected",
+      "bytes": 491,
+      "sha256": "5c3bac377aefcd806785aaf8a665d1ab78e06a011aef6ae604682c47c4fc3039"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF13.input.json",
+      "role": "input",
+      "bytes": 7361,
+      "sha256": "2cf56a13ffe86b0e2f2ab68a3e12a17109b07df912083ada444e653a7da806f8"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF13.notes.md",
+      "role": "notes",
+      "bytes": 399,
+      "sha256": "aaf4cee677d53803a981575303ee162a477af1025a2f40273d983112c2cf5ddd"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF14.expected.json",
+      "role": "expected",
+      "bytes": 491,
+      "sha256": "950edcc94c0235fe26fa1903a822370241e290b81f65fff6bb226fe3e4148546"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF14.input.json",
+      "role": "input",
+      "bytes": 7369,
+      "sha256": "f4c35cb5345032b8c5414d3dd03d9153403d1b78482e8cd3bd36f6adce229dae"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF14.notes.md",
+      "role": "notes",
+      "bytes": 446,
+      "sha256": "67d8235f00dcb2b14e880f6af4983049a7203e211a2aff84cf2236dce669ac99"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF15.expected.json",
+      "role": "expected",
+      "bytes": 412,
+      "sha256": "1cb0fd43e66f744266b73c4e311376f1556bb81cfd97bc26e65d9d4a6648d69f"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF15.input.json",
+      "role": "input",
+      "bytes": 599,
+      "sha256": "9baed1e0fe103641ef94d10c60cec98e39ee8f01467028bb8b43b7162fb24013"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF15.notes.md",
+      "role": "notes",
+      "bytes": 361,
+      "sha256": "4c658d9f9941e25720bd89cbaeddc9b5f5b5f204c33d37cae3257052da0e46a2"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF16.expected.json",
+      "role": "expected",
+      "bytes": 413,
+      "sha256": "c78bb2c8d76d025cb55dfb93288f1113a7f8d43eaca73cac3abb6179fb5157ed"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF16.input.json",
+      "role": "input",
+      "bytes": 927,
+      "sha256": "2499e6397edc791da73f089bfb7f83a3844364a3c685f6ad96fd6310fa47f9df"
+    },
+    {
+      "path": "tests/fixtures/counterfactual/CF16.notes.md",
+      "role": "notes",
+      "bytes": 405,
+      "sha256": "b5b0230d844ce9f87115b84fb698f8deda61da367fb14abbe4c04af242e3d4ec"
+    }
+  ]
+}

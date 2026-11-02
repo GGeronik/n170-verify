@@ -57,7 +57,7 @@ with zipfile.ZipFile(app/'dist/client/n170-verify-toolkit.zip') as archive:
  supplemental={'scripts/verify-reconciliation.mjs','scripts/reconciliation-input.mjs',
  'scripts/reconciliation-source.mjs','scripts/verify-record.mjs',
  'scripts/headline.mjs', 'scripts/verify-headline.mjs', 'scripts/verify-witness-receipt.mjs', 'scripts/verify-continuity.mjs',
- 'scripts/ots-verifier.mjs', 'scripts/verify-dkim-statement.mjs', 'scripts/verify-tlog.mjs', 'scripts/witness-fetch.mjs',
+ 'scripts/ots-verifier.mjs', 'scripts/verify-broker-source.mjs', 'scripts/verify-counterfactual.mjs', 'scripts/verify-dkim-statement.mjs', 'scripts/verify-ech0196-statement.mjs', 'scripts/verify-tlog.mjs', 'scripts/witness-fetch.mjs',
  'docs/witness-receipt.md', 'schemas/witness-receipt-v1.schema.json',
  'docs/verify-reconciliation.md','docs/verify-reconciliation-result.schema.json','LICENSE','NOTICE'}
  assert supplemental <= set(policy['files'])
@@ -82,7 +82,7 @@ with zipfile.ZipFile(app/'dist/client/n170-verify-toolkit.zip') as archive:
   assert result.returncode==0,result.stderr
   assert result.stdout.startswith('Usage: node scripts/verify-reconciliation.mjs '), result.stdout
   assert result.stderr=='',result.stderr
-  for script in ('verify-headline.mjs','verify-witness-receipt.mjs','ots-verifier.mjs','verify-dkim-statement.mjs','verify-tlog.mjs','witness-fetch.mjs'):
+  for script in ('verify-headline.mjs','verify-witness-receipt.mjs','ots-verifier.mjs','verify-broker-source.mjs','verify-counterfactual.mjs','verify-dkim-statement.mjs','verify-ech0196-statement.mjs','verify-tlog.mjs','witness-fetch.mjs'):
    result=subprocess.run([node,'scripts/'+script,'--help'],cwd=directory,env=node_env,capture_output=True,text=True,timeout=10)
    assert result.returncode==0,(script,result.stderr)
    assert result.stdout.startswith('Usage: node scripts/'+script),result.stdout
