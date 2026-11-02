@@ -1,0 +1,498 @@
+{
+  "schema": "n170.verify.fixture-manifest.v1",
+  "created_utc": "2026-10-10T07:34:26.486098Z",
+  "oracle": {
+    "path": "tests/stats_oracle.py",
+    "sha256": "0521185a3e4f6c5560e2f6c7e3b5b19025aafc7e70ac8c75577f5973bab23537"
+  },
+  "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "files": [
+    {
+      "path": "tests/fixtures/stats/B19.expected.json",
+      "role": "expected",
+      "bytes": 933,
+      "sha256": "b71312d5a2ed999df22396c47ede2ab844b0478c1c7a6b4c830dfcfb44ef7692"
+    },
+    {
+      "path": "tests/fixtures/stats/B19.input.json",
+      "role": "input",
+      "bytes": 624,
+      "sha256": "ee532f69c27069a7e590964db6245ce93147421be84f43d2b2c29991942f2498"
+    },
+    {
+      "path": "tests/fixtures/stats/B19.notes.md",
+      "role": "notes",
+      "bytes": 367,
+      "sha256": "e4342e8f0f3dc95e5cbc4d4addc20e905c0e69a7bed9952de63f50508a4a178a"
+    },
+    {
+      "path": "tests/fixtures/stats/B20.expected.json",
+      "role": "expected",
+      "bytes": 1221,
+      "sha256": "ba552caf57d4771f0a812442422946c177207ddb9e9af61518d51a0dca9a1f44"
+    },
+    {
+      "path": "tests/fixtures/stats/B20.input.json",
+      "role": "input",
+      "bytes": 638,
+      "sha256": "ac8306f51b6728214902c5efbf0866d6a579538231c0f6b1ebc72580489b246a"
+    },
+    {
+      "path": "tests/fixtures/stats/B20.notes.md",
+      "role": "notes",
+      "bytes": 367,
+      "sha256": "8d85ea6c54217bfa5f53ab3af35a5db943afbc4e9987a5991976cb269bf2745e"
+    },
+    {
+      "path": "tests/fixtures/stats/F03.expected.json",
+      "role": "expected",
+      "bytes": 1257,
+      "sha256": "18cd97e94c0a77f198039e0dbb12746699c52b72aac1b632ac7aa3d1909c3832"
+    },
+    {
+      "path": "tests/fixtures/stats/F03.input.json",
+      "role": "input",
+      "bytes": 4257,
+      "sha256": "585a2611e135aac1afc12a1fdaea3afc3a5e12895f7eae46a6196363b1172d22"
+    },
+    {
+      "path": "tests/fixtures/stats/F03.notes.md",
+      "role": "notes",
+      "bytes": 580,
+      "sha256": "9aead8d96e5caed82e8232f5a895a48af0cd9afa8c5f58cc5e19d42d4d507cad"
+    },
+    {
+      "path": "tests/fixtures/stats/F08.expected.json",
+      "role": "expected",
+      "bytes": 1252,
+      "sha256": "c0c37eeecd7ca8a8a06b6e1516cfeb0c95a8267f379af1175ecabc3788894fef"
+    },
+    {
+      "path": "tests/fixtures/stats/F08.input.json",
+      "role": "input",
+      "bytes": 2832,
+      "sha256": "f35f414c2ebafd1f75576100ecb1e31a0b3de9acd6d1d372258bab7df448a86a"
+    },
+    {
+      "path": "tests/fixtures/stats/F08.notes.md",
+      "role": "notes",
+      "bytes": 948,
+      "sha256": "ed5e8d6e9b490c5b737cfcf5af5e8447b390caab3622e2b9cac79eab3b22a0f5"
+    },
+    {
+      "path": "tests/fixtures/stats/F09a-guards.json",
+      "role": "vector",
+      "bytes": 620,
+      "sha256": "2249e912afdb571ffdfb7e4eafe5d7324f3bd7119dccfbfd668de8bd9b970ea2"
+    },
+    {
+      "path": "tests/fixtures/stats/F09a.expected.json",
+      "role": "expected",
+      "bytes": 926,
+      "sha256": "8ebf0bfe6a40292a8a6ede5e5bf61d3a0021890cb2eae53e79ef2cd59e5b38c5"
+    },
+    {
+      "path": "tests/fixtures/stats/F09a.input.json",
+      "role": "input",
+      "bytes": 560,
+      "sha256": "30356946f666e8ecf8bb05a7c7d4bebed15bf421fb8cec9f9b50af068a07527e"
+    },
+    {
+      "path": "tests/fixtures/stats/F09a.notes.md",
+      "role": "notes",
+      "bytes": 821,
+      "sha256": "b84104d50be3b40d966b70dbc6768dfa63aa442d40f2db8dc97d7a873bde84bc"
+    },
+    {
+      "path": "tests/fixtures/stats/F09b.expected.json",
+      "role": "expected",
+      "bytes": 1224,
+      "sha256": "ca69a0d1df6a76259384288222ea2f12d1204105dec96cd2f00fe9f5a338c700"
+    },
+    {
+      "path": "tests/fixtures/stats/F09b.input.json",
+      "role": "input",
+      "bytes": 1202,
+      "sha256": "9fbe9e2caf87956507cee3db0f2405630f085ba64dc2721555dcac5a53910ae8"
+    },
+    {
+      "path": "tests/fixtures/stats/F09b.notes.md",
+      "role": "notes",
+      "bytes": 877,
+      "sha256": "f2efc936f3db7b8b1cb5515cf1205c0a15157b045920d39e103a0a78afa7c757"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c-tuned.expected.json",
+      "role": "expected",
+      "bytes": 1222,
+      "sha256": "90c4bc0700c36516de3dded2cb8ce8712c231f8dd1dcf21e705308bacfa45f77"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c-tuned.input.json",
+      "role": "input",
+      "bytes": 681,
+      "sha256": "8e067ba9bf42367a94f8823d78abd0c44305745d362da9bd88541b5a484d5ac8"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c-tuned.notes.md",
+      "role": "notes",
+      "bytes": 779,
+      "sha256": "4d2f21b6c12f22dfed628dc5df1473bc093a7ebe3c0a4db2d7e2771ed884ddfd"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c.expected.json",
+      "role": "expected",
+      "bytes": 1171,
+      "sha256": "c6f83106018f3108e5ab39cf91bc3979dc40233747302921d98c01aa4637a0ef"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c.input.json",
+      "role": "input",
+      "bytes": 676,
+      "sha256": "20e5c8206263fad702fa744868623b0d7fc4060e8b0f8fecd16fa33120e58e53"
+    },
+    {
+      "path": "tests/fixtures/stats/F09c.notes.md",
+      "role": "notes",
+      "bytes": 568,
+      "sha256": "e6f0bc66291f1b39792a272bff2c1ef567a470f744ff279dc694f2d4d627215f"
+    },
+    {
+      "path": "tests/fixtures/stats/F11.expected.json",
+      "role": "expected",
+      "bytes": 914,
+      "sha256": "d0fee50e2e755b80f852cb712df0a2d9677e1e13d0bdef865b6c29288ae03055"
+    },
+    {
+      "path": "tests/fixtures/stats/F11.input.json",
+      "role": "input",
+      "bytes": 387,
+      "sha256": "b3c6f23ca34adee9081b4911c075044226b650162fcb929086581a22d428e526"
+    },
+    {
+      "path": "tests/fixtures/stats/F11.notes.md",
+      "role": "notes",
+      "bytes": 439,
+      "sha256": "b2f91547a6033a6250e2a34c0a21bd97b59e45406cc9ea8af9cc6c89e665ed82"
+    },
+    {
+      "path": "tests/fixtures/stats/F12-R.expected.json",
+      "role": "expected",
+      "bytes": 935,
+      "sha256": "f5b993f4f59df2ed76d7729810ef4224d411450585a3333b681fafb8856386e8"
+    },
+    {
+      "path": "tests/fixtures/stats/F12-R.input.json",
+      "role": "input",
+      "bytes": 602,
+      "sha256": "4dd50bf4a599bc8986b700fc5929bad1431d24551f0e7c7ef14357658e521e6c"
+    },
+    {
+      "path": "tests/fixtures/stats/F12-R.notes.md",
+      "role": "notes",
+      "bytes": 666,
+      "sha256": "e3cdf4c4d39c5b317a230f6fca0d938b2c4658c79f26b4f6cd3ea0462051d46c"
+    },
+    {
+      "path": "tests/fixtures/stats/F12-R.record.json",
+      "role": "input",
+      "bytes": 3734,
+      "sha256": "affaeff6a5cf1c710ed2f68ab31577bfe67693012cbba385fbd12c4b72ec3e6a"
+    },
+    {
+      "path": "tests/fixtures/stats/F12.expected.json",
+      "role": "expected",
+      "bytes": 933,
+      "sha256": "24b30534179bb50ba4c225c9d54e13026c727e7ef5672a48f29dc353c0f6c605"
+    },
+    {
+      "path": "tests/fixtures/stats/F12.input.json",
+      "role": "input",
+      "bytes": 593,
+      "sha256": "39f4d91e8421479f08fd35fffc68b942033564554e6b44f7fb4ae1a9a94c4d6c"
+    },
+    {
+      "path": "tests/fixtures/stats/F12.notes.md",
+      "role": "notes",
+      "bytes": 400,
+      "sha256": "628114c5a2182075c5c79a5424e734b600ea29922d79a7f59d3a9630c7fc3131"
+    },
+    {
+      "path": "tests/fixtures/stats/F16.expected.json",
+      "role": "expected",
+      "bytes": 757858,
+      "sha256": "d5034d7c8d0f9e374f6a8c75eede4b7ff01df76018c6c52502745bdd33919651"
+    },
+    {
+      "path": "tests/fixtures/stats/F16.input.json",
+      "role": "input",
+      "bytes": 291,
+      "sha256": "2536997d8b0388d9c9b0c1f48788a03263402000327b8edf9a4bb3be4aac9382"
+    },
+    {
+      "path": "tests/fixtures/stats/F16.notes.md",
+      "role": "notes",
+      "bytes": 434,
+      "sha256": "b51faa2deb9cae8f64f7d1b310dbc2863ec38456248e0b9201c13e0ad00f84ec"
+    },
+    {
+      "path": "tests/fixtures/stats/G60.expected.json",
+      "role": "expected",
+      "bytes": 1211,
+      "sha256": "f732447827645c1d2b920c723a99301465c7a5dc8190770ce40b48ef0b2903c4"
+    },
+    {
+      "path": "tests/fixtures/stats/G60.input.json",
+      "role": "input",
+      "bytes": 1179,
+      "sha256": "ca5d57cbd47c94f09ac4a43bcf421e9cca22cd0169bf8a308d93fe2c06ddc5ba"
+    },
+    {
+      "path": "tests/fixtures/stats/G60.notes.md",
+      "role": "notes",
+      "bytes": 493,
+      "sha256": "bbd272fdcc78b532702a8dc24676970a40783bf94c563d98ad7fd8dd16bbe622"
+    },
+    {
+      "path": "tests/fixtures/stats/N60.expected.json",
+      "role": "expected",
+      "bytes": 1267,
+      "sha256": "7661c97c64eb8e1541c096d9e688b08db5c0fc80f1837376eed81ba599a9370a"
+    },
+    {
+      "path": "tests/fixtures/stats/N60.input.json",
+      "role": "input",
+      "bytes": 1195,
+      "sha256": "6e2b5f0a928ba20f521075adcdc5d9e20e6c46fb6a05f43630b3c86f951f256d"
+    },
+    {
+      "path": "tests/fixtures/stats/N60.notes.md",
+      "role": "notes",
+      "bytes": 389,
+      "sha256": "f1d34825a8890e2af1151d2744d46c8ef86290c08e9b20a67fc7231d8046ecae"
+    },
+    {
+      "path": "tests/fixtures/stats/Q1.expected.json",
+      "role": "expected",
+      "bytes": 1210,
+      "sha256": "371ebb72555ba6e2b8d5862fbeb445ca5ed5eadace83d633d43326b24f09ebb0"
+    },
+    {
+      "path": "tests/fixtures/stats/Q1.input.json",
+      "role": "input",
+      "bytes": 1144,
+      "sha256": "50c0eefbcf853325d16071315b31c62695ef8d322075488ddec88228572a5018"
+    },
+    {
+      "path": "tests/fixtures/stats/Q1.notes.md",
+      "role": "notes",
+      "bytes": 378,
+      "sha256": "b7ee81ea34dd16dec78115ad0bbe4a6898cb625118e3a62bd13423482fdcebd3"
+    },
+    {
+      "path": "tests/fixtures/stats/Q12.expected.json",
+      "role": "expected",
+      "bytes": 1212,
+      "sha256": "d379222b4dcf949046e82bae71b62f5987b91b41178d562bf77c572781161ab7"
+    },
+    {
+      "path": "tests/fixtures/stats/Q12.input.json",
+      "role": "input",
+      "bytes": 1148,
+      "sha256": "3c51ad88aa648b4370e17e5de25d93c9be7dd3ca9a4d311b2a429720850a1b37"
+    },
+    {
+      "path": "tests/fixtures/stats/Q12.notes.md",
+      "role": "notes",
+      "bytes": 380,
+      "sha256": "1a8ea9e433ef78e6e72ec4dbfc4b41aa42330a2fc4a138e0a13fc6bac97eecf2"
+    },
+    {
+      "path": "tests/fixtures/stats/Q365.expected.json",
+      "role": "expected",
+      "bytes": 1214,
+      "sha256": "9286775c02ec73eab8d9258dc814b09f0eea7de24a44efbaf500310c44baf8ad"
+    },
+    {
+      "path": "tests/fixtures/stats/Q365.input.json",
+      "role": "input",
+      "bytes": 1152,
+      "sha256": "ecdf24c3b6fc784ed8963d53d1da1d51c7a3b9996b897d55921879bfd695045f"
+    },
+    {
+      "path": "tests/fixtures/stats/Q365.notes.md",
+      "role": "notes",
+      "bytes": 382,
+      "sha256": "95fbca408e6bd375b984cab1c23547ac75d2588b1c8052b5e9d22f6404a9f6ba"
+    },
+    {
+      "path": "tests/fixtures/stats/Q366.expected.json",
+      "role": "expected",
+      "bytes": 1214,
+      "sha256": "847976b56b97bdbb1ad5ef69b1203933d017a2cb557629e9e2b2a1a2a26077f5"
+    },
+    {
+      "path": "tests/fixtures/stats/Q366.input.json",
+      "role": "input",
+      "bytes": 1152,
+      "sha256": "309fe2da85e211b7bbf9c34a66f76b0556ff6874b8fb86dcc2a12276a2f0bcb4"
+    },
+    {
+      "path": "tests/fixtures/stats/Q366.notes.md",
+      "role": "notes",
+      "bytes": 382,
+      "sha256": "69f6d8f1e28a1cc102a1317312756af3cd665aba6132502727f667edbd54c94f"
+    },
+    {
+      "path": "tests/fixtures/stats/Q4.expected.json",
+      "role": "expected",
+      "bytes": 1208,
+      "sha256": "9e718ae2082b050d152952b19bfd2e2543209059fc37aa8bb3c33beb602cd819"
+    },
+    {
+      "path": "tests/fixtures/stats/Q4.input.json",
+      "role": "input",
+      "bytes": 1144,
+      "sha256": "401dc9c0f4700c38c88ccfd4d6658884154e5b90db63993d92d8eed0f510b7a5"
+    },
+    {
+      "path": "tests/fixtures/stats/Q4.notes.md",
+      "role": "notes",
+      "bytes": 378,
+      "sha256": "539a7e36aa75ddc97c4cf67df0d1d7c58f5685a8aadb76b58e7149eebab3cb24"
+    },
+    {
+      "path": "tests/fixtures/stats/Q52.expected.json",
+      "role": "expected",
+      "bytes": 1212,
+      "sha256": "e9a2078e84459e19ee5cde28c72fadace797196216a9d399958e3c85b8b83607"
+    },
+    {
+      "path": "tests/fixtures/stats/Q52.input.json",
+      "role": "input",
+      "bytes": 1148,
+      "sha256": "d3bb072891b4fb148d40a0b65d7f989a8f793b16bf681198362eb95a80f36006"
+    },
+    {
+      "path": "tests/fixtures/stats/Q52.notes.md",
+      "role": "notes",
+      "bytes": 380,
+      "sha256": "7e40ec4a9e72e0622dcd2420b07ce4ee7204fcb44e389c5838dde415b9583124"
+    },
+    {
+      "path": "tests/fixtures/stats/R60.expected.json",
+      "role": "expected",
+      "bytes": 1218,
+      "sha256": "9263b7ae0ea6395821697491ad7292dee749e3a7013f1570e08f952df348aaf3"
+    },
+    {
+      "path": "tests/fixtures/stats/R60.input.json",
+      "role": "input",
+      "bytes": 1165,
+      "sha256": "0da1902c10c92f2d83d218ae400a897ee7a3f61bd87d838936f1a4694b1ace00"
+    },
+    {
+      "path": "tests/fixtures/stats/R60.notes.md",
+      "role": "notes",
+      "bytes": 549,
+      "sha256": "76c8d4642ff606fef212f43007bcf58a960babf2188c5e3722fbca915666c8ae"
+    },
+    {
+      "path": "tests/fixtures/stats/S60-R.expected.json",
+      "role": "expected",
+      "bytes": 1219,
+      "sha256": "376b73b01ce0820c4a4835a83335642d34edd739635bf910ea8e1d2abb0552a4"
+    },
+    {
+      "path": "tests/fixtures/stats/S60-R.input.json",
+      "role": "input",
+      "bytes": 1179,
+      "sha256": "18de023a4ecb7636fa054c6571a0fdf8ada4ba6c4258ae7095bd96d8169e74f9"
+    },
+    {
+      "path": "tests/fixtures/stats/S60-R.notes.md",
+      "role": "notes",
+      "bytes": 703,
+      "sha256": "7d827bf66a7eb21157e86b4d2323030e93a8985869246b5c0741759c24ebe27f"
+    },
+    {
+      "path": "tests/fixtures/stats/S60-R.record.json",
+      "role": "input",
+      "bytes": 9508,
+      "sha256": "310ea0a674ef23a8faff6dfb2a4d187834e166db921d3504b8199e3a02d5ca99"
+    },
+    {
+      "path": "tests/fixtures/stats/S60.expected.json",
+      "role": "expected",
+      "bytes": 1217,
+      "sha256": "be28d6328d8e65e53da35fda4a8bfe4d12a9f4a1248e313d1a645f06532deb0f"
+    },
+    {
+      "path": "tests/fixtures/stats/S60.input.json",
+      "role": "input",
+      "bytes": 1161,
+      "sha256": "328581bd686eb19d7307c36927c6b9665f9ca52a33799f7bc41e3cc855598225"
+    },
+    {
+      "path": "tests/fixtures/stats/S60.notes.md",
+      "role": "notes",
+      "bytes": 391,
+      "sha256": "436ca66aa189dd063a44b55d359521f08d2ed76f779274b511073cf013da966a"
+    },
+    {
+      "path": "tests/fixtures/stats/U60.expected.json",
+      "role": "expected",
+      "bytes": 1216,
+      "sha256": "92570b80776a4bded4f70ec560d5ab9438b235fe630c697bf83372e27b82d45f"
+    },
+    {
+      "path": "tests/fixtures/stats/U60.input.json",
+      "role": "input",
+      "bytes": 1167,
+      "sha256": "7bfa362d4cae4d8b74f1ebe28068baef2a5b8a17bef775327252bae40f892ee2"
+    },
+    {
+      "path": "tests/fixtures/stats/U60.notes.md",
+      "role": "notes",
+      "bytes": 563,
+      "sha256": "8ebe33cb7a6e66e7a49c4beb752c42aabb43be3a1ca955995758bea5032805f4"
+    },
+    {
+      "path": "tests/fixtures/stats/Z60.expected.json",
+      "role": "expected",
+      "bytes": 928,
+      "sha256": "5789d471b241367cdc903a1b9450736597121f11fb1eb5f678d6a84355b7fc80"
+    },
+    {
+      "path": "tests/fixtures/stats/Z60.input.json",
+      "role": "input",
+      "bytes": 817,
+      "sha256": "68377326aa0b64dca1f8d37b9286e54731f9335e638f556cec069fe7bfd5d351"
+    },
+    {
+      "path": "tests/fixtures/stats/Z60.notes.md",
+      "role": "notes",
+      "bytes": 548,
+      "sha256": "3a43cc48b3382c6f8df9fd877b81fc74a26ea42183b6acf30a10e938f5afdeb9"
+    },
+    {
+      "path": "tests/fixtures/stats/erfc-boundaries.json",
+      "role": "vector",
+      "bytes": 1236,
+      "sha256": "6457e0f8742911c652613546e0b768fd94ab246baa62965ba621c5e05a288695"
+    },
+    {
+      "path": "tests/fixtures/stats/phi-points.json",
+      "role": "vector",
+      "bytes": 651,
+      "sha256": "5e8083bded6434da56d10330528cd73f080b2233f1662b3563058056ebafd542"
+    },
+    {
+      "path": "tests/fixtures/stats/phi-vector.json",
+      "role": "vector",
+      "bytes": 757819,
+      "sha256": "5623a4bdbc185eb9a1e850016d4fd2fbee9bfd17f060979166fe5c88027664dd"
+    }
+  ]
+}

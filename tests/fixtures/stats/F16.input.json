@@ -1,0 +1,12 @@
+{
+  "schema": "n170.verify.statistics-phi-fixture.v1",
+  "id": "F16",
+  "construction": {
+    "method": "E12 standard-library erfc values",
+    "seed": 2026101016,
+    "generator": "stats_oracle.py phi/vectors",
+    "notes_file": "F16.notes.md"
+  },
+  "seed": 2026101016,
+  "count": 10000
+}

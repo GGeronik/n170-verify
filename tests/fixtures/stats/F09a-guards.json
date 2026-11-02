@@ -1,0 +1,29 @@
+{
+  "fixture": "F09a",
+  "decode": "NaN and +Infinity are symbolic floating injections",
+  "cases": [
+    {
+      "id": "nan-skewness",
+      "T": 60,
+      "sharpe_per_interval": 0.2,
+      "skewness": "NaN",
+      "excess_kurtosis": 0
+    },
+    {
+      "id": "infinite-kurtosis",
+      "T": 60,
+      "sharpe_per_interval": 0.2,
+      "skewness": 0,
+      "excess_kurtosis": "+Infinity"
+    },
+    {
+      "id": "pearson-violation",
+      "T": 60,
+      "sharpe_per_interval": 1,
+      "skewness": 4,
+      "excess_kurtosis": 0
+    }
+  ],
+  "expected_status": "STATS_NON_FINITE",
+  "compute_array_injection": "NaN"
+}
