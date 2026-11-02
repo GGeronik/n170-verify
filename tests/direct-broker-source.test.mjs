@@ -219,13 +219,21 @@ test('eCH-0196 XMLDSIG rejects tampering, missing <Signature>, missing <X509Data
     (err) => err.code === 'REFUSE_UNTRUSTED_CERT_ISSUER'
   );
 
-  // 7. Cross-institution mismatch (SAXO statement verified as SWISSQUOTE)
+  // 7. Cross-institution mismatch (SAXO statement verified as SWISSQUOTE, or tampered unsigned <X509SubjectName>)
   assert.throws(
     () =>
       verifyDirectBrokerArtifact(
         { institution: 'SWISSQUOTE', xmlText: validXml },
         { trustedCertsPem: [saxoCert.certificatePem] }
       ),
+    (err) => err.code === 'REFUSE_INSTITUTION_MISMATCH'
+  );
+  const spoofedKeyInfoXml = validXml.replace(
+    /<X509SubjectName>[^<]+<\/X509SubjectName>/,
+    '<X509SubjectName>CN=Swissquote Bank SA,O=Swissquote Bank SA,C=CH</X509SubjectName>'
+  );
+  assert.throws(
+    () => verifyEch0196StatementXml(spoofedKeyInfoXml, { trustedCertsPem: [saxoCert.certificatePem] }),
     (err) => err.code === 'REFUSE_INSTITUTION_MISMATCH'
   );
 });

@@ -781,15 +781,46 @@ export function verifyEch0196StatementXml(xmlText, options = {}) {
     );
   }
 
-  // Extract zero-disclosure summary metadata and enforce institution binding
+  // Extract zero-disclosure summary metadata and enforce institution binding across signed XML and X.509 subject
   const instMatch = /<(?:\w+:)?institution\b([^>]*)\/?>/i.exec(withoutSignature);
   const instAttrs = instMatch ? parseAttributesMap(instMatch[1]) : {};
-  const instNameRaw = `${instAttrs.name || ''} ${x509.subject} ${x509SubjectName}`;
-  const detectedFromStatement = /swissquote/i.test(instNameRaw)
-    ? 'SWISSQUOTE'
-    : /saxo/i.test(instNameRaw)
-      ? 'SAXO'
-      : null;
+  const xmlInstText = String(instAttrs.name || '');
+  const certSubjText = String(x509.subject || '');
+
+  const detectSingleInstitution = (sourceText, label) => {
+    const hasSq = /swissquote/i.test(sourceText);
+    const hasSaxo = /saxo/i.test(sourceText);
+    if (hasSq && hasSaxo) {
+      throw new Ech0196Error(
+        'REFUSE_INSTITUTION_MISMATCH',
+        `Ambiguous institution in ${label}: matches both SWISSQUOTE and SAXO`
+      );
+    }
+    return hasSq ? 'SWISSQUOTE' : hasSaxo ? 'SAXO' : null;
+  };
+
+  const xmlInstitution = detectSingleInstitution(xmlInstText, '<institution>');
+  const certInstitution = detectSingleInstitution(certSubjText, 'X.509 certificate subject');
+  const unsignedKeyInfoInstitution = detectSingleInstitution(x509SubjectName, '<X509SubjectName>');
+
+  if (xmlInstitution && certInstitution && xmlInstitution !== certInstitution) {
+    throw new Ech0196Error(
+      'REFUSE_INSTITUTION_MISMATCH',
+      `Signed <institution> ("${xmlInstitution}") does not match X.509 certificate subject ("${certInstitution}")`
+    );
+  }
+  const detectedFromStatement = certInstitution || xmlInstitution;
+  if (
+    unsignedKeyInfoInstitution &&
+    detectedFromStatement &&
+    unsignedKeyInfoInstitution !== detectedFromStatement
+  ) {
+    throw new Ech0196Error(
+      'REFUSE_INSTITUTION_MISMATCH',
+      `<X509SubjectName> ("${unsignedKeyInfoInstitution}") conflicts with signed certificate/statement institution ("${detectedFromStatement}")`
+    );
+  }
+
   const requestedInstitution = options.institution
     ? String(options.institution).toUpperCase().trim()
     : null;
