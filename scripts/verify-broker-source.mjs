@@ -520,10 +520,16 @@ export function verifyDirectBrokerArtifact(input, options = {}) {
       ...options,
       institution: brokerConfig.institution,
     });
+    if (echRes.institution !== brokerConfig.institution) {
+      throw new BrokerSourceError(
+        'REFUSE_INSTITUTION_MISMATCH',
+        `eCH-0196 statement institution "${echRes.institution}" does not match requested broker "${brokerConfig.institution}"`
+      );
+    }
     return {
       ok: true,
       status: 'BROKER_PROVENANCE_VERIFIED',
-      institution: brokerConfig.institution,
+      institution: echRes.institution,
       artifactType: 'ECH0196_XMLDSIG',
       scope: 'ANNUAL_ECH0196_TAX_STATEMENT',
       qualification: 'ANNUAL_SWISS_TAX_STATEMENT_SCOPE',

@@ -645,29 +645,35 @@ export function verifyEch0196StatementXml(xmlText, options = {}) {
     }
   }
 
-  // Verify X.509 certificate trust chain / issuer / subject
-  if (x509.subject === x509.issuer && !x509.verify(x509.publicKey)) {
-    throw new Ech0196Error('REFUSE_UNTRUSTED_CERT_ISSUER', 'Self-signed X.509 certificate failed self-signature check');
+  // Verify X.509 certificate trust chain against caller-supplied trust anchors (no implicit DN regex trust)
+  if (!Array.isArray(options.trustedCertsPem) || options.trustedCertsPem.length === 0) {
+    throw new Ech0196Error(
+      'REFUSE_UNTRUSTED_CERT_ISSUER',
+      'Offline eCH-0196 verification requires at least one pinned CA or bank certificate in trustedCertsPem (--trusted-cert)'
+    );
   }
 
-  if (Array.isArray(options.trustedCertsPem) && options.trustedCertsPem.length > 0) {
-    let matchedTrustedCert = false;
-    for (const trustedPem of options.trustedCertsPem) {
-      const trustedX509 = new X509Certificate(trustedPem);
-      if (
-        trustedX509.fingerprint256 === x509.fingerprint256 ||
-        (x509.issuer === trustedX509.subject && x509.verify(trustedX509.publicKey))
-      ) {
-        matchedTrustedCert = true;
-        break;
-      }
+  let matchedTrustedCert = false;
+  for (const trustedPem of options.trustedCertsPem) {
+    let trustedX509;
+    try {
+      trustedX509 = new X509Certificate(trustedPem);
+    } catch {
+      continue;
     }
-    if (!matchedTrustedCert) {
-      throw new Ech0196Error(
-        'REFUSE_UNTRUSTED_CERT_ISSUER',
-        `Certificate "${x509.subject}" is not anchored in options.trustedCertsPem`
-      );
+    if (
+      trustedX509.fingerprint256 === x509.fingerprint256 ||
+      (x509.issuer === trustedX509.subject && x509.verify(trustedX509.publicKey))
+    ) {
+      matchedTrustedCert = true;
+      break;
     }
+  }
+  if (!matchedTrustedCert) {
+    throw new Ech0196Error(
+      'REFUSE_UNTRUSTED_CERT_ISSUER',
+      `Certificate "${x509.subject}" is not anchored in trustedCertsPem`
+    );
   }
 
   if (Array.isArray(options.trustedSubjectPatterns) && options.trustedSubjectPatterns.length > 0) {
@@ -682,13 +688,11 @@ export function verifyEch0196StatementXml(xmlText, options = {}) {
         `Certificate subject "${x509.subject}" does not match trustedSubjectPatterns`
       );
     }
-  } else if (!Array.isArray(options.trustedCertsPem) || options.trustedCertsPem.length === 0) {
-    if (!DEFAULT_TRUSTED_SUBJECT_RE.test(x509.subject) && !DEFAULT_TRUSTED_SUBJECT_RE.test(x509.issuer)) {
-      throw new Ech0196Error(
-        'REFUSE_UNTRUSTED_CERT_ISSUER',
-        `Certificate subject "${x509.subject}" / issuer "${x509.issuer}" is not an recognized Swiss eCH-0196 institution or CA`
-      );
-    }
+  } else if (!DEFAULT_TRUSTED_SUBJECT_RE.test(x509.subject) && !DEFAULT_TRUSTED_SUBJECT_RE.test(x509.issuer)) {
+    throw new Ech0196Error(
+      'REFUSE_UNTRUSTED_CERT_ISSUER',
+      `Certificate subject "${x509.subject}" / issuer "${x509.issuer}" is not a recognized Swiss eCH-0196 institution or CA`
+    );
   }
 
   // Extract and validate <SignedInfo>
@@ -777,17 +781,29 @@ export function verifyEch0196StatementXml(xmlText, options = {}) {
     );
   }
 
-  // Extract zero-disclosure summary metadata
+  // Extract zero-disclosure summary metadata and enforce institution binding
   const instMatch = /<(?:\w+:)?institution\b([^>]*)\/?>/i.exec(withoutSignature);
   const instAttrs = instMatch ? parseAttributesMap(instMatch[1]) : {};
   const instNameRaw = `${instAttrs.name || ''} ${x509.subject} ${x509SubjectName}`;
-  const detectedInstitution = /swissquote/i.test(instNameRaw)
+  const detectedFromStatement = /swissquote/i.test(instNameRaw)
     ? 'SWISSQUOTE'
     : /saxo/i.test(instNameRaw)
       ? 'SAXO'
-      : options.institution
-        ? String(options.institution).toUpperCase()
-        : 'SAXO';
+      : null;
+  const requestedInstitution = options.institution
+    ? String(options.institution).toUpperCase().trim()
+    : null;
+  if (
+    requestedInstitution &&
+    detectedFromStatement &&
+    requestedInstitution !== detectedFromStatement
+  ) {
+    throw new Ech0196Error(
+      'REFUSE_INSTITUTION_MISMATCH',
+      `Requested institution "${requestedInstitution}" does not match statement/certificate institution "${detectedFromStatement}"`
+    );
+  }
+  const detectedInstitution = detectedFromStatement || requestedInstitution || 'SAXO';
 
   const totalTaxValueScaled = parseScaledChfDecimal(rootAttrs.totalTaxValue || '0', 'totalTaxValue');
   const totalGrossRevenueAScaled = parseScaledChfDecimal(

@@ -190,11 +190,15 @@ test('eCH-0196 XMLDSIG rejects tampering, missing <Signature>, missing <X509Data
     certificatePem: saxoCert.certificatePem,
   });
   assert.throws(
-    () => verifyEch0196StatementXml(usdXml),
+    () => verifyEch0196StatementXml(usdXml, { trustedCertsPem: [saxoCert.certificatePem] }),
     (err) => err.code === 'REFUSE_NON_CHF_ECH0196_CURRENCY'
   );
 
-  // 6. Untrusted certificate subject / issuer
+  // 6. Missing trustedCertsPem (no implicit DN regex trust) or untrusted certificate subject / issuer
+  assert.throws(
+    () => verifyEch0196StatementXml(validXml),
+    (err) => err.code === 'REFUSE_UNTRUSTED_CERT_ISSUER'
+  );
   const untrustedCert = generateTestBankCertificate({
     institution: 'SAXO',
     organization: 'Self-Generated Tax Tool Org',
@@ -211,8 +215,18 @@ test('eCH-0196 XMLDSIG rejects tampering, missing <Signature>, missing <X509Data
     subjectName: untrustedCert.subjectName,
   });
   assert.throws(
-    () => verifyEch0196StatementXml(untrustedXml),
+    () => verifyEch0196StatementXml(untrustedXml, { trustedCertsPem: [saxoCert.certificatePem] }),
     (err) => err.code === 'REFUSE_UNTRUSTED_CERT_ISSUER'
+  );
+
+  // 7. Cross-institution mismatch (SAXO statement verified as SWISSQUOTE)
+  assert.throws(
+    () =>
+      verifyDirectBrokerArtifact(
+        { institution: 'SWISSQUOTE', xmlText: validXml },
+        { trustedCertsPem: [saxoCert.certificatePem] }
+      ),
+    (err) => err.code === 'REFUSE_INSTITUTION_MISMATCH'
   );
 });
 
