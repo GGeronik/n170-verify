@@ -354,6 +354,7 @@
     "tests/tlog-verifier.test.mjs",
     "tests/tool-evidence.test.mjs",
     "tests/track-record.test.mjs",
+    "tests/v030-ui-integration.test.mjs",
     "tests/verify-reconciliation-inventory.test.mjs",
     "tests/verify-reconciliation.test.mjs",
     "tests/witness-fetch.test.mjs",
