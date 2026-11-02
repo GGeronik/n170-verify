@@ -16,9 +16,9 @@ test('valid, rejected and conflicting displays have headline, one six-row ladder
  const facts={parse:'OK',payload_hash:'MATCH',signatures:'VALID',chain:'VALID',continuity:'NONE',comparison:'NONE',reconciliation:'NONE',witness:'NONE'};
  for(const patch of [{},{parse:'INVALID_INPUT'},{comparison:'CONFLICT'}]){
   const headline=deriveHeadline({...facts,...patch},emptyHeadlineContext());
-  const html=renderToStaticMarkup(createElement(HeadlineReview,{headline}));
+  const html=renderToStaticMarkup(createElement(HeadlineReview,{headline},createElement('section',{className:'paper statistics-panel','aria-label':'Derived statistics (unsigned)'},createElement('h3',null,'Derived statistics (unsigned)'))));
   assert.equal((html.match(/data-evidence-ladder/g)||[]).length,1);assert.equal((html.match(/<dt>/g)||[]).length,6);
-  assert.ok(html.indexOf('data-headline')<html.indexOf('data-evidence-ladder'));assert.ok(html.indexOf('data-evidence-ladder')<html.indexOf('data-statistics-insertion-point'));
+  assert.ok(html.indexOf('data-headline')<html.indexOf('data-evidence-ladder'));assert.ok(html.indexOf('data-evidence-ladder')<html.indexOf('data-statistics-insertion-point'));assert.ok(html.indexOf('data-statistics-insertion-point')<html.indexOf('statistics-panel'));
   assert.ok(!/Sharpe|PSR|MinTRL|skew|kurtosis/.test(headline.headline+(headline.sublabel??'')));
  }
 });

@@ -27,6 +27,7 @@
     "docs/import-formats.md",
     "docs/key-continuity-contract.md",
     "docs/methods.md",
+    "docs/recipient-guide.md",
     "docs/release-readiness.md",
     "docs/release-validation.md",
     "docs/research-decisions.md",
@@ -439,7 +440,8 @@
     "docs/accounting-release.md": "accounting-release.md",
     "docs/verify-reconciliation.md": "verify-reconciliation.md",
     "docs/witness-receipt.md": "witness-receipt.md",
-    "schemas/witness-receipt-v1.schema.json": "witness-receipt-v1.schema.json"
+    "schemas/witness-receipt-v1.schema.json": "witness-receipt-v1.schema.json",
+    "docs/recipient-guide.md": "recipient-guide.md"
   },
   "bundledPackages": [
     {

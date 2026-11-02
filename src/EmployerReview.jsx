@@ -6,9 +6,10 @@ import { publishedFingerprint } from './trackRecord.js';
 import ComparisonChanges from './ComparisonChanges.jsx';
 import IndependentVerifierHelp from './IndependentVerifierHelp.jsx';
 import ContinuityReview from './ContinuityReview.jsx';
+import StatisticsPanel from './StatisticsPanel.jsx';
 import { inspectHeadline } from './headline.js';
-export function HeadlineReview({ headline }) {
-  return <section className="paper headline-review" aria-label="Record evidence headline"><div className="review-boundary" data-headline><strong>{headline.headline}</strong>{headline.sublabel && <p data-sublabel>{headline.sublabel}</p>}{headline.qualifications.length>0 && <ul>{headline.qualifications.map(q=><li key={q.code}>{q.text}{q.reasons.length>0 && <span> {q.reasons.join(', ')}</span>}</li>)}</ul>}</div><dl className="evidence-list" data-evidence-ladder>{headline.ladder.map(item=><div key={item.row}><dt>{item.row}</dt><dd>{item.text}</dd></div>)}</dl><div data-statistics-insertion-point>{/* P4 inserts its separate statistics component here at integration. */}</div></section>;
+export function HeadlineReview({ headline, children }) {
+  return <section className="paper headline-review" aria-label="Record evidence headline"><div className="review-boundary" data-headline><strong>{headline.headline}</strong>{headline.sublabel && <p data-sublabel>{headline.sublabel}</p>}{headline.qualifications.length>0 && <ul>{headline.qualifications.map(q=><li key={q.code}>{q.text}{q.reasons.length>0 && <span> {q.reasons.join(', ')}</span>}</li>)}</ul>}</div><dl className="evidence-list" data-evidence-ladder>{headline.ladder.map(item=><div key={item.row}><dt>{item.row}</dt><dd>{item.text}</dd></div>)}</dl><div data-statistics-insertion-point>{children}</div></section>;
 }
 const comparisons = { not_supplied:'No previous copy checked', identical:'Same history as your retained copy', extended:'Retained history preserved; new records appended', truncated:'History is shorter than your retained copy', replacement:'Different key or alias: continuity is not established', conflicting_history:'Conflicting history: an earlier record differs' };
 export default function EmployerReview({ initialText = '' }) {
@@ -57,7 +58,7 @@ export default function EmployerReview({ initialText = '' }) {
       {trustMissing&&<p>Add a trusted witness key code and an allowed broker host, or remove the receipt.</p>}{receipt&&!eventHash&&<p>Choose the record this receipt witnesses.</p>}</details>
     <details><summary>Paste machine-readable evidence</summary><label htmlFor="evidence-json">Signed record JSON or review package</label><textarea id="evidence-json" maxLength={2600000} value={text} spellCheck="false" onChange={event=>{invalidate();setEventHash('');setText(event.target.value);setFileName('Pasted evidence');}}/></details><div className="actions"><button className="button primary" disabled={!text||busy||!!trustMissing||!!receipt&&!eventHash}>{busy?'Checking calculations & signatures…':'Check record'}</button></div>
   </fieldset></form><Notice error>{error}</Notice></section>
-  {headlineResult&&<HeadlineReview headline={headlineResult}/> }
+  {headlineResult&&<HeadlineReview headline={headlineResult}>{profile && <StatisticsPanel profile={profile}/>}</HeadlineReview>}
   {result?.package && <ContinuityReview result={result} resultTitle={resultTitle}/>}
   {result && !result.package && <div className="review-result"><section className="paper"><p className="record-overline">Independent local check completed</p><h2 tabIndex={-1} ref={resultTitle}>{profile.display_name}</h2><p className="key-line">Key <code>{result.key_code}</code></p>
     <dl className="coverage"><div><dt>Covered dates</dt><dd>{summary.first_date||'No records'} — {summary.last_date||'No records'}</dd></div><div><dt>Disclosed observations</dt><dd>{summary.return_observations} return intervals · {summary.stamp_count} signed events · {summary.correction_count} corrections</dd></div></dl>
