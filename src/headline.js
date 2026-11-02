@@ -2,6 +2,8 @@
 import * as recordMessages from './trackRecord.js';
 import { inspectReviewPackage } from './reviewPackage.js';
 import { verifyWitnessReceipt } from './witnessReceipt.js';
+import { verifyOtsProof } from './otsVerifier.js';
+import { verifyTlogProofBundle } from './tlogVerifier.js';
 
 const enums = {
   parse:['OK','INVALID_INPUT'], payload_hash:['MATCH','MISMATCH'], signatures:['VALID','INVALID'], chain:['VALID','BROKEN'],
@@ -114,13 +116,50 @@ export async function inspectHeadline(text, inputs={}) {
       try{outcome=await inspectReviewPackage(text,{...recordOptions,previousProfile:''});const mapped=factsFromInspection(outcome);mapped.facts.comparison='TRUNCATION';return {...mapped,headline:deriveHeadline(mapped.facts,mapped.context),inspection:outcome,error};}catch(cause){outcome=cause;}
     }else outcome=error;
   }
-  let witness,selectedEvent;
+  let witness,selectedEvent,tlog;
   if(!(outcome instanceof Error) && inputs.receiptBytes!==undefined){
     const profiles=outcome.package?outcome.package.profiles:[outcome.profile];
     selectedEvent=profiles.flatMap(p=>p.stamps).find(s=>s.sha256===inputs.eventSha256);
     witness=await verifyWitnessReceipt(inputs.receiptBytes,{recordPayloadHash:selectedEvent?.sha256,trustedWitnessKeys:inputs.trustedWitnessKeys,allowedBrokerHosts:inputs.allowedBrokerHosts,...(inputs.otsProofBytes===undefined?{}:{otsProofBytes:inputs.otsProofBytes})});
     if(!selectedEvent)witness={...witness,result:'WITNESS_RECEIPT_INVALID',reasons:['EVENT_HASH_UNBOUND']};
+    if(inputs.otsProofBytes!==undefined && inputs.bitcoinHeader!==undefined && inputs.bitcoinHeader!=='' && witness.receipt_sha256){
+      try {
+        const ots=await verifyOtsProof(inputs.otsProofBytes,witness.receipt_sha256,{header:inputs.bitcoinHeader});
+        if(ots.status==='CONFIRMED'){
+          const utc=new Date(ots.nTime*1000).toISOString().replace('.000Z','Z');
+          witness={...witness,timestamp_proof:{status:'CONFIRMED',reasons:[],height:ots.height,nTime:ots.nTime,utc,merkleRoot:ots.merkleRoot,blockHash:ots.blockHash}};
+        }else{
+          witness={...witness,timestamp_proof:{status:'PENDING',reasons:['TIMESTAMP_CONFIRMATION_NOT_VERIFIED']}};
+        }
+      }catch(otsErr){
+        witness={...witness,timestamp_proof:{status:'INVALID',reasons:[otsErr.code||'TIMESTAMP_PROOF_MALFORMED']}};
+      }
+    }
   }
   const mapped=factsFromInspection(outcome,{witness,selectedEvent});
-  return {...mapped,headline:deriveHeadline(mapped.facts,mapped.context),inspection:outcome instanceof Error?null:outcome,error:outcome instanceof Error?outcome:null,witness};
+  if(!(outcome instanceof Error) && inputs.tlogProof!==undefined && inputs.tlogProof!==''){
+    tlog=await verifyTlogProofBundle(inputs.tlogProof,inputs.tlogPolicy,inputs.tlogReceipt||null);
+    if(tlog.ok && inputs.requireRecordEventMatch){
+      const stamps=outcome.package?outcome.package.profiles.flatMap(p=>p.stamps):(outcome.profile?.stamps??[]);
+      if(!stamps.some(s=>s.sha256===tlog.eventSha256Hex)){
+        tlog={ok:false,conflict:false,errors:['tlog event_sha256 does not match any stamp in the inspected record'],warnings:tlog.warnings};
+      }
+    }
+    if(!tlog.ok){
+      if(tlog.conflict){
+        mapped.facts.comparison='CONFLICT';
+      }else{
+        mapped.facts.parse='INVALID_INPUT';
+        mapped.context.record_reasons=['TLOG_PROOF_INVALID'];
+      }
+    }
+  }
+  let headline=deriveHeadline(mapped.facts,mapped.context);
+  if(witness?.timestamp_proof?.status==='CONFIRMED' && witness.timestamp_proof.height!==undefined){
+    headline=freeze({
+      ...headline,
+      ladder:headline.ladder.map(r=>r.row==='Time'?{row:'Time',text:`CONFIRMED · Bitcoin block ${witness.timestamp_proof.height} (${witness.timestamp_proof.utc})`}:{...r}),
+    });
+  }
+  return {...mapped,headline,inspection:outcome instanceof Error?null:outcome,error:outcome instanceof Error?outcome:null,witness,...(tlog?{tlog}:{})};
 }

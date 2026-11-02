@@ -303,3 +303,80 @@ export async function verifyCheckpoint(text, policy, now = Math.floor(Date.now()
   }
   return { origin: lines[0], size, root, witnesses: report };
 }
+
+export async function verifyTlogProofBundle(proofInput, policyInput, previousReceiptInput = null) {
+  try {
+    const proofBundle = typeof proofInput === 'string' ? JSON.parse(proofInput) : proofInput;
+    if (!proofBundle || typeof proofBundle !== 'object' || Array.isArray(proofBundle) || typeof proofBundle.checkpoint !== 'string') {
+      throw new Error('malformed transparency proof bundle');
+    }
+    const policy = typeof policyInput === 'string' ? JSON.parse(policyInput) : policyInput;
+    if (
+      !policy ||
+      typeof policy !== 'object' ||
+      Array.isArray(policy) ||
+      typeof policy.origin !== 'string' ||
+      !policy.origin.trim() ||
+      typeof policy.log !== 'string' ||
+      !policy.log.trim() ||
+      !Array.isArray(policy.witnesses) ||
+      policy.witnesses.length === 0 ||
+      !Number.isSafeInteger(policy.quorum) ||
+      policy.quorum < 1 ||
+      typeof policy.key_code !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(policy.key_code)
+    ) {
+      throw new Error('transparency log policy requires origin, log, witnesses, positive integer quorum, and 64-hex key_code');
+    }
+    let previousReceipt = null;
+    if (previousReceiptInput !== null && previousReceiptInput !== undefined && previousReceiptInput !== '') {
+      if (typeof previousReceiptInput === 'string') {
+        if (previousReceiptInput.trim() !== '') {
+          previousReceipt = JSON.parse(previousReceiptInput);
+        }
+      } else {
+        previousReceipt = previousReceiptInput;
+      }
+      if (
+        previousReceipt !== null &&
+        (!previousReceipt ||
+          typeof previousReceipt !== 'object' ||
+          Array.isArray(previousReceipt) ||
+          previousReceipt.sequence === undefined ||
+          !previousReceipt.event_sha256)
+      ) {
+        throw new Error('malformed previous transparency receipt');
+      }
+    }
+    const cp = await verifyCheckpoint(proofBundle.checkpoint, policy, policy.now ?? Math.floor(Date.now() / 1000));
+    const merkle = await verifyN170Merkle(proofBundle, cp, policy.key_code, previousReceipt);
+    if (!merkle.ok) {
+      const conflict = merkle.errors.some(
+        (e) => e.startsWith('EQUIVOCATION:') || e.startsWith('CHAIN BREAK:') || e.startsWith('LOG FORK:')
+      );
+      return { ok: false, conflict, errors: merkle.errors, warnings: merkle.warnings };
+    }
+    return {
+      ok: true,
+      conflict: false,
+      origin: cp.origin,
+      treeSize: cp.size.toString(),
+      rootBase64: b64e(cp.root),
+      sequence: merkle.leaf.sequence.toString(),
+      keyCodeHex: hexe(merkle.leaf.key_code),
+      eventSha256Hex: hexe(merkle.leaf.event_sha256),
+      predecessorSha256Hex: hexe(merkle.leaf.predecessor_sha256),
+      witnesses: cp.witnesses,
+      warnings: merkle.warnings,
+      retentionReceipt: {
+        sequence: merkle.leaf.sequence.toString(),
+        event_sha256: hexe(merkle.leaf.event_sha256),
+        checkpoint_size: cp.size.toString(),
+        checkpoint_root: b64e(cp.root),
+      },
+    };
+  } catch (err) {
+    return { ok: false, conflict: false, errors: [err.message || 'malformed transparency proof'], warnings: [] };
+  }
+}
+
