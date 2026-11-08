@@ -1,0 +1,204 @@
+{
+  "schema": "n170.verify.fixture-manifest.v1",
+  "created_utc": "2026-10-26T14:14:45.510154+00:00",
+  "oracle": {
+    "path": "tests/headline_oracle.py",
+    "sha256": "5391c4b8788b446427f7b5e7ab44537624c05027d4d151eb8a69625c20c6f057"
+  },
+  "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "files": [
+    {
+      "path": "tests/fixtures/witness/F13a.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "be977659e715462b636077af32314c7f24cf59240cef3aa67779c93ac742ac54"
+    },
+    {
+      "path": "tests/fixtures/witness/F13b.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "f2b42f5a0808f1cfa2d2336b6d779d652ca26e3c7cd3de204133ddc0c6ff2760"
+    },
+    {
+      "path": "tests/fixtures/witness/F14.receipt.json",
+      "role": "input",
+      "bytes": 1452,
+      "sha256": "9f9e6dbdd257aa252dc3eec7753646b83442b7490d09808e36f0fb594bd8bbc4"
+    },
+    {
+      "path": "tests/fixtures/witness/F15.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "62d66e912b416266ba8efeb77b194c98aad50241da81c7c0c141a7b837fcab4c"
+    },
+    {
+      "path": "tests/fixtures/witness/NOTES.txt",
+      "role": "notes",
+      "bytes": 2262,
+      "sha256": "253dbcab8e4c6d716ff7b6f006ef9ad08c6e7fc073fa84a3f738aa57cd71cbd4"
+    },
+    {
+      "path": "tests/fixtures/witness/REC-SUPERSEDED.json",
+      "role": "input",
+      "bytes": 3004,
+      "sha256": "5b0c6724d8f1fb5d353a8c7e59581fc03826c436039c072170101f52e51d631e"
+    },
+    {
+      "path": "tests/fixtures/witness/REC-W.json",
+      "role": "input",
+      "bytes": 4185,
+      "sha256": "6186238d197be5678fc7b34c463914a5681a8b11819cb158f5793845e5907b05"
+    },
+    {
+      "path": "tests/fixtures/witness/T-BAD.ots-header",
+      "role": "input",
+      "bytes": 64,
+      "sha256": "f98a9da2e21df454ee1842b1c93a3b31d70ced090618b5f3fb4eb36ceaa05f3b"
+    },
+    {
+      "path": "tests/fixtures/witness/T-BAD.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/T-NONE.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/T-PEND.ots-header",
+      "role": "input",
+      "bytes": 65,
+      "sha256": "dcc6668e3ebd7fa85c630c2407e0e883dfa410256f17a4222f381a52c7a0a757"
+    },
+    {
+      "path": "tests/fixtures/witness/T-PEND.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/T-UNB.ots-header",
+      "role": "input",
+      "bytes": 65,
+      "sha256": "d276000d743e7b93159fd4f95a42f11f5997a2d3a4cf621d30e6a98617e3e49c"
+    },
+    {
+      "path": "tests/fixtures/witness/T-UNB.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/W-DUP.receipt.raw",
+      "role": "input",
+      "bytes": 1419,
+      "sha256": "e2215c1e0b0aef0c10b4146e837dc2944392cd12393baf3cf098031034086d6d"
+    },
+    {
+      "path": "tests/fixtures/witness/W-ESC-DUP.receipt.raw",
+      "role": "input",
+      "bytes": 1424,
+      "sha256": "d3a36e563984fab050598b847b387217330c1c4063b9bd81391854d503ec8598"
+    },
+    {
+      "path": "tests/fixtures/witness/W-HASH.receipt.json",
+      "role": "input",
+      "bytes": 1399,
+      "sha256": "5a99e4bb5de95856b26d4121c298c8bdf4a07be61abaa6777c43d4341e1765a4"
+    },
+    {
+      "path": "tests/fixtures/witness/W-HIGHS.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "f16fd50ba1e2ceff39233df964b9ef97d87ee661951e0900f1ca163dcc8a89a6"
+    },
+    {
+      "path": "tests/fixtures/witness/W-HOST.receipt.json",
+      "role": "input",
+      "bytes": 1391,
+      "sha256": "ab04e559d431d1aab5806a020c776e10ea4ed1aed6fdce5a7e0c7c691996ceab"
+    },
+    {
+      "path": "tests/fixtures/witness/W-KEYINVALID.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "f2ab1b5d871907d84a9341152f5756ac5eb5cdef8c1b9121b17d8a687519ecbe"
+    },
+    {
+      "path": "tests/fixtures/witness/W-NA.receipt.json",
+      "role": "input",
+      "bytes": 1422,
+      "sha256": "a0d8d03b0c2efc656db98f7d63fb7a953157dfc75d39f704614f55b5fbec2344"
+    },
+    {
+      "path": "tests/fixtures/witness/W-NUM.receipt.json",
+      "role": "input",
+      "bytes": 1399,
+      "sha256": "2d158f3ea8a55f923fb6d13e598939574458a4ab374278c9ca904e91b39a1e83"
+    },
+    {
+      "path": "tests/fixtures/witness/W-OK.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/W-OPTS.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/W-PROFILEKEY.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/W-STAMPSIG.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "3635e7fcbaad03abfef1001b9478d21ad0cdafcebef0fb7776d4b4070045cdc0"
+    },
+    {
+      "path": "tests/fixtures/witness/W-SUPERSEDED-MISMATCH.receipt.json",
+      "role": "input",
+      "bytes": 1411,
+      "sha256": "22f33e40ca0974d4c747c2560d5ed768f4c0d1ea8531f6306a99d9038aa770a9"
+    },
+    {
+      "path": "tests/fixtures/witness/W-TOKEN.receipt.json",
+      "role": "input",
+      "bytes": 1440,
+      "sha256": "04387281faba86bff1d26a7449a6d5e961585906d82198a1581e40c42a55630d"
+    },
+    {
+      "path": "tests/fixtures/witness/W-UNTRUSTED.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "d21506273dc7e5d0333a774db0c08c4bacade1d6825c13bb39c62f1c2a3aa72c"
+    },
+    {
+      "path": "tests/fixtures/witness/W-UTF8.receipt.raw",
+      "role": "input",
+      "bytes": 1,
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "path": "tests/fixtures/witness/W-VER.receipt.json",
+      "role": "input",
+      "bytes": 1401,
+      "sha256": "ab322e306ff84b0105098bd8cfc41dfdede34df8b17fa5ba9699bf61a8a88f06"
+    },
+    {
+      "path": "tests/fixtures/witness/receipt-cases.json",
+      "role": "expected",
+      "bytes": 64569,
+      "sha256": "4f7ffb8347887e4e711885ba03fd7354e23ffbbd099c3f48ffdd77d2d9f4c596"
+    }
+  ]
+}
