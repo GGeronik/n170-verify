@@ -1,0 +1,44 @@
+{
+  "schema": "n170.verify.counterfactual-input.v1",
+  "id": "CF16",
+  "periods_per_year": 252,
+  "books": {
+    "ACTUAL": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 300000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -150000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": -100000000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 250000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": 180000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 310000
+      }
+    ]
+  },
+  "construction": {
+    "method": "Refusal probe with -100% wipeout return_e8 = -100000000",
+    "seed": 2026110216,
+    "notes_file": "CF16.notes.md"
+  }
+}

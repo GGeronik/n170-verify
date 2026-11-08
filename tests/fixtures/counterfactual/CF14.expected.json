@@ -1,0 +1,14 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF14",
+  "fixture_sha256": "f4c35cb5345032b8c5414d3dd03d9153403d1b78482e8cd3bd36f6adce229dae",
+  "status": "CF_LEAN_MANIFEST_INVALID",
+  "reason_code": "LEAN_MERKLE_ROOT_MISMATCH",
+  "T": 8,
+  "periods_per_year": 252,
+  "calendar_sha256": "14ed56f1ac40cc8737c6ab135456d6313df08ac739eb82a74b1af5706e33d9cf",
+  "books": null,
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}

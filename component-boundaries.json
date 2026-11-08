@@ -19,7 +19,10 @@
       "scripts/verify-witness-receipt.mjs",
       "scripts/verify-continuity.mjs",
       "scripts/ots-verifier.mjs",
+      "scripts/verify-broker-source.mjs",
+      "scripts/verify-counterfactual.mjs",
       "scripts/verify-dkim-statement.mjs",
+      "scripts/verify-ech0196-statement.mjs",
       "scripts/verify-tlog.mjs",
       "scripts/witness-fetch.mjs"
     ],

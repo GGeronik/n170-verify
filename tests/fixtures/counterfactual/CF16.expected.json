@@ -1,0 +1,14 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF16",
+  "fixture_sha256": "2499e6397edc791da73f089bfb7f83a3844364a3c685f6ad96fd6310fa47f9df",
+  "status": "CF_INVALID_INPUT",
+  "reason_code": "INVALID_RETURN_E8",
+  "T": 6,
+  "periods_per_year": 252,
+  "calendar_sha256": null,
+  "books": null,
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}
