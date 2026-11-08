@@ -1,0 +1,72 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    ulimits:
+      core: 0
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      N170_VERIFY_HOSTED_MODE: "${N170_VERIFY_HOSTED_MODE:-true}"
+      N170_VERIFY_DB_PATH: "${N170_VERIFY_DB_PATH:-:memory:}"
+      N170_VERIFY_SYNC_DB_PATH: "${N170_VERIFY_SYNC_DB_PATH:-:memory:}"
+      N170_VERIFY_PUBLISHER_KID: "${N170_VERIFY_PUBLISHER_KID:-}"
+      N170_VERIFY_SIGNING_SEED_FILE: "${N170_VERIFY_SIGNING_SEED_FILE:-/run/n170-verify-keys/publisher_seed.hex}"
+      EODHD_API_KEY: "${EODHD_API_KEY:-}"
+      N170_VERIFY_LLM_BASE_URL: "${N170_VERIFY_LLM_BASE_URL:-http://ollama:11434/v1}"
+      N170_VERIFY_LLM_MODEL: "${N170_VERIFY_LLM_MODEL:-qwen2.5:7b-instruct}"
+      N170_VERIFY_SEC_USER_AGENT: "${N170_VERIFY_SEC_USER_AGENT:-}"
+      FRED_API_KEY: "${FRED_API_KEY:-}"
+    volumes:
+      # External publisher signing key directory located strictly outside the git repository tree.
+      - "${N170_VERIFY_HOST_KEY_DIR:-/var/tmp/n170-verify-keys}:/run/n170-verify-keys:ro"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_N170_VERIFY_API_URL: "${NEXT_PUBLIC_N170_VERIFY_API_URL:-http://127.0.0.1:8080}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /srv/n170-verify-web/.next/cache:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_N170_VERIFY_API_URL: "${NEXT_PUBLIC_N170_VERIFY_API_URL:-http://127.0.0.1:8080}"
+      N170_VERIFY_INTERNAL_API_URL: "http://api:8080"
+    depends_on:
+      - api
+
+  ollama:
+    profiles:
+      - ollama
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - n170_verify_ollama_models:/root/.ollama
+
+volumes:
+  n170_verify_ollama_models:
