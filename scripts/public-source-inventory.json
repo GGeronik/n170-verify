@@ -516,17 +516,17 @@
     {
       "license": "MIT",
       "name": "react",
-      "version": "19.2.0"
+      "version": "19.3.1"
     },
     {
       "license": "MIT",
       "name": "react-dom",
-      "version": "19.2.0"
+      "version": "19.3.1"
     },
     {
       "license": "MIT",
       "name": "scheduler",
-      "version": "0.27.0"
+      "version": "0.28.0"
     }
   ],
   "scope": "Exact public app, original offline toolkit and accounting source allowlist. Six separately pinned private-source challenge deliverables retain their original bytes and distinct accepted identities. Other historical private evidence is not copied; modified current source produces new archive identities.",
