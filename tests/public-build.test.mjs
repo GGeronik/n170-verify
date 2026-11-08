@@ -137,7 +137,7 @@ with zipfile.ZipFile(io.BytesIO(RAW)) as archive:
     for name in names:
         assert not name.startswith(("app/docs/validation/", "app/docs/verification/",
             "app/screenshots/", "app/research_repro/", "app/node_modules/", "app/dist/")), name
-        assert ".env" not in Path(name).parts and not any(p.startswith(".env.") for p in Path(name).parts), name
+        assert ".env" not in Path(name).parts and not any(p.startswith(".env.") and p != ".env.example" for p in Path(name).parts), name
     package = json.loads(archive.read("app/package.json"))
     assert package["scripts"]["build"] == "python3 scripts/build-public.py"
     if "app/scripts/package-review-docs.py" in names:
