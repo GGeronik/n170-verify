@@ -112,7 +112,7 @@ try {
     const forged = structuredClone(findings); forged.scope.source_authenticity = 'verified';
     const version = structuredClone(findings); version.schema += '.future';
     const hostile = structuredClone(findings); hostile.scope['__proto__'] = { authenticated: true };
-    for (const value of ['{', '{"schema":"a","schema":"b"}', forged, version, '['.repeat(24) + '0' + ']'.repeat(24), Buffer.from([0xc3, 0x28]), JSON.stringify(findings).replace('{', '{"__proto__":{"authenticated":true},')]) {
+    for (const value of ['{', '{"schema":"a","schema":"b"}', forged, version, '['.repeat(24) + '0' + ']'.repeat(24), Buffer.from([0xc3, 0x28]), '{"__proto__":{"authenticated":true},' + JSON.stringify(findings).slice(1)]) {
       await choose(findings); await loaded(); await choose(value); await rejected();
       assert(!(await page.getByRole('alert').innerText()).includes('PRIVATE SOURCE ERROR'));
     }

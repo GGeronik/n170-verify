@@ -1130,6 +1130,144 @@ class TestPublisherRegistryWitnessQuorumAndBundle(unittest.TestCase):
         safe_ok, clean_reasons = inspect_transcript_safety(clean_tradier)
         self.assertTrue(safe_ok, clean_reasons)
 
+    def test_witness_sni_allowlist_and_request_target_host_binding(self) -> None:
+        # 1. Two valid disjoint witnesses for evil-replica.example on broker_id="ibkr" -> rejected from quorum
+        evil_w1 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_cf.private_key_hex,
+            notary_id="notary-cf-1",
+            server_sni="evil-replica.example",
+            sanitized_request_target="/v1/api/portfolio/subaccounts",
+            redacted_headers=["Authorization"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:10Z",
+        )
+        evil_w2 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_pse.private_key_hex,
+            notary_id="notary-pse-1",
+            server_sni="evil-replica.example",
+            sanitized_request_target="/v1/api/portfolio/subaccounts",
+            redacted_headers=["Authorization"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:15Z",
+        )
+        b_evil = create_signed_proof_bundle(
+            proof_id="prf-sni-evil-replica",
+            issued_at_utc="2026-02-01T00:05:00Z",
+            publisher_kid="n170-active-2026",
+            publisher_private_key_hex=self.pub_active.private_key_hex,
+            broker_id="ibkr",
+            blinded_account_tag=self.account_tag,
+            account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+            provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+            environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+            claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+            source_body_sha256=self.source_sha,
+            period_start_utc="2026-01-01T00:00:00Z",
+            period_end_utc="2026-01-31T23:59:59Z",
+            base_currency="USD",
+            leaf_payloads=_sample_seven_leaves(),
+            witness_attestations=[evil_w1, evil_w2],
+        )
+        r_evil = verify_proof_bundle(b_evil, registry_doc=self.registry)
+        self.assertNotEqual(
+            r_evil.effective_origin_assurance, OriginAssurance.INDEPENDENTLY_WITNESSED_TLS
+        )
+        self.assertEqual(r_evil.effective_origin_assurance, OriginAssurance.OPERATOR_RETRIEVED)
+        self.assertTrue(
+            any("not an official TLS endpoint" in w for w in r_evil.warnings),
+            r_evil.warnings,
+        )
+
+        # 2. Cross-broker witness replay (api.alpaca.markets on broker_id="ibkr") -> rejected from quorum
+        alpaca_w1 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_cf.private_key_hex,
+            notary_id="notary-cf-1",
+            server_sni="api.alpaca.markets",
+            sanitized_request_target="/v2/account",
+            redacted_headers=["APCA-API-KEY-ID"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:10Z",
+        )
+        alpaca_w2 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_pse.private_key_hex,
+            notary_id="notary-pse-1",
+            server_sni="api.alpaca.markets",
+            sanitized_request_target="/v2/account",
+            redacted_headers=["APCA-API-KEY-ID"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:15Z",
+        )
+        b_cross = create_signed_proof_bundle(
+            proof_id="prf-sni-cross-broker",
+            issued_at_utc="2026-02-01T00:05:00Z",
+            publisher_kid="n170-active-2026",
+            publisher_private_key_hex=self.pub_active.private_key_hex,
+            broker_id="ibkr",
+            blinded_account_tag=self.account_tag,
+            account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+            provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+            environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+            claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+            source_body_sha256=self.source_sha,
+            period_start_utc="2026-01-01T00:00:00Z",
+            period_end_utc="2026-01-31T23:59:59Z",
+            base_currency="USD",
+            leaf_payloads=_sample_seven_leaves(),
+            witness_attestations=[alpaca_w1, alpaca_w2],
+        )
+        r_cross = verify_proof_bundle(b_cross, registry_doc=self.registry)
+        self.assertNotEqual(
+            r_cross.effective_origin_assurance, OriginAssurance.INDEPENDENTLY_WITNESSED_TLS
+        )
+        self.assertEqual(r_cross.effective_origin_assurance, OriginAssurance.OPERATOR_RETRIEVED)
+
+        # 3. sanitized_request_target="https://evil-replica.example/v1/account" with server_sni="api.ibkr.com" -> rejected
+        mismatch_w1 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_cf.private_key_hex,
+            notary_id="notary-cf-1",
+            server_sni="api.ibkr.com",
+            sanitized_request_target="https://evil-replica.example/v1/account",
+            redacted_headers=["Authorization"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:10Z",
+        )
+        mismatch_w2 = create_signed_witness_attestation(
+            notary_private_key_hex=self.notary_pse.private_key_hex,
+            notary_id="notary-pse-1",
+            server_sni="api.ibkr.com",
+            sanitized_request_target="https://evil-replica.example/v1/account",
+            redacted_headers=["Authorization"],
+            response_body_sha256=self.source_sha,
+            session_timestamp_utc="2026-02-01T00:00:15Z",
+        )
+        b_target_mismatch = create_signed_proof_bundle(
+            proof_id="prf-target-host-mismatch",
+            issued_at_utc="2026-02-01T00:05:00Z",
+            publisher_kid="n170-active-2026",
+            publisher_private_key_hex=self.pub_active.private_key_hex,
+            broker_id="ibkr",
+            blinded_account_tag=self.account_tag,
+            account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+            provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+            environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+            claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+            source_body_sha256=self.source_sha,
+            period_start_utc="2026-01-01T00:00:00Z",
+            period_end_utc="2026-01-31T23:59:59Z",
+            base_currency="USD",
+            leaf_payloads=_sample_seven_leaves(),
+            witness_attestations=[mismatch_w1, mismatch_w2],
+        )
+        r_target_mismatch = verify_proof_bundle(b_target_mismatch, registry_doc=self.registry)
+        self.assertNotEqual(
+            r_target_mismatch.effective_origin_assurance,
+            OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+        )
+        self.assertTrue(
+            any("sanitized_request_target host mismatches" in w for w in r_target_mismatch.warnings),
+            r_target_mismatch.warnings,
+        )
+
 
 class TestProspectiveChainInvariants(unittest.TestCase):
     """Tests for all 5 formal LP due-diligence prospective chain invariants."""

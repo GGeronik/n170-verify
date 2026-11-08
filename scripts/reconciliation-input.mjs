@@ -1,26 +1,29 @@
 // Input transport and structural checks only. No producer imports or execution.
-import { constants, openSync, closeSync, readSync, fstatSync, lstatSync } from 'node:fs';
+import { constants, openSync, closeSync, readSync, fstatSync } from 'node:fs';
 
 export const INPUT_LIMITS = Object.freeze({ privateBytes: 32 * 1024 * 1024, sourceBytes: 10 * 1024 * 1024, sources: 20, sourceRows: 5000, observations: 500, intervals: 5500, diagnostics: 20000, corrections: 100, depth: 24, nodes: 500000 });
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
+const notRegularOpenCodes = new Set(['ELOOP', 'EMLINK', 'EFTYPE', 'EISDIR', 'ENXIO']);
 function fail(code = 'INVALID_PRIVATE_SCHEMA') { const error = new Error(code); error.status = 'INVALID_INPUT'; error.code = code; throw error; }
 const check = (condition, code) => { if (!condition) fail(code); };
-const sameFile = (a, b) => ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every(key => a[key] === b[key]);
+const sameFile = (a, b) => ['dev', 'ino', 'size', 'nlink', 'mtimeNs', 'ctimeNs'].every(key => a[key] === b[key]);
 
-// O_NONBLOCK prevents a path changed into a FIFO from blocking during open.
-// O_NOFOLLOW and lstat reject final-component links; both descriptor and path
-// identities/timestamps are checked after the bounded read.
+// O_NONBLOCK prevents a FIFO from blocking during open; O_NOFOLLOW rejects
+// final-component symlinks at open time without path-based stat/open races.
 export function readBoundedUtf8(path, maxBytes) {
   check(typeof path === 'string' && path.length > 0 && path.length <= 4096 && !path.includes('\0'), 'INVALID_INPUT_PATH');
   check(Number.isSafeInteger(maxBytes) && maxBytes >= 0 && maxBytes <= INPUT_LIMITS.privateBytes, 'INVALID_INPUT_LIMIT');
   let fd;
   try {
-    const beforePath = lstatSync(path, { bigint: true });
-    check(beforePath.isFile() && !beforePath.isSymbolicLink(), 'INPUT_NOT_REGULAR_FILE');
-    check(beforePath.size <= BigInt(maxBytes), 'INPUT_SIZE_LIMIT');
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (openError) {
+      if (notRegularOpenCodes.has(openError?.code)) fail('INPUT_NOT_REGULAR_FILE');
+      throw openError;
+    }
     const before = fstatSync(fd, { bigint: true });
-    check(before.isFile() && sameFile(beforePath, before), 'INPUT_CHANGED');
+    check(before.isFile(), 'INPUT_NOT_REGULAR_FILE');
+    check(before.size <= BigInt(maxBytes), 'INPUT_SIZE_LIMIT');
     const buffer = Buffer.alloc(Number(before.size) + 1);
     let size = 0;
     while (size < buffer.length) {
@@ -29,8 +32,7 @@ export function readBoundedUtf8(path, maxBytes) {
       size += count;
     }
     const after = fstatSync(fd, { bigint: true });
-    const afterPath = lstatSync(path, { bigint: true });
-    check(size === Number(before.size) && afterPath.isFile() && !afterPath.isSymbolicLink() && sameFile(before, after) && sameFile(before, afterPath), 'INPUT_CHANGED');
+    check(size === Number(before.size) && after.isFile() && after.nlink > 0n && sameFile(before, after), 'INPUT_CHANGED');
     try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer.subarray(0, size)); }
     catch { fail('INVALID_UTF8'); }
   } catch (error) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Standalone, offline receipt verifier; no browser or package dependencies.
 import { createHash, createPublicKey, ECDH, verify } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const digest=b=>createHash('sha256').update(b).digest('hex');
 const hex=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
@@ -102,7 +102,7 @@ export function runCli(args){
    const value=args[++i];if(a==='--trusted-witness-key')trustedWitnessKeys.push(value);else if(a==='--allowed-broker-host')allowedBrokerHosts.push(value);else{if(Object.hasOwn(opts,a))return invalid('VERIFIER_INPUT_INVALID');opts[a]=value;}
   }
   if(!file||!hex(opts['--event-sha256'])||!trustedWitnessKeys.length||!allowedBrokerHosts.length)return invalid('VERIFIER_INPUT_INVALID');
-  const read=path=>{const stat=lstatSync(path);if(!stat.isFile()||stat.size>65536)throw 0;const b=readFileSync(path);if(b.length>65536)throw 0;return b;};
+  const read=path=>{let fd;try{fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);const stat=fstatSync(fd);if(!stat.isFile()||stat.size>65536)throw 0;const b=readFileSync(fd);if(b.length>65536)throw 0;return b;}finally{if(fd!==undefined){try{closeSync(fd);}catch{}}}};
   let data,proof;try{data=read(file);if(opts['--timestamp-proof'])proof=read(opts['--timestamp-proof']);}catch{return invalid('VERIFIER_INPUT_INVALID');}
   const result=verifyWitnessReceipt(data,{recordPayloadHash:opts['--event-sha256'],trustedWitnessKeys,allowedBrokerHosts,...(proof===undefined?{}:{otsProofBytes:proof})});
   return {exitCode:result.result==='WITNESSED'?0:result.result==='WITNESS_NOT_ASSESSABLE'?2:1,output:JSON.stringify({schema:'n170.verify.witness-receipt-check.v1',...result},null,2)+'\n'};

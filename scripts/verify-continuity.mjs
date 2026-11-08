@@ -2,7 +2,7 @@
 // Independent continuity implementation. Only Node standard-library modules and
 // the existing independent record verifier are used. No imports from src/.
 import { createHash, createPublicKey, verify } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyEvidence, compareEvidence } from './verify-record.mjs';
 
@@ -254,11 +254,19 @@ export function verifyContinuity(input, options = {}) {
 }
 
 function readBounded(path) {
-  check(statSync(path).size <= 12000000, 'Input file exceeds the bounded UTF-8 file size');
-  const bytes = readFileSync(path);
-  check(bytes.length <= 12000000, 'Input file exceeds the bounded UTF-8 file size');
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
-  catch { throw new Error('Input file must contain valid UTF-8; no replacement decoding is allowed'); }
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const stat = fstatSync(fd);
+    check(stat.isFile(), 'Invalid continuity evidence');
+    check(stat.size <= 12000000, 'Input file exceeds the bounded UTF-8 file size');
+    const bytes = readFileSync(fd);
+    check(bytes.length <= 12000000, 'Input file exceeds the bounded UTF-8 file size');
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { throw new Error('Input file must contain valid UTF-8; no replacement decoding is allowed'); }
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* ignore */ } }
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

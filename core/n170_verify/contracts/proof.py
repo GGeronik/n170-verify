@@ -424,6 +424,7 @@ def verify_proof_bundle(
 
     witness_eval = evaluate_origin_assurance(
         source_body_sha256=proof_bundle.source_body_sha256,
+        broker_id=proof_bundle.broker_id,
         signer_trust=signer_trust,
         publisher_kid=proof_bundle.publisher_kid,
         publisher_public_key_hex=proof_bundle.publisher_public_key_hex,

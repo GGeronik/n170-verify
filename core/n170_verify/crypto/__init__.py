@@ -61,6 +61,7 @@ from n170_verify.crypto.signing import (
     generate_ed25519_keypair,
 )
 from n170_verify.crypto.witness_quorum import (
+    BROKER_WITNESS_SNI_ALLOWLIST,
     BrokerNativeSignature,
     DEFAULT_MAX_WITNESS_SKEW_SECONDS,
     NotaryNodeInfo,
@@ -78,6 +79,7 @@ from n170_verify.crypto.witness_quorum import (
 )
 
 __all__ = [
+    "BROKER_WITNESS_SNI_ALLOWLIST",
     "BrokerNativeSignature",
     "C2SPCheckpoint",
     "CANONICAL_LEAF_NAMES",

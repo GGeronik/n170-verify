@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 import re
 from typing import Any
+import urllib.parse
 
 from n170_verify.contracts.assurance import (
     ContractModelMixin,
@@ -31,6 +32,44 @@ from n170_verify.crypto.signing import (
 REQUIRED_TLSN_PROTOCOL = "tlsn-v0.1.0-alpha.15"
 REQUIRED_TLS_VERSION = "1.2"
 DEFAULT_MAX_WITNESS_SKEW_SECONDS = 600
+
+_IBKR_WITNESS_SNIS: frozenset[str] = frozenset(
+    {
+        "api.ibkr.com",
+        "ndcdyn.interactivebrokers.com",
+        "gdcdyn.interactivebrokers.com",
+        "www.interactivebrokers.com",
+    }
+)
+_SCHWAB_WITNESS_SNIS: frozenset[str] = frozenset({"api.schwabapi.com"})
+_CTRADER_WITNESS_SNIS: frozenset[str] = frozenset(
+    {"openapi.ctrader.com", "live.ctraderapi.com"}
+)
+_COINBASE_WITNESS_SNIS: frozenset[str] = frozenset(
+    {"api.coinbase.com", "api.exchange.coinbase.com"}
+)
+
+BROKER_WITNESS_SNI_ALLOWLIST: dict[str, frozenset[str]] = {
+    "ibkr": _IBKR_WITNESS_SNIS,
+    "ibkr_flex": _IBKR_WITNESS_SNIS,
+    "ibkr_flex_offline": _IBKR_WITNESS_SNIS,
+    "ibkr_flex_web": _IBKR_WITNESS_SNIS,
+    "ibkr_oauth": _IBKR_WITNESS_SNIS,
+    "interactive_brokers": _IBKR_WITNESS_SNIS,
+    "schwab": _SCHWAB_WITNESS_SNIS,
+    "schwab_csv": _SCHWAB_WITNESS_SNIS,
+    "alpaca": frozenset({"api.alpaca.markets"}),
+    "tradier": frozenset({"api.tradier.com"}),
+    "trading212": frozenset({"live.trading212.com"}),
+    "ctrader": _CTRADER_WITNESS_SNIS,
+    "ctrader_oauth": _CTRADER_WITNESS_SNIS,
+    "coinbase": _COINBASE_WITNESS_SNIS,
+    "coinbaseadvanced": _COINBASE_WITNESS_SNIS,
+    "coinbase_advanced": _COINBASE_WITNESS_SNIS,
+    "binance": frozenset({"api.binance.com"}),
+    "kraken": frozenset({"api.kraken.com"}),
+    "bybit": frozenset({"api.bybit.com"}),
+}
 
 _REDACTED_PLACEHOLDERS: frozenset[str] = frozenset(
     {
@@ -514,6 +553,7 @@ class WitnessQuorumEvaluation(ContractModelMixin):
 def evaluate_origin_assurance(
     *,
     source_body_sha256: str,
+    broker_id: str | None = None,
     signer_trust: SignerTrustStatus = SignerTrustStatus.OFFICIAL_N170_HOSTED,
     publisher_kid: str = "",
     publisher_public_key_hex: str = "",
@@ -562,23 +602,35 @@ def evaluate_origin_assurance(
             downgrade_reasons=reasons,
         )
 
-    broker_sig_ok = verify_broker_native_signature(
-        broker_native_signature,
-        norm_source_sha,
-        pinned_broker_keys,
-    )
-    if broker_sig_ok:
-        return WitnessQuorumEvaluation(
-            effective_origin_assurance=OriginAssurance.BROKER_SIGNED,
-            valid_witness_count=0,
-            disjoint_quorum_size=0,
-            distinct_org_count=0,
-            distinct_asn_count=0,
-            broker_signature_valid=True,
-            downgrade_reasons=[],
+    broker_id_norm = broker_id.strip().lower() if broker_id is not None else None
+    if (
+        broker_native_signature is not None
+        and broker_id_norm is not None
+        and broker_native_signature.broker_id.strip().lower() != broker_id_norm
+    ):
+        broker_sig_ok = False
+        reasons.append(
+            f"BrokerNativeSignature broker_id {broker_native_signature.broker_id!r} "
+            f"mismatches bundle broker_id {broker_id!r}"
         )
-    if broker_native_signature is not None:
-        reasons.append("BrokerNativeSignature failed verification against pinned broker keys")
+    else:
+        broker_sig_ok = verify_broker_native_signature(
+            broker_native_signature,
+            norm_source_sha,
+            pinned_broker_keys,
+        )
+        if broker_sig_ok:
+            return WitnessQuorumEvaluation(
+                effective_origin_assurance=OriginAssurance.BROKER_SIGNED,
+                valid_witness_count=0,
+                disjoint_quorum_size=0,
+                distinct_org_count=0,
+                distinct_asn_count=0,
+                broker_signature_valid=True,
+                downgrade_reasons=[],
+            )
+        if broker_native_signature is not None:
+            reasons.append("BrokerNativeSignature failed verification against pinned broker keys")
 
     notary_map: dict[str, NotaryNodeInfo] = {n.notary_id: n for n in notary_registry}
     pub_key_norm = publisher_public_key_hex.strip().lower()
@@ -620,8 +672,25 @@ def evaluate_origin_assurance(
             reasons.append(f"Notary {att.notary_id!r} Ed25519 signature verification failed")
             continue
 
+        sni_norm = att.server_sni.strip().lower().rstrip(".")
+        target_raw = att.sanitized_request_target.strip()
+        if target_raw.lower().startswith(("http://", "https://")) or target_raw.startswith("//"):
+            parsed_host = (urllib.parse.urlsplit(target_raw).hostname or "").strip().lower().rstrip(".")
+            if parsed_host != sni_norm:
+                reasons.append(
+                    f"Notary {att.notary_id!r} sanitized_request_target host mismatches server_sni {sni_norm!r}"
+                )
+                continue
+        if broker_id_norm is not None:
+            allowed_snis = BROKER_WITNESS_SNI_ALLOWLIST.get(broker_id_norm)
+            if not allowed_snis or sni_norm not in allowed_snis:
+                reasons.append(
+                    f"Notary {att.notary_id!r} server_sni {sni_norm!r} is not an official TLS endpoint for broker_id={broker_id!r}"
+                )
+                continue
+
         ts = parse_utc_timestamp(att.session_timestamp_utc)
-        valid_by_sni[att.server_sni.strip().lower()].append((notary, ts))
+        valid_by_sni[sni_norm].append((notary, ts))
         total_valid_witnesses += 1
 
     best_quorum = 0
@@ -701,6 +770,7 @@ def evaluate_origin_assurance(
 def compute_effective_origin_assurance(
     *,
     source_body_sha256: str,
+    broker_id: str | None = None,
     signer_trust: SignerTrustStatus = SignerTrustStatus.OFFICIAL_N170_HOSTED,
     publisher_kid: str = "",
     publisher_public_key_hex: str = "",
@@ -717,6 +787,7 @@ def compute_effective_origin_assurance(
     """Return the dynamically verified ``OriginAssurance`` enum."""
     return evaluate_origin_assurance(
         source_body_sha256=source_body_sha256,
+        broker_id=broker_id,
         signer_trust=signer_trust,
         publisher_kid=publisher_kid,
         publisher_public_key_hex=publisher_public_key_hex,
@@ -733,6 +804,7 @@ def compute_effective_origin_assurance(
 
 
 __all__ = [
+    "BROKER_WITNESS_SNI_ALLOWLIST",
     "BrokerNativeSignature",
     "DEFAULT_MAX_WITNESS_SKEW_SECONDS",
     "NotaryNodeInfo",
