@@ -193,7 +193,7 @@ test("built page embeds the strict policy, has no inline scripts and ships no so
 
 test("built site ships the license text of every bundled third-party package", async () => {
   const notices = await readFile(new URL("../dist/client/third-party-licenses.txt", import.meta.url), "utf8");
-  for (const entry of ["react@19.2.0 (MIT)", "react-dom@19.2.0 (MIT)", "scheduler@0.27.0 (MIT)"]) {
+  for (const entry of ["react@19.3.1 (MIT)", "react-dom@19.3.1 (MIT)", "scheduler@0.28.0 (MIT)"]) {
     assert.ok(notices.includes(entry), `third-party-licenses.txt should list ${entry}`);
   }
   assert.equal(/@vitejs|vite@/.test(notices), false, "build-only tooling isn't bundled");
