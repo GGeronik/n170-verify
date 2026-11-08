@@ -1,0 +1,356 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   N170 Verify v3 — Institutional Obsidian & LP Archival Paper Design System
+   Offline-safe typography & flagship motion primitives (Zero remote DNS fetch)
+   ========================================================================== */
+
+:root {
+  --font-display: "Instrument Serif", "Iowan Old Style", "Palatino Linotype",
+    "Book Antiqua", Georgia, serif;
+  --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, monospace;
+}
+
+:root,
+html[data-theme="obsidian"] {
+  color-scheme: dark;
+
+  --bg-obsidian-deep: #06080D;
+  --bg-canvas: #06080D;
+  --bg-panel: #0E1117;
+  --bg-elevated: #141822;
+  --bg-subtle: #1B202E;
+  --bg-glass: rgba(14, 17, 23, 0.88);
+
+  --text-ink: #F3F4F6;
+  --text-secondary: #B9C0CE;
+  --text-muted: #8A92A1;
+
+  --border-hairline: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --grid-line: rgba(255, 255, 255, 0.03);
+
+  /* Restrained Signal Palette — Obsidian */
+  --signal-emerald: #10B981;
+  --signal-emerald-bg: rgba(16, 185, 129, 0.10);
+  --signal-emerald-border: rgba(16, 185, 129, 0.30);
+
+  --signal-champagne: #D6B36A;
+  --signal-champagne-bg: rgba(214, 179, 106, 0.10);
+  --signal-champagne-border: rgba(214, 179, 106, 0.32);
+
+  --signal-ochre: #F59E0B;
+  --signal-ochre-bg: rgba(245, 158, 11, 0.10);
+  --signal-ochre-border: rgba(245, 158, 11, 0.30);
+
+  --signal-vermilion: #EF4444;
+  --signal-vermilion-bg: rgba(239, 68, 68, 0.10);
+  --signal-vermilion-border: rgba(239, 68, 68, 0.30);
+
+  --chart-wealth-stroke: #10B981;
+  --chart-wealth-top: rgba(16, 185, 129, 0.22);
+  --chart-wealth-bottom: rgba(16, 185, 129, 0.0);
+  --chart-bench-stroke: #8A92A1;
+  --chart-dd-stroke: #EF4444;
+  --chart-dd-top: rgba(239, 68, 68, 0.20);
+  --chart-twin-stroke: #D6B36A;
+  --chart-axis: rgba(255, 255, 255, 0.068);
+  --chart-crosshair: rgba(243, 244, 246, 0.34);
+}
+
+html[data-theme="paper"] {
+  color-scheme: light;
+
+  --bg-obsidian-deep: #F7F6F2;
+  --bg-canvas: #F7F6F2;
+  --bg-panel: #FFFFFF;
+  --bg-elevated: #F1EFE9;
+  --bg-subtle: #E7E4DC;
+  --bg-glass: rgba(247, 246, 242, 0.92);
+
+  --text-ink: #111214;
+  --text-secondary: #383D47;
+  --text-muted: #5C6370;
+
+  --border-hairline: rgba(17, 18, 20, 0.09);
+  --border-strong: rgba(17, 18, 20, 0.19);
+  --grid-line: rgba(17, 18, 20, 0.038);
+
+  /* Restrained Signal Palette — LP Archival Paper */
+  --signal-emerald: #047857;
+  --signal-emerald-bg: rgba(4, 120, 87, 0.075);
+  --signal-emerald-border: rgba(4, 120, 87, 0.26);
+
+  --signal-champagne: #8A6421;
+  --signal-champagne-bg: rgba(180, 136, 52, 0.10);
+  --signal-champagne-border: rgba(138, 100, 33, 0.28);
+
+  --signal-ochre: #B45309;
+  --signal-ochre-bg: rgba(180, 83, 9, 0.08);
+  --signal-ochre-border: rgba(180, 83, 9, 0.26);
+
+  --signal-vermilion: #B91C1C;
+  --signal-vermilion-bg: rgba(185, 28, 28, 0.075);
+  --signal-vermilion-border: rgba(185, 28, 28, 0.26);
+
+  --chart-wealth-stroke: #047857;
+  --chart-wealth-top: rgba(4, 120, 87, 0.15);
+  --chart-wealth-bottom: rgba(4, 120, 87, 0.0);
+  --chart-bench-stroke: #6B7280;
+  --chart-dd-stroke: #B91C1C;
+  --chart-dd-top: rgba(185, 28, 28, 0.14);
+  --chart-twin-stroke: #8A6421;
+  --chart-axis: rgba(17, 18, 20, 0.08);
+  --chart-crosshair: rgba(17, 18, 20, 0.32);
+}
+
+html {
+  background-color: var(--bg-canvas);
+  color: var(--text-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+/* Mandatory cryptographic & financial numeric alignment across site */
+.font-mono,
+.tabular-nums,
+.num-telemetry,
+code,
+pre,
+kbd,
+table td,
+svg text.mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Swiss Editorial Display Headings */
+.editorial-serif {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+/* Precision Architectural Surfaces */
+.inst-panel {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.025);
+}
+
+.inst-elevated {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+}
+
+.inst-glass {
+  background-color: var(--bg-glass);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(12px);
+}
+
+.bg-institutional-grid {
+  background-image:
+    radial-gradient(ellipse 80% 36% at 50% 0%, rgba(16, 185, 129, 0.055), transparent 72%),
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
+}
+
+/* Tactile Signal Pills */
+.badge-emerald {
+  color: var(--signal-emerald);
+  background-color: var(--signal-emerald-bg);
+  border: 1px solid var(--signal-emerald-border);
+}
+
+.badge-champagne {
+  color: var(--signal-champagne);
+  background-color: var(--signal-champagne-bg);
+  border: 1px solid var(--signal-champagne-border);
+}
+
+.badge-ochre {
+  color: var(--signal-ochre);
+  background-color: var(--signal-ochre-bg);
+  border: 1px solid var(--signal-ochre-border);
+}
+
+.badge-vermilion {
+  color: var(--signal-vermilion);
+  background-color: var(--signal-vermilion-bg);
+  border: 1px solid var(--signal-vermilion-border);
+}
+
+.badge-neutral {
+  color: var(--text-secondary);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+}
+
+/* Flagship Motion & Telemetry Transitions */
+@keyframes ceremony-scan {
+  0% {
+    opacity: 0.45;
+    transform: translateX(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes subtle-fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-ceremony-step {
+  animation: ceremony-scan 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-up {
+  animation: subtle-fade-up 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-halo {
+  animation: pulse-halo 2.8s ease-in-out infinite;
+}
+
+/* Custom range slider styling for viral calculators */
+input[type="range"].inst-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  cursor: pointer;
+}
+
+input[type="range"].inst-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--signal-emerald);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 0 1px var(--signal-emerald-border);
+  transition: transform 140ms ease;
+}
+
+input[type="range"].inst-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.14);
+}
+
+/* Custom scrollbar for dense tables & hex payloads */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+/* ==========================================================================
+   LP Archival Tear-Sheet Print Architecture (Cmd+P -> Clean 2-Page Export)
+   ========================================================================== */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.42in 0.45in;
+  }
+
+  html,
+  body {
+    background-color: #FFFFFF !important;
+    color: #111214 !important;
+    font-size: 11px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  :root,
+  html[data-theme="obsidian"],
+  html[data-theme="paper"] {
+    --bg-canvas: #FFFFFF;
+    --bg-panel: #FFFFFF;
+    --bg-elevated: #F7F6F2;
+    --bg-subtle: #EFEDE6;
+    --text-ink: #111214;
+    --text-secondary: #2F343D;
+    --text-muted: #525866;
+    --border-hairline: rgba(17, 18, 20, 0.16);
+    --border-strong: rgba(17, 18, 20, 0.28);
+    --signal-emerald: #047857;
+    --signal-emerald-bg: rgba(4, 120, 87, 0.08);
+    --signal-emerald-border: rgba(4, 120, 87, 0.32);
+    --signal-champagne: #8A6421;
+    --signal-champagne-bg: rgba(180, 136, 52, 0.10);
+    --signal-champagne-border: rgba(138, 100, 33, 0.32);
+    --signal-ochre: #B45309;
+    --signal-ochre-bg: rgba(180, 83, 9, 0.08);
+    --signal-ochre-border: rgba(180, 83, 9, 0.32);
+    --signal-vermilion: #B91C1C;
+    --signal-vermilion-bg: rgba(185, 28, 28, 0.08);
+    --signal-vermilion-border: rgba(185, 28, 28, 0.32);
+    --chart-wealth-stroke: #047857;
+    --chart-dd-stroke: #B91C1C;
+    --chart-axis: rgba(17, 18, 20, 0.14);
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
