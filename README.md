@@ -293,6 +293,68 @@ Security headers are implemented in [worker/index.js](worker/index.js) and reuse
 
 Exact dependencies, lockfile integrity and disabled install scripts are configured. Repository CI configuration is included; its presence is not evidence of successful remote runs, required reviews or branch protection. This file asserts no status badge, repository availability or private reporting service; check the repository itself.
 
+## Full-stack v3 verification platform (`core/`, `api/`, `mcp/`, `web/`)
+
+Alongside the standalone browser record workflow and offline toolkit above, this repository includes the modular **N170 Verify v3** verification stack (`VerifyProofBundle`, schema `n170-verify/v3`) for salted Merkle selective disclosure, calibrated brokerage reconciliation, counterfactual and behavioural coaching analytics, subprocess-isolated HTTP verification, zero-secret stdio MCP verification, and an optional Next.js tear-sheet and WebCrypto verification studio.
+
+### Six orthogonal assurance axes
+
+Rather than collapsing provenance into a single opaque badge, `VerifyProofBundle` verification evaluates six separate axes dynamically at check time:
+
+1. **Origin assurance (`OriginAssurance`)** — Re-derived by the verifier (`broker_signed`, `independently_witnessed_tls`, `operator_retrieved`, `self_reported`) from cryptographic evidence; self-asserted origin headers are never trusted.
+2. **Account scope (`AccountScope`)** — Separates enumerated multi-subaccount coverage (`all_enumerated_subaccounts`) from single-account survivorship uncertainty (`single_account_survivorship_uncertain`) and offline exports (`unknown_offline_scope`).
+3. **Provider approval state (`ProviderApprovalState`)** — Distinguishes live approved integrations (`approved_live`) from user-key self-attested APIs (`user_key_self_attested`), pending vendor reviews (`pending_provider_approval`), and offline exports (`offline_export_only`).
+4. **Environment tier (`EnvironmentTier`)** — Rejects paper, demo, and sandbox scopes (`DU*`, `PA*`, `paper-api.alpaca.markets`, `sandbox.tradier.com`, Trading 212 demo/CFD) from `live_production`.
+5. **Signer trust status (`SignerTrustStatus`)** — Checks Ed25519 publisher keys against a C2SP-checkpointed registry (`official_n170_hosted`, `retired_historical_valid`, `revoked_key`, `unrecognized_self_hosted_signer`).
+6. **Chain continuity mode (`ChainContinuityMode`)** — Evaluates prospective hash-linked sequence invariants (`prospective_continuous`, `retrospective_backfill`, `unenrolled_single_snapshot`, `continuity_broken`).
+
+As with v3/v4 browser profiles, cryptographic signatures identify a signing key and committed bytes; they do not establish a person's legal identity, undisclosed accounts, or future investment skill.
+
+### Platform layout
+
+| Path | Role |
+| --- | --- |
+| [core/](core/) (`n170_verify`) | Unified verification pipeline (`verify_portfolio`), CLI (`n170-verify`), RFC 8785 JCS + domain-separated salted SHA-256 Merkle + Ed25519 cryptography, C2SP checkpoints, dynamic `k >= 2` TLS witness quorum checks, TWR/XIRR + Getmansky-Lo-Makarov MA(2) PSR/MinTRL econometrics (`T >= 30`), calibrated multi-section reconciliation, SEC EDGAR / FRED ALFRED / GDELT catalyst alignment, FIFO behavioural coaching, and read-only/offline broker connectors. |
+| [api/](api/) (`app`) | Subprocess-isolated (`spawn` + `RLIMIT_CORE=0` + `PR_SET_DUMPABLE=0`) HTTP/FastAPI service (`POST /api/v1/verify` with zero default retention), opt-in AES-256-GCM envelope-encrypted sync vault, `/.well-known/n170-verify-keys.json`, SVG assurance badges, and multi-axis filtered leaderboard. |
+| [mcp/](mcp/) ([mcp/README.md](mcp/README.md)) | Zero-dependency Node.js stdio MCP verifier (`mcp/server.js`) guarded by `McpAllowlistFirewall` so broker credentials, cookies, local file paths, and arbitrary URLs never enter tool arguments. |
+| [web/](web/) ([web/README.md](web/README.md)) | Next.js 15 + React 19 + TypeScript tear-sheet studio (`/p/[proofId]`), air-gapped WebCrypto verifier and selective leaf redaction studio (`/verify`), connector onboarding (`/connect`), and assurance-filtered leaderboard (`/leaderboard`). |
+| [tests_e2e/](tests_e2e/) | End-to-end adversarial, privacy-redaction, subprocess-isolation, and three-language (Python, Node.js MCP, WebCrypto) parity suites. |
+| [docker-compose.yml](docker-compose.yml) | Hardened container stack (`read_only: true`, `cap_drop: ALL`, `no-new-privileges`, `ulimits.core: 0`) with optional local `ollama` narration profile and [.env.example](.env.example). |
+
+### Salted Merkle selective disclosure
+
+Every `VerifyProofBundle` commits to seven domain-separated (`0x00` leaf / `0x01` internal node), 256-bit salted SHA-256 leaves (`core_metrics`, `indexed_curve`, `reconciliation`, `coaching_and_context`, `capital_bracket`, `benchmark_alpha`, `delayed_closed_trades`) and a one-way `HMAC-SHA256` `blinded_account_tag`. Holders can redact any subset of leaves before sharing (`--disclose`, `redact_proof_bundle_leaves`, or `/verify`) while preserving root signature verification across Python (`n170_verify`), Node.js (`mcp/server.js`), and browser WebCrypto (`web/src/lib/browserVerify.ts`).
+
+### v3 CLI, API, MCP, Web, and Docker quickstart
+
+```sh
+# 1. Inspect v3 capabilities and generate an Ed25519 keypair outside the repo tree
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli capabilities
+mkdir -p /var/tmp/n170-verify-keys
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli keygen \
+  --seed-out /var/tmp/n170-verify-keys/publisher_seed.hex
+
+# 2. Verify an offline statement with selective leaf disclosure and check the bundle offline
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli verify-csv \
+  --broker degiro /path/to/export.csv \
+  --signing-seed-file /var/tmp/n170-verify-keys/publisher_seed.hex \
+  --disclose core_metrics,indexed_curve,reconciliation \
+  --output /tmp/sample.verify.json
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli check-bundle /tmp/sample.verify.json
+
+# 3. Run the subprocess-isolated verification API and zero-secret MCP server
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core:api python3 -B -m app.main --host 127.0.0.1 --port 8080
+N170_VERIFY_API_URL=http://127.0.0.1:8080 node mcp/server.js
+
+# 4. Run core, API, end-to-end, MCP, release-boundary, and web studio checks
+python3 scripts/public_release_audit.py --root . --tracked --require-license
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core:api:api/tests python3 -B -m pytest core/tests api/tests tests_e2e tests/test_public_release_audit.py -q
+node --check mcp/server.js && node --test mcp/server.test.js
+cd web && npm ci --ignore-scripts && npm run lint && npx tsc --noEmit && npm test && NEXT_TELEMETRY_DISABLED=1 npm run build
+```
+
+For containerized deployment (`api` on `127.0.0.1:8080` and `web` on `127.0.0.1:3000`, plus optional self-hosted `--profile ollama`), copy `.env.example` to `.env` outside public source builds and run `docker compose -f docker-compose.yml config --quiet`.
+
 ## Product status and contribution
 
 This is a local pilot candidate. The useful workflow is private reconciliation, transparent corrections and a portable review that preserves prior evidence. Signatures and analytics are established techniques; no competitive superiority claim follows from the local checks. The [evidence decisions](docs/research-decisions.md) describe the product boundaries.
