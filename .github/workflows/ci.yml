@@ -1,4 +1,4 @@
-name: Local application checks
+name: N170 Verify CI
 
 on:
   push:
@@ -8,14 +8,34 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: n170-verify-ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
+  public-release-audit:
+    name: Public release boundary audit
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Enforce public release boundary and license invariants
+        run: python3 scripts/public_release_audit.py --root . --tracked --require-license
+
+  build-and-test:
+    name: Public browser archive build and policy checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.1
         with:
           node-version: '22'
           package-manager-cache: false
@@ -25,3 +45,117 @@ jobs:
         run: npm run build
       - name: Test the application and release boundaries
         run: npm test
+
+  python-verify-platform:
+    name: Python core, isolated API, adversarial E2E, and pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.1
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Upgrade pip and install verification packages with pinned auditor
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e './core[crypto,dev]' -e './api[fastapi,dev]' 'scipy>=1.11.0' pip-audit==2.10.1
+      - name: Audit resolved third-party Python dependencies
+        run: python -m pip_audit --local --skip-editable
+      - name: Run core verification test suite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest core/tests -q
+      - name: Run isolated API lifecycle and security suite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: core:api:api/tests
+        run: python -B -m pytest api/tests -q
+      - name: Run adversarial end-to-end verification suite
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYTHONPATH: core:api
+        run: python -B -m pytest tests_e2e -q
+      - name: Run public release audit regression tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B -m pytest tests/test_public_release_audit.py -q
+
+  mcp-zero-secret:
+    name: Zero-secret stdio MCP verifier checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.1
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install core verifier package
+        run: python -m pip install './core[crypto]'
+      - name: Check MCP server syntax
+        run: node --check mcp/server.js
+      - name: Run MCP allowlist firewall and parity suite
+        run: node --test mcp/server.test.js
+
+  web-obsidian-studio:
+    name: Obsidian web studio typecheck, lint, audit, WebCrypto parity, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.1
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install core and API packages for cross-language WebCrypto parity
+        run: python -m pip install './core[crypto]' ./api
+      - name: Install locked web dependencies without lifecycle scripts
+        working-directory: web
+        run: npm ci --ignore-scripts
+      - name: Audit locked web dependencies
+        working-directory: web
+        run: npm audit --audit-level=high
+      - name: Lint web studio sources
+        working-directory: web
+        run: npm run lint
+      - name: Type-check web studio sources
+        working-directory: web
+        run: npx tsc --noEmit
+      - name: Run WebCrypto, ceremony, and viral studio test suites
+        working-directory: web
+        run: npm test
+      - name: Build production Next.js studio
+        working-directory: web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_N170_VERIFY_API_URL: 'http://127.0.0.1:8080'
+        run: npm run build
+
+  docker-compose-config:
+    name: Hardened Docker Compose graph validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate default and ollama Docker Compose profiles
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml --profile ollama config --quiet
