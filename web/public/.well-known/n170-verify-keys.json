@@ -1,0 +1,101 @@
+{
+  "updated_at_utc": "2026-04-01T12:00:00Z",
+  "keys": [
+    {
+      "publisher_kid": "n170-pub-2026-q1",
+      "public_key_hex": "519749abe49eaf67bff092d850c243df38be8697b84a2dde4b8fad150d08ff78",
+      "status": "active",
+      "not_before_utc": "2026-01-01T00:00:00Z",
+      "not_after_utc": "2027-01-01T00:00:00Z",
+      "revoked_after_utc": null,
+      "issuer_org": "N170"
+    },
+    {
+      "publisher_kid": "n170-pub-2025-h2",
+      "public_key_hex": "01080b646c2f518909f7766c30229aecdfe6894e5c7757f71c828c8ef8841703",
+      "status": "retired",
+      "not_before_utc": "2025-07-01T00:00:00Z",
+      "not_after_utc": "2025-12-31T23:59:59Z",
+      "revoked_after_utc": null,
+      "issuer_org": "N170"
+    },
+    {
+      "publisher_kid": "n170-pub-compromised-test",
+      "public_key_hex": "9641f1e0f3e858410a22ce94888e9fb87e0ad34fc33c1b6815a1330a8ba10144",
+      "status": "revoked",
+      "not_before_utc": "2025-01-01T00:00:00Z",
+      "not_after_utc": null,
+      "revoked_after_utc": "2025-06-01T00:00:00Z",
+      "issuer_org": "N170"
+    }
+  ],
+  "notaries": [
+    {
+      "notary_id": "notary-pse-eu",
+      "operator_org": "PSE TLSNotary Foundation",
+      "asn": "AS24940",
+      "public_key_hex": "e62531931eaf8b085d1965fc220a085e607dfc76f99f732c9a48c192776cb6d1",
+      "is_debug_build": false,
+      "attestation_type": "aws_nitro_enclave"
+    },
+    {
+      "notary_id": "notary-swiss-ch",
+      "operator_org": "Zurich Independent Attestations AG",
+      "asn": "AS13030",
+      "public_key_hex": "96fe1168f097e664807fff68d82257ea3d6dd2421b43cb30be36a121cfd2954d",
+      "is_debug_build": false,
+      "attestation_type": "amd_sev_snp"
+    },
+    {
+      "notary_id": "notary-nordic-is",
+      "operator_org": "Reykjavik Transparency Lab",
+      "asn": "AS44530",
+      "public_key_hex": "b340c6a8ab3890078c08632043eb7ae3c015d6ccfcc56f28d691202a376f2d2e",
+      "is_debug_build": false,
+      "attestation_type": "aws_nitro_enclave"
+    },
+    {
+      "notary_id": "notary-colocated-eu2",
+      "operator_org": "Berlin Notary Guild",
+      "asn": "AS24940",
+      "public_key_hex": "016d30f3cc956561e7e433df41d5780a701c847229b1d5d95f35704907cfdd7b",
+      "is_debug_build": false,
+      "attestation_type": "production"
+    }
+  ],
+  "checkpoint": {
+    "origin": "n170.verify/transparency/v3",
+    "size": 1284,
+    "hash_b64": "qNNnSPvOdC6EhQHaf9Sde2shsaF31ZkYhq6t+UD+xPo=",
+    "publisher_kid": "n170-pub-2026-q1",
+    "publisher_signature_hex": "f6f9b5508a8a084dcb7b18f604abe81d1d9ca213a865ee2e391b575fb9f8dff2d2735bfe6da79181097bf55af08f819272c0a04269284d45a0d071360df94606",
+    "witness_cosignatures": [
+      {
+        "witness_id": "witness-sigsum-se",
+        "public_key_hex": "6372809b80fcc875762401d4dd49ae2cb54b27f9ee380b2d09d70fa52f117c71",
+        "timestamp_utc": "2026-04-01T11:58:10Z",
+        "signature_hex": "5f945f7d86283bf96ec4d9562b19a6d470713bc74ce4d37935ac0f972dfdcc9177193f16d9cc58fad72b4d07630348b3f7382a1a4b5020290392abb7c247770e"
+      },
+      {
+        "witness_id": "witness-c2sp-ch",
+        "public_key_hex": "925535d2102e6131037ede85da7db604c256e4b548ce800decb16641b4d4a57e",
+        "timestamp_utc": "2026-04-01T11:58:24Z",
+        "signature_hex": "10da8360575d44225f3f857ba7c6b60c9c03cd18770b0a98b38ea8b1c8bbd695e9ce23462944582de66895bb63565cef808ce974698a2cb475bf3528ab622408"
+      }
+    ]
+  },
+  "l2_anchor": {
+    "contract_address": "0x4e313730566572696679416e63686f7256333031",
+    "tx_hash": "0x3c4e57a2aff05bd7388d359a6782052d28a9d984b9bd42152f3f85e962220048",
+    "batch_merkle_root": "a8d36748fbce742e848501da7fd49d7b6b21b1a177d5991886aeadf940fec4fa",
+    "chain_id": 8453,
+    "block_number": 28419022,
+    "anchored_at_utc": "2026-04-01T11:55:00Z"
+  },
+  "pinned_broker_keys": {
+    "prime_custody_ed25519": {
+      "prime-custody-k1": "66bd4c45dcd977122a0667dd304f140570e6af266afa88ac575435396b5f4c67"
+    }
+  },
+  "schema_version": "n170-verify-keys-v3"
+}
