@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "n170-verify-core"
+version = "0.3.0"
+description = "Cryptographic contracts, salted Merkle selective disclosure, dynamic TLS witness quorum, and prospective chain verification for N170 Verify"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26.0",
+]
+
+[project.scripts]
+n170-verify = "n170_verify.cli:main"
+
+[project.optional-dependencies]
+crypto = [
+    "pynacl>=1.5.0",
+    "cryptography>=42.0.0",
+]
+connectors = [
+    "httpx>=0.27.0",
+    "ccxt>=4.3.0",
+]
+full = [
+    "pynacl>=1.5.0",
+    "cryptography>=42.0.0",
+    "httpx>=0.27.0",
+    "scipy>=1.11.0",
+    "ccxt>=4.3.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["n170_verify*"]

@@ -72,8 +72,8 @@ def path_name(value):
     if (not path.parts or path.is_absolute() or str(path) != value or '..' in path.parts
             or any(ord(c) < 32 or ord(c) > 126 for c in value)
             or any(p in {'.git', 'node_modules', 'dist', 'private', 'secrets', '__pycache__'}
-                   or p == '.env' or p.startswith('.env.') for p in path.parts)
-            or any(p.startswith('.') and p != '.github' for p in path.parts[:-1])
+                   or p == '.env' or (p.startswith('.env.') and p != '.env.example') for p in path.parts)
+            or any(p.startswith('.') and p not in {'.github', '.well-known'} for p in path.parts[:-1])
             or path.suffix.lower() in {'.pem', '.key', '.p12', '.pfx', '.pyc'}):
         raise ValueError('unsafe public path: ' + value)
     return path.parts
@@ -140,7 +140,7 @@ def collect_source(root=ROOT):
     # Vite can consume these paths even when absent from a source ZIP. Fail
     # before running build code. Other unlisted docs/tests are never promoted.
     for entry in root.iterdir():
-        if entry.name == 'public' or entry.name == '.env' or entry.name.startswith('.env.'):
+        if entry.name == 'public' or entry.name == '.env' or (entry.name.startswith('.env.') and entry.name != '.env.example'):
             raise ValueError('unreviewed Vite public/environment input: ' + entry.name)
         roots = {name.split('/')[0] for name in names} | {'node_modules', 'dist', '.git', '.DS_Store'}
         if entry.name in roots:

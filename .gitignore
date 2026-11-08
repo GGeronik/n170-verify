@@ -1,17 +1,45 @@
 # Dependencies and build output
 node_modules/
 dist/
+build/
 *.tgz
+web/node_modules/
+web/.next/
+*.tsbuildinfo
 
-# Local configuration: hidden directories other than .github, environment files and local notes
+# Local configuration: hidden directories other than .github and .well-known, environment files and local notes
 .*/
 !.github/
+!**/.well-known/
 .env
 .env.*
+!.env.example
 *.local.md
+
+# Python virtual environments, caches, and build metadata
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Runtime databases, key material, and local data directories
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+signing_key.bin
+*.pem
+*.key
 
 # Tool caches and reports
 coverage/
+htmlcov/
 
 # Local machine noise
 .DS_Store
