@@ -26,6 +26,19 @@ TOOLKIT_SUPPLEMENTAL_FILES = (
     'scripts/reconciliation-input.mjs',
     'scripts/reconciliation-source.mjs',
     'scripts/verify-record.mjs',
+    'scripts/headline.mjs',
+    'scripts/verify-headline.mjs',
+    'scripts/verify-witness-receipt.mjs',
+    'scripts/verify-continuity.mjs',
+    'scripts/ots-verifier.mjs',
+    'scripts/verify-broker-source.mjs',
+    'scripts/verify-counterfactual.mjs',
+    'scripts/verify-dkim-statement.mjs',
+    'scripts/verify-ech0196-statement.mjs',
+    'scripts/verify-tlog.mjs',
+    'scripts/witness-fetch.mjs',
+    'docs/witness-receipt.md',
+    'schemas/witness-receipt-v1.schema.json',
     'docs/verify-reconciliation.md',
     'docs/verify-reconciliation-result.schema.json',
     'LICENSE',
@@ -59,8 +72,8 @@ def path_name(value):
     if (not path.parts or path.is_absolute() or str(path) != value or '..' in path.parts
             or any(ord(c) < 32 or ord(c) > 126 for c in value)
             or any(p in {'.git', 'node_modules', 'dist', 'private', 'secrets', '__pycache__'}
-                   or p.casefold() == '.claude'
                    or p == '.env' or p.startswith('.env.') for p in path.parts)
+            or any(p.startswith('.') and p != '.github' for p in path.parts[:-1])
             or path.suffix.lower() in {'.pem', '.key', '.p12', '.pfx', '.pyc'}):
         raise ValueError('unsafe public path: ' + value)
     return path.parts
@@ -106,8 +119,8 @@ def collect_source(root=ROOT):
     downloads = policy.get('downloads', {})
     destinations = [entry['path'] for entry in downloads.values()]
     unique_paths(list(policy['documents'].values()) + destinations)
-    if any(len(path_name(name)) != 2 or path_name(name)[0] not in {'challenge-kit', 'private-source-challenge'} for name in destinations):
-        raise ValueError('download destination must be an explicit challenge-kit or private-source-challenge file')
+    if any(len(path_name(name)) != 2 or path_name(name)[0] not in {'private-source-challenge'} for name in destinations):
+        raise ValueError('download destination must be an explicit private-source-challenge file')
     reserved = {'assets', 'index.html', 'third-party-licenses.txt', 'n170-verify-source.zip', 'n170-verify-source.zip.sha256', 'n170-verify-toolkit.zip', 'n170-verify-toolkit.zip.sha256', 'verify_release.py'}
     if any('/' in name or name.casefold() in reserved for name in policy['documents'].values()):
         raise ValueError('document destination collides with generated build output')
@@ -127,18 +140,18 @@ def collect_source(root=ROOT):
     # Vite can consume these paths even when absent from a source ZIP. Fail
     # before running build code. Other unlisted docs/tests are never promoted.
     for entry in root.iterdir():
-        if entry.name == '.claude':
-            # Local developer metadata may coexist with the app. Inspect only
-            # this entry's type; never enumerate, read or package its contents.
-            if not stat.S_ISDIR(entry.lstat().st_mode):
-                raise ValueError('.claude must be a real directory')
-            continue
         if entry.name == 'public' or entry.name == '.env' or entry.name.startswith('.env.'):
             raise ValueError('unreviewed Vite public/environment input: ' + entry.name)
         roots = {name.split('/')[0] for name in names} | {'node_modules', 'dist', '.git', '.DS_Store'}
-        if entry.name not in roots:
-            raise ValueError('unlisted top-level build input: ' + entry.name)
-    for prefix in ('src', 'worker', '.openai', 'verify_toolkit', 'verify_accounting', 'release-assets'):
+        if entry.name in roots:
+            continue
+        if entry.name.startswith('.'):
+            # Local configuration directories may coexist with the app. Inspect only this entry's type; never enumerate, read or package its contents.
+            if not stat.S_ISDIR(entry.lstat().st_mode):
+                raise ValueError('hidden top-level input must be a real directory: ' + entry.name)
+            continue
+        raise ValueError('unlisted top-level build input: ' + entry.name)
+    for prefix in ('src', 'worker', 'verify_toolkit', 'verify_accounting', 'release-assets'):
         for directory, dirs, files in os.walk(root / prefix, followlinks=False):
             for name in dirs + files:
                 item = Path(directory) / name
@@ -180,11 +193,11 @@ def source_archive(contents):
     payload['verify_release.py'] = contents['scripts/verify-release.py']
     payload['DEPENDENCIES.json'] = encoded(dependency_inventory(contents))
     payload['COMPONENTS.json'] = encoded({'app': {'source_sha256': identity},
-        'scope': 'Editable public app and original offline toolkit source. Optional upstream execution engine and accounting oracle are separately installed; neither implementation is bundled. The older challenge kit retains its own tested source identity.',
-        'published': False, 'external_human_audit': False})
+        'scope': 'Editable public app and original offline toolkit source. Optional upstream execution engine and accounting oracle are separately installed; neither implementation is bundled.',
+        'publication_asserted': False, 'external_human_audit': False})
     manifest = {'schema': 'n170.release.archive.v1', 'source_freeze_sha256': identity,
                 'files': {name: {'bytes': len(raw), 'sha256': digest(raw)} for name, raw in sorted(payload.items())},
-                'trust': 'Unsigned byte commitment, not producer authentication or an external audit.', 'published': False}
+                'trust': 'Unsigned byte commitment, not producer authentication or an external audit.', 'publication_asserted': False}
     payload['MANIFEST.json'] = encoded(manifest)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
@@ -201,7 +214,7 @@ def toolkit_archive(contents):
                if name.startswith(('verify_toolkit/', 'toolkit-tests/', 'verify_accounting/', 'accounting-tests/'))}
     payload.update({name: contents[name] for name in TOOLKIT_SUPPLEMENTAL_FILES})
     payload['verify_release.py'] = contents['scripts/verify-release.py']
-    payload['COMPONENTS.json'] = encoded({'scope': 'Original offline toolkit and accounting source with both Python test suites, plus the standalone Node private-source reconciliation CLI, its complete local module closure, guide, result schema and notices. Upstream engine and accounting oracle are separately installed.', 'published': False})
+    payload['COMPONENTS.json'] = encoded({'scope': 'Original offline toolkit and accounting source with both Python test suites, plus the standalone Node private-source reconciliation CLI, its complete local module closure, guide, result schema and notices. Upstream engine and accounting oracle are separately installed.', 'publication_asserted': False})
     payload['DEPENDENCIES.json'] = encoded({'schema': 'n170.release.dependencies.v1', 'packages': [],
         'node': {'status': 'separately_installed',
                  'engines': strict_json(contents['package.json'])['engines']['node'],
@@ -211,7 +224,7 @@ def toolkit_archive(contents):
     identity = digest(encoded({name: digest(raw) for name, raw in sorted(payload.items())}))
     manifest = {'schema': 'n170.release.archive.v1', 'source_freeze_sha256': identity,
                 'files': {name: {'bytes': len(raw), 'sha256': digest(raw)} for name, raw in sorted(payload.items())},
-                'trust': 'Unsigned byte commitment, not producer authentication or external audit.', 'published': False}
+                'trust': 'Unsigned byte commitment, not producer authentication or external audit.', 'publication_asserted': False}
     payload['MANIFEST.json'] = encoded(manifest)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
@@ -374,7 +387,7 @@ def main():
         toolkit, _ = toolkit_archive(contents)
         (out / 'n170-verify-toolkit.zip').write_bytes(toolkit)
         (out / 'n170-verify-toolkit.zip.sha256').write_text(digest(toolkit) + '  n170-verify-toolkit.zip\n')
-        print(json.dumps({'status': 'built', 'source_archive_sha256': digest(archive), 'source_identity': manifest['source_freeze_sha256'], 'public_links': check_client(out, contents, policy['documents'], policy.get('downloads', {})), 'published': False}))
+        print(json.dumps({'status': 'built', 'source_archive_sha256': digest(archive), 'source_identity': manifest['source_freeze_sha256'], 'public_links': check_client(out, contents, policy['documents'], policy.get('downloads', {})), 'publication_asserted': False}))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         parser.exit(1, 'Public build refused: ' + str(error) + '\n')
 

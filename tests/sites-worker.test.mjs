@@ -143,22 +143,35 @@ test("security policy denies by default, enforces Trusted Types and blocks frami
   assert.ok(policy.includes("frame-ancestors 'none'"), "header policy should block framing");
 });
 
-test("emits the worker packaging files", async () => {
+test("emits the worker packaging files and the hosting configuration", async () => {
   await access(new URL("../dist/client/index.html", import.meta.url));
   await access(new URL("../dist/server/index.js", import.meta.url));
-  await access(new URL("../dist/.openai/hosting.json", import.meta.url));
 
-  assert.deepEqual((await readdir(new URL("../dist", import.meta.url))).sort(), [".openai", "client", "server"]);
+  assert.deepEqual((await readdir(new URL("../dist", import.meta.url))).sort(), ["client", "server"]);
   assert.deepEqual(await readdir(new URL("../dist/server", import.meta.url)), ["index.js"]);
-  assert.deepEqual(await readdir(new URL("../dist/.openai", import.meta.url)), ["hosting.json"]);
   assert.deepEqual(
     await readFile(new URL("../dist/server/index.js", import.meta.url)),
     await readFile(new URL("../worker/index.js", import.meta.url)),
   );
-  assert.deepEqual(
-    await readFile(new URL("../dist/.openai/hosting.json", import.meta.url)),
-    await readFile(new URL("../.openai/hosting.json", import.meta.url)),
-  );
+  const hosting = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  assert.match(hosting.compatibility_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(hosting, {
+    name: "n170-verify",
+    main: "dist/server/index.js",
+    compatibility_date: hosting.compatibility_date,
+    no_bundle: true,
+    find_additional_modules: false,
+    workers_dev: true,
+    preview_urls: false,
+    assets: {
+      directory: "dist/client",
+      binding: "ASSETS",
+      run_worker_first: true,
+      html_handling: "auto-trailing-slash",
+      not_found_handling: "none",
+    },
+    observability: { enabled: false },
+  });
 });
 
 test("built page embeds the strict policy, has no inline scripts and ships no source maps", async () => {
@@ -195,7 +208,7 @@ test("documentation charset preserves Unicode bytes and non-charset parameters i
     ["/guide.md", null, "text/markdown; charset=utf-8"],
     ["/notes.txt", null, "text/plain; charset=utf-8"],
     ["/NOTICE", null, "text/plain; charset=utf-8"],
-    ["/challenge-kit/README.md", 'text/markdown; variant="CommonMark;plain"; charset="ISO-8859-1"', 'text/markdown; variant="CommonMark;plain"; charset=utf-8'],
+    ["/private-source-challenge/README.md", 'text/markdown; variant="CommonMark;plain"; charset="ISO-8859-1"', 'text/markdown; variant="CommonMark;plain"; charset=utf-8'],
     ["/guide.md", "text/x-markdown; charset=windows-1252", "text/x-markdown; charset=utf-8"],
     ["/third-party-licenses.txt", "text/plain; charset=UTF-8", "text/plain; charset=utf-8"],
   ]) {
@@ -246,8 +259,8 @@ test("documentation charset reaches actual Vite preview before static serving wi
       ["LICENSE.txt", "text/plain; charset=utf-8"],
       ["agent-instructions.txt", "text/plain; charset=utf-8"],
       ["NOTICE", "text/plain; charset=utf-8"],
-      ["challenge-kit/README.md", "text/markdown; charset=utf-8"],
-      ["challenge-kit/SHA256SUMS", "text/plain; charset=utf-8"],
+      ["private-source-challenge/README.md", "text/markdown; charset=utf-8"],
+      ["private-source-challenge/SHA256SUMS", "text/plain; charset=utf-8"],
       ["n170-verify-toolkit.zip.sha256", "text/plain; charset=utf-8"],
     ]) {
       const expected = await readFile(new URL(`../dist/client/${name}`, import.meta.url));

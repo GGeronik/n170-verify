@@ -1,8 +1,6 @@
 # Contributing to N170 Verify
 
-This is a local source candidate. An issue tracker, contribution endpoint and
-private vulnerability-reporting route must be confirmed on the actual repository
-before use; this archive does not establish that they are available. While
+An issue tracker, contribution endpoint and private vulnerability-reporting route must be confirmed on the repository before use; this file does not establish that they are available. While
 contribution terms are being set up, pull requests are limited to repository
 collaborators. Describe proposed fixes through the maintainer's available channel.
 Use [SECURITY.md](SECURITY.md) for security reports and never post sensitive
@@ -74,5 +72,4 @@ binaries. See [README.md](README.md) and
 
 Original N170 code is licensed under [Apache-2.0](LICENSE), with [NOTICE](NOTICE).
 Preserve dependency notices and component license boundaries. AuditZK's original
-mock interface does not grant rights to upstream implementation code; written
-special-license terms and downstream rights remain pending.
+mock interface does not include or grant rights to upstream implementation code.

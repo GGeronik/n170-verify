@@ -1,0 +1,412 @@
+{
+  "schema": "n170.verify.counterfactual-input.v1",
+  "id": "CF06",
+  "periods_per_year": 252,
+  "books": {
+    "ACTUAL": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 850000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -620000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 410000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 730000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": -540000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 390000
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "return_e8": 910000
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "return_e8": -480000
+      },
+      {
+        "start": "2025-01-16",
+        "end": "2025-01-17",
+        "return_e8": 440000
+      },
+      {
+        "start": "2025-01-17",
+        "end": "2025-01-20",
+        "return_e8": 680000
+      },
+      {
+        "start": "2025-01-20",
+        "end": "2025-01-21",
+        "return_e8": -510000
+      },
+      {
+        "start": "2025-01-21",
+        "end": "2025-01-22",
+        "return_e8": 420000
+      },
+      {
+        "start": "2025-01-22",
+        "end": "2025-01-23",
+        "return_e8": 790000
+      }
+    ],
+    "MIRROR_SHADOW": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 790000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -680000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 350000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 670000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": -600000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 330000
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "return_e8": 850000
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "return_e8": -540000
+      },
+      {
+        "start": "2025-01-16",
+        "end": "2025-01-17",
+        "return_e8": 380000
+      },
+      {
+        "start": "2025-01-17",
+        "end": "2025-01-20",
+        "return_e8": 620000
+      },
+      {
+        "start": "2025-01-20",
+        "end": "2025-01-21",
+        "return_e8": -570000
+      },
+      {
+        "start": "2025-01-21",
+        "end": "2025-01-22",
+        "return_e8": 360000
+      },
+      {
+        "start": "2025-01-22",
+        "end": "2025-01-23",
+        "return_e8": 730000
+      }
+    ],
+    "CLEAN_SHADOW": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 880000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -590000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 440000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 760000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": -510000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 420000
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "return_e8": 940000
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "return_e8": -450000
+      },
+      {
+        "start": "2025-01-16",
+        "end": "2025-01-17",
+        "return_e8": 470000
+      },
+      {
+        "start": "2025-01-17",
+        "end": "2025-01-20",
+        "return_e8": 710000
+      },
+      {
+        "start": "2025-01-20",
+        "end": "2025-01-21",
+        "return_e8": -480000
+      },
+      {
+        "start": "2025-01-21",
+        "end": "2025-01-22",
+        "return_e8": 450000
+      },
+      {
+        "start": "2025-01-22",
+        "end": "2025-01-23",
+        "return_e8": 820000
+      }
+    ],
+    "FIXED_BENCHMARK": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "return_e8": 500000
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "return_e8": -700000
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "return_e8": 250000
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "return_e8": 480000
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "return_e8": -600000
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "return_e8": 210000
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "return_e8": 620000
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "return_e8": -550000
+      },
+      {
+        "start": "2025-01-16",
+        "end": "2025-01-17",
+        "return_e8": 290000
+      },
+      {
+        "start": "2025-01-17",
+        "end": "2025-01-20",
+        "return_e8": 450000
+      },
+      {
+        "start": "2025-01-20",
+        "end": "2025-01-21",
+        "return_e8": -580000
+      },
+      {
+        "start": "2025-01-21",
+        "end": "2025-01-22",
+        "return_e8": 260000
+      },
+      {
+        "start": "2025-01-22",
+        "end": "2025-01-23",
+        "return_e8": 510000
+      }
+    ]
+  },
+  "decision_log": {
+    "intervals": [
+      {
+        "start": "2025-01-06",
+        "end": "2025-01-07",
+        "accepted_count": 3,
+        "modified_count": 1,
+        "rejected_count": 0,
+        "decision_set_sha256": "996f28c1b7e382825f678ba98bdd5fa83d2197ec4243c807d9fc05eee29d8b32",
+        "chain_sha256": "2009bb1e19e9b1332c6d3c221e1e013135b39c5996e3ca348cc94cbd71595fb4"
+      },
+      {
+        "start": "2025-01-07",
+        "end": "2025-01-08",
+        "accepted_count": 2,
+        "modified_count": 1,
+        "rejected_count": 1,
+        "decision_set_sha256": "f28859476c84cf4108a9d7022a57f4a7cb8f4bac6cee23be3a6c37f59056a9e9",
+        "chain_sha256": "b0f4c354fb6040907fcea559a390d0d4b9c53a89afaa89a6c32b442389b97cad"
+      },
+      {
+        "start": "2025-01-08",
+        "end": "2025-01-09",
+        "accepted_count": 4,
+        "modified_count": 0,
+        "rejected_count": 1,
+        "decision_set_sha256": "707b45fd9425a07a7563fa7f97508407479ba23173487472d8c3049fedaa3c51",
+        "chain_sha256": "98f8df7cce254e67a5b76bd2b7039b60159b6e80821a7bbbb11f1320009d4dec"
+      },
+      {
+        "start": "2025-01-09",
+        "end": "2025-01-10",
+        "accepted_count": 1,
+        "modified_count": 2,
+        "rejected_count": 0,
+        "decision_set_sha256": "fadf4154b235ed94739946e5a2238d08b819db09183b075e6315ba3a16beae93",
+        "chain_sha256": "24a2b7a0af9cd050ff4697ffefd66bc48cc4321300dfa22af7894d327d18d499"
+      },
+      {
+        "start": "2025-01-10",
+        "end": "2025-01-13",
+        "accepted_count": 0,
+        "modified_count": 0,
+        "rejected_count": 0,
+        "decision_set_sha256": "4528f64b1829f30693f355edbf4c9b250a2986d22fa15e199b18885e653ff548",
+        "chain_sha256": "ced5ca6a14673160629732c4fbe8e79b6fe4910424b7c360c39a707661a9fd68"
+      },
+      {
+        "start": "2025-01-13",
+        "end": "2025-01-14",
+        "accepted_count": 3,
+        "modified_count": 1,
+        "rejected_count": 1,
+        "decision_set_sha256": "d81833ce750b2ffa3ca206b176e3ab3a27ed1986ae16b4615b71d2a8ba54556d",
+        "chain_sha256": "18f0f56130d5f438ff491759488e280cc9ada59486d3dc99cdde8424fc169641"
+      },
+      {
+        "start": "2025-01-14",
+        "end": "2025-01-15",
+        "accepted_count": 2,
+        "modified_count": 0,
+        "rejected_count": 2,
+        "decision_set_sha256": "b63adc4b9c901fc355f257597cc9032a86e2fbe2fb12b225f8b47165fdbbf0ff",
+        "chain_sha256": "1b641f33ccdf4bae45a92a2b4771cf4cd5485502da68930ab52702c02410e5fd"
+      },
+      {
+        "start": "2025-01-15",
+        "end": "2025-01-16",
+        "accepted_count": 5,
+        "modified_count": 1,
+        "rejected_count": 0,
+        "decision_set_sha256": "56a739efdc2549687e63f2300015eca2e57f61085328084a6967266638b715d9",
+        "chain_sha256": "765520649b0a5f301f9c3c2be3e300844f72648ed353bfb14f55e0fbd65d9af1"
+      },
+      {
+        "start": "2025-01-16",
+        "end": "2025-01-17",
+        "accepted_count": 2,
+        "modified_count": 2,
+        "rejected_count": 1,
+        "decision_set_sha256": "ac40f9c22deb2dbcd1be0a2be0ffd1c8f383fd87a5384f3556f749d7867e43c0",
+        "chain_sha256": "f82be292b2874b8d17326d710fa9097e0718fbbbc810841b2367e017d389c5cf"
+      },
+      {
+        "start": "2025-01-17",
+        "end": "2025-01-20",
+        "accepted_count": 3,
+        "modified_count": 0,
+        "rejected_count": 1,
+        "decision_set_sha256": "190c86abacf0100c41b6f6e184535acc829fa789bc328adbbf3334c073848865",
+        "chain_sha256": "52f99680f7c295f2369d9cf3e4e0072784254192a8958e5f533fe147c14b89fe"
+      },
+      {
+        "start": "2025-01-20",
+        "end": "2025-01-21",
+        "accepted_count": 1,
+        "modified_count": 1,
+        "rejected_count": 1,
+        "decision_set_sha256": "6b8259c390f2b8fdd6dc372e26ad6d001d9e5221cb1b66618042ee5bedab12a9",
+        "chain_sha256": "788d372a2a931f222b48be8d5f368e076bebaddce62364787b1d693037d20e34"
+      },
+      {
+        "start": "2025-01-21",
+        "end": "2025-01-22",
+        "accepted_count": 4,
+        "modified_count": 1,
+        "rejected_count": 0,
+        "decision_set_sha256": "7981b3092e5a81e2b863a8f312e86b26ebbe27df0409648288baafb488179a80",
+        "chain_sha256": "0574e997eb5ffb206c56f5f5ea28998b2849d0862d8ce395583d0703c0c7a46c"
+      },
+      {
+        "start": "2025-01-22",
+        "end": "2025-01-23",
+        "accepted_count": 2,
+        "modified_count": 1,
+        "rejected_count": 1,
+        "decision_set_sha256": "ac9609edf534edbb8e46bb7b7a0c574cd70636f2bb81181dc3353d9a85cfa3b2",
+        "chain_sha256": "da57e45d358a2d445bd5440fb4aa3b34a430f48760c265064d5acbc5f75fc88e"
+      }
+    ],
+    "head_chain_sha256": "da57e45d358a2d445bd5440fb4aa3b34a430f48760c265064d5acbc5f75fc88e"
+  },
+  "lean_manifest": {
+    "calendar_sha256": "cccbd815a8316eb7298ee0be14b841ad68e8cacaa57cf7e521f12ae5b1168700",
+    "cost_policy_bps": 12.5,
+    "engine_image_digest": "sha256:a92b72d84fe3b052031aec202e6ead415d280c9e7c57a2e4dea28330049a4455",
+    "input_commitments_merkle_root": "fd524a623d8ad3956f2c1df479f8dad69a4b9f9319817669de0d7e5f05ee73aa",
+    "output_returns_sha256": "13bbd90b1d9706017f8d3d9372f7bf1370e79bac3ac5f8764429109671514a9d",
+    "schema": "n170.verify.lean-replay-manifest.v1",
+    "target_book": "CLEAN_SHADOW",
+    "manifest_sha256": "b3f82d9ed558c8a4c084b50836b843edee486164248565d021bedb3d0ad15838"
+  },
+  "construction": {
+    "method": "Odd-length (T=13) 4-book series exercising odd-node Merkle promotion and a zero-proposal interval",
+    "seed": 2026110206,
+    "notes_file": "CF06.notes.md"
+  }
+}

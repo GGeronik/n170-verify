@@ -1,8 +1,6 @@
 # Release readiness and source workflow
 
-This is a local source candidate for a free open-source browser application. It
-has not been published or deployed. No reachable public repository, successful
-remote CI run, broker connection or external human audit is asserted. The
+This guide describes a free open-source browser application at its tagged source revision. It does not itself assert publication, deployment, a successful remote CI run, a broker connection or an external human audit; the notes of a published release state publication and hosting separately. The
 [README](../README.md) describes current behavior; [validation scope](release-validation.md)
 describes reproducible local checks and their limits.
 
@@ -81,6 +79,8 @@ include independent archive verification and metadata. A combined release adds
 root documentation and `build.py`, which delegates to this same app build; no
 second toolkit copy is placed at the root.
 
+Some tests need retained evidence or separately installed software that is not part of this source, and are skipped without it. At this revision, `npm test` runs 792 tests: 788 pass and 4 are skipped unless `N170_ACCOUNTING_V2_PACKAGE_ROOT` (2 tests), `N170_RUN_REVIEW_PACKAGE_ROOT` (1) or `N170_WALLET_SCOPE_PACKAGE` (1) names a retained package. `python3 -S -m unittest discover -s toolkit-tests` runs 150 tests: 125 pass and 25 are skipped unless `N170_ACCOUNTING_EVIDENCE` names a directory of retained accounting captures. `python3 -m unittest discover -s accounting-tests` runs 51 tests: 48 pass and 3 are skipped unless `N170_BEANCOUNT_PYTHON` names a separately installed pinned oracle interpreter. A skipped test is not a pass; record skips with their conditions.
+
 Maintainers can edit explicitly inventoried source and rebuild with the same
 `npm run build`. The build hashes current files into a new manifest rather than
 requiring them to match the original immutable receipt. Review and explicitly
@@ -108,7 +108,7 @@ accounting remains `NOT_ASSESSABLE`, including when supported calculations match
 These are implementation and interpretation boundaries, not a claim of completed
 acceptance or a new financial-realism assurance.
 
-The Methods page first offers the separate
+The Methods page offers the separate
 [68-case private-source challenge](../release-assets/private-source-challenge/README.md).
 Its six fixed files are served under `/private-source-challenge/`: instructions,
 challenge ZIP, accepted checker ZIP, detached verifier, checksums and acceptance
@@ -127,14 +127,7 @@ Adding these downloads changes the rebuilt app/source archive identity; it does
 not re-identify the accepted challenge pack or validate every combined feature.
 This local delivery is not publication or outside-user reproduction.
 
-The Methods page delivers the four files of the frozen public challenge kit.
-Its 175 original expected cases concern the earlier wave2 compatibility-v4
-baseline; continuity and accounting are excluded. Its documented result remains
-`INCOMPLETE` / exit `2`; the kit's frozen report leaves separate engine and
-public-build challenges unrun. Those counts are not an
-accuracy percentage or validation of this combined source. Follow the
-[kit README](../release-assets/challenge-kit/README.md), keep its pinned source
-identity and retain the actual result of each run.
+An earlier 175-case challenge kit for the wave2 compatibility-v4 baseline is retained outside this distribution with its original identity. Its documented result remains `INCOMPLETE` / exit `2`; continuity and accounting are excluded, and it is not validation of this combined source.
 
 Further evidence is needed for real broker-produced source compatibility,
 authorized personal-account reconciliation, outside-user reproduction, supported
@@ -152,8 +145,7 @@ Lost-key recovery, independent time, authenticated broker acquisition and global
 history discovery remain separate unimplemented capabilities. See
 [security boundaries](../SECURITY.md).
 
-The AuditZK adapter is original disabled/mock-only code. The reported special
-license's written terms, exact revision and downstream rights remain pending.
+The AuditZK adapter is original disabled/mock-only code under Apache-2.0.
 No upstream implementation or real TEE verification is included. Optional
 Freqtrade is separately installed GPL software; its engine is in neither ZIP.
 The optional pinned accounting oracle is also installed separately and is not
@@ -161,6 +153,6 @@ required for the standard-library package-verification workflow.
 
 A future authorized pilot should measure whether owners reconcile supported
 inputs without losing failures, recipients explain the source/identity/time
-limits, and retained-copy comparisons reveal the supplied changes. Local agent
+limits, and retained-copy comparisons reveal the supplied changes. Local automated
 checks do not substitute for participants. Publication, deployment, account
 access and contacting participants are separate actions, not build steps.

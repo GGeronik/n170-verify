@@ -4,13 +4,13 @@ Prepare a performance record privately, explain its limitations, and give anothe
 
 N170 Verify is a free, open-source browser application. Its useful core is a complete **import → reconcile → review → sign → share → compare** workflow. It checks supplied evidence; it does not authenticate a broker, identify an applicant, measure investment skill or decide suitability for employment.
 
-## Local candidate status
+## Release status
 
-This source candidate has not been published or deployed. Supported signed v3/v4 records keep their versioned arithmetic and signature semantics. Current source includes retained-copy comparison, consistent-currency checks and protection against stale replacement-file results. See [release readiness](docs/release-readiness.md) and [validation scope](docs/release-validation.md) for the checks and remaining evidence gaps.
+This file describes the source at its tagged revision. It does not itself assert publication, deployment or a release identity; those are stated in the notes of a published release, not in this file. Supported signed v3/v4 records keep their versioned arithmetic and signature semantics. Current source includes retained-copy comparison, consistent-currency checks and protection against stale replacement-file results. See [release readiness](docs/release-readiness.md) and [validation scope](docs/release-validation.md) for the checks and remaining evidence gaps.
 
 The [captured-run viewer](docs/tool-evidence.md) checks portable package bytes and selected-attempt relationships under the [run-review contract](verify_toolkit/RUN_REVIEW_V1.md). Separate CSV observation reports remain supplied unsigned research evidence. [Private account reconciliation](docs/account-reconciliation-contract.md) retains source attempts, unresolved intervals and input dependencies under owner-stated scope; it does not prove complete accounts. Neither workflow changes signed v3/v4 records or authenticates a producer. The original [AuditZK interface](docs/auditzk-adapter.md) is disabled or explicitly synthetic mock-only; no upstream implementation or authentic TEE verification is included.
 
-The additive [accounting release guide](docs/accounting-release.md) describes v2 captured-run receipts, offline review and an optional separately installed accounting oracle. The browser keeps capture support, exact-decimal calculations, native compatibility and supplied oracle evidence separate. Only cash, quantity and accumulated net PnL have supplied native comparisons; the other six metrics remain `NOT_SUPPLIED`, so overall accounting remains `NOT_ASSESSABLE`. These receipts do not authenticate execution or establish financial realism. The Methods page offers a separate [68-case private-source challenge](release-assets/private-source-challenge/README.md) with its accepted checker and fixed evidence, followed by the frozen 175-case kit for an earlier baseline. The older kit still excludes continuity and accounting.
+The additive [accounting release guide](docs/accounting-release.md) describes v2 captured-run receipts, offline review and an optional separately installed accounting oracle. The browser keeps capture support, exact-decimal calculations, native compatibility and supplied oracle evidence separate. Only cash, quantity and accumulated net PnL have supplied native comparisons; the other six metrics remain `NOT_SUPPLIED`, so overall accounting remains `NOT_ASSESSABLE`. These receipts do not authenticate execution or establish financial realism. The Methods page offers a separate [68-case private-source challenge](release-assets/private-source-challenge/README.md) with its accepted checker and fixed evidence. An earlier 175-case kit for an older baseline is retained outside this distribution with its documented `INCOMPLETE` / exit `2` result; it excludes continuity and accounting.
 
 ## Use it
 
@@ -20,7 +20,7 @@ The standalone application opens directly at `/`. Choose **Prepare a record** fo
 2. Review column mapping, currency, account scope, duplicate/missing observations, cash flows and unsupported events. In **Input-to-return reconciliation**, check requested dates, the expected valuation schedule, gross cash activity and flow timing. Retained unresolved sources require review; exclusion or supersession needs an explicit reason. Make supported corrections with reasons. Original values and source text stay in memory unless you choose to save or export a private draft.
 3. Review actual calculated results and a chart from the disclosed returns. Annualized volatility is withheld when the sample or schedule does not support it. Choose a public profile alias, then explicitly sign and save.
 4. Download one **readable HTML review package** with embedded signed JSON. It omits raw NAV and flow values while retaining dated returns, scope declarations, hashes and correction reasons. Send the file yourself; the app does not publish it or contact recipients.
-5. The recipient opens the package in an independently obtained copy of Verify. They can compare a trusted key code, a retained checkpoint and their previous file. Keep the checked copy for the next review.
+5. The recipient opens the package in an independently obtained copy of Verify; see the [recipient guide](docs/recipient-guide.md). They can compare a trusted key code, a retained checkpoint and their previous file. Keep the checked copy for the next review.
 
 The HTML is a static, unsigned presentation for reading. Imported HTML is never executed by the checker: it extracts the bounded evidence attachment and verifies that data. A file can be visually edited, so recipients should run the independent check before relying on its presentation. An aggregate summary export omits the relative-return series and **cannot reproduce itself**.
 
@@ -71,6 +71,8 @@ A correction appends a signed event identifying the exact target hash and reason
 
 ## Independently verify a file
 
+For the verifier-derived evidence headline, run `node scripts/verify-headline.mjs CURRENT [PREVIOUS]`. Optional receipt checking requires an explicitly selected event digest and recipient-supplied trusted witness keys and allowed broker hosts; see [witness receipts](docs/witness-receipt.md). Headline exits are 0 for a supported tier, 1 for rejection, 2 for conflict and 3 for usage/read failure. The original record, private-source and continuity commands retain their own output status names and exit codes.
+
 First verify the received source archive as described below. Run these commands in the folder containing `package.json` (`app/` after extracting a source archive). Node's standard cryptography and a separate arithmetic/serialization implementation are sufficient; the verifier does not import application code or require npm installation:
 
 ```sh
@@ -93,8 +95,8 @@ neither a broker nor complete accounts.
 
 First verify the downloaded complete source ZIP or combined offline toolkit ZIP
 against a separately retained archive SHA-256, as described below. Both include
-the four standalone CLI modules in `scripts/`, this checker's guide and result
-schema in `docs/`, and the root license/notice. In the complete source or combined
+the fifteen standalone CLI modules in `scripts/`, their guides and schemas in
+`docs/` and `schemas/`, and the root license/notice. In the complete source or combined
 release, these paths are under `app/`; from its extracted root use `cd app`.
 The separate `n170-verify-toolkit.zip` puts `scripts/` at the extraction root;
 stay there and omit `cd app`. The Node CLI needs no npm install, browser build,
@@ -172,7 +174,9 @@ npm run preview -- --host 127.0.0.1 --port 4174 --strictPort
 
 `npm ci` installs the locked dependencies. The included `.npmrc` disables install scripts and checks the Node engine requirement. A first installation needs registry access unless a complete matching npm cache is already available; dependencies are not included in the source ZIP. The preview serves the built app and its configured security headers. Use `npm run dev` separately for development; development mode does not have the production security boundary. `npm run check` additionally runs registry checks and therefore needs network access.
 
-The conventional `npm run build` invokes the explicit public build. It produces the browser app in `dist/client`, the host worker in `dist/server`, selected public documentation and two downloads: `dist/client/n170-verify-source.zip` contains complete editable app and toolkit source under `app/`; `dist/client/n170-verify-toolkit.zip` contains `verify_toolkit/`, `verify_accounting/` and their two test directories at the archive root, plus the four private-source CLI modules in `scripts/`, its guide and result schema in `docs/`, and root `LICENSE`/`NOTICE`. Each ZIP has a detached `.sha256` file and includes an independent archive verifier and metadata. The build also serves `verify_release.py`, the six unchanged private-source challenge files and the four unchanged earlier challenge-kit delivery files described below. Each challenge pack retains its own identity; these delivery changes create a new app/source archive identity without changing either pack. [The exact public source inventory](scripts/public-source-inventory.json) determines which files may enter these ZIPs. Apart from the explicitly pinned synthetic challenge packs, historical internal reports, screenshots, private handoffs and the obsolete prototype are outside the public inventory. No dependency upgrade or account access is part of building.
+Some tests need retained evidence or separately installed software that is not part of this source, and are skipped without it. At this revision, `npm test` runs 792 tests: 788 pass and 4 are skipped unless `N170_ACCOUNTING_V2_PACKAGE_ROOT` (2 tests), `N170_RUN_REVIEW_PACKAGE_ROOT` (1) or `N170_WALLET_SCOPE_PACKAGE` (1) names a retained package. `python3 -S -m unittest discover -s toolkit-tests` runs 150 tests: 125 pass and 25 are skipped unless `N170_ACCOUNTING_EVIDENCE` names a directory of retained accounting captures. `python3 -m unittest discover -s accounting-tests` runs 51 tests: 48 pass and 3 are skipped unless `N170_BEANCOUNT_PYTHON` names a separately installed pinned oracle interpreter. A skipped test is not a pass; record skips with their conditions.
+
+The conventional `npm run build` invokes the explicit public build. It produces the browser app in `dist/client`, the host worker in `dist/server`, selected public documentation and two downloads: `dist/client/n170-verify-source.zip` contains complete editable app and toolkit source under `app/`; `dist/client/n170-verify-toolkit.zip` contains `verify_toolkit/`, `verify_accounting/` and their two test directories at the archive root, plus the fifteen standalone CLI modules in `scripts/`, their guides and schemas in `docs/` and `schemas/`, and root `LICENSE`/`NOTICE`. Each ZIP has a detached `.sha256` file and includes an independent archive verifier and metadata. The build also serves `verify_release.py` and the six unchanged private-source challenge files described below. The challenge pack retains its own identity; delivering it creates a new app/source archive identity without changing the pack. [The exact public source inventory](scripts/public-source-inventory.json) determines which files may enter these ZIPs. Apart from the explicitly pinned synthetic challenge pack, historical internal reports, screenshots, private handoffs and the obsolete prototype are outside the public inventory. No dependency upgrade or account access is part of building.
 
 ### Offline toolkit review
 
@@ -247,26 +251,16 @@ exits 1 because the flags remain. Keep unsuccessful runs and read each result.
 This finite synthetic challenge does not establish source authenticity, complete
 accounts, investment performance, outside human review or outside-user
 reproduction. It retains its own accepted checker, separate from the current
-rebuilt toolkit and the older kit below.
+rebuilt toolkit.
 
-### Frozen public challenge kit
+### Earlier challenge kit
 
-Choose **Methods → Run the frozen challenge kit** for the four delivery files:
-[README](release-assets/challenge-kit/README.md),
-[checksums](release-assets/challenge-kit/SHA256SUMS),
-[ZIP](release-assets/challenge-kit/public-challenge-kit.zip) and
-[independent archive verifier](release-assets/challenge-kit/verify_archive.py).
-They preserve the earlier wave2 compatibility-v4 tested source with SHA-256
-`efa705edb9782568aba7561cea448f4e824f1a58cb745930471fb6cee39fe3e5`
-and challenge ZIP SHA-256
-`5802a438f08afdad9e1d74d7ee9f1ab03b86a059e9d77bb30ea977148c9a0a22`.
-All 175 original expected cases remain in the kit. Its documented no-scored-failure
-result is `INCOMPLETE` / exit `2`; the kit's frozen report leaves separate engine
-and public-build challenges unrun. It excludes continuity and accounting and is not validation of
-this combined source. Eight recorded engine executions of four synthetic
-controls, the five separate engine challenge cases, and the 77 wrapper self-tests
-are distinct counts, not an aggregate accuracy score. Follow the kit README and
-retain each run's actual results, including failures.
+An earlier 175-case challenge kit preserved the wave2 compatibility-v4 tested
+source. Its documented no-scored-failure result is `INCOMPLETE` / exit `2`,
+because its frozen report leaves separate engine and public-build challenges
+unrun. It excludes continuity and accounting and is not validation of this
+source. The kit is not part of this distribution. Its four delivery files keep
+their original identities in private records.
 
 ### Maintainer changes are new source
 
@@ -293,11 +287,11 @@ npm run test:accessibility
 
 `N170_PREVIEW_URL` can select a different loopback production-preview URL for `test:agent-handoff`, `test:browser`, `test:lifecycle` and `test:accessibility`. The lifecycle suite covers file/draft navigation, reload protection and local profile close/deletion. The accessibility harness checks rendered text contrast, dialog keyboard focus/Escape and narrow reflow; it is not a full assistive-technology or WCAG conformance audit. The storage harness starts its own isolated loopback fixture origin and tests the current modules; it does not test production CSP or the full interface. Keep these scopes separate when interpreting results. Playwright WebKit is not the Safari application.
 
-The browser harnesses generate original synthetic evidence. Keep `N170_EVIDENCE_DIR` outside the extracted public source directory and record the exact archive hash, runtime/browser versions, command, exit status and failures. `npm run test:comparison` exercises received/retained-copy review; `node scripts/browser-comparison.mjs --fixtures-only` only checks generated fixtures and is not browser acceptance. Agent-run checks are not an external audit or an outside-user study. [Validation scope](docs/release-validation.md) separates test coverage from unsupported dimensions.
+The browser harnesses generate original synthetic evidence. Keep `N170_EVIDENCE_DIR` outside the extracted public source directory and record the exact archive hash, runtime/browser versions, command, exit status and failures. `npm run test:comparison` exercises received/retained-copy review; `node scripts/browser-comparison.mjs --fixtures-only` only checks generated fixtures and is not browser acceptance. Automated checks are not an external audit or an outside-user study. [Validation scope](docs/release-validation.md) separates test coverage from unsupported dimensions.
 
-Security headers are implemented in [worker/index.js](worker/index.js) and reused for production preview. The build embeds the CSP subset supported by a meta element. A Workers-style host can serve `dist/server/index.js` with an `ASSETS` binding; another static host needs an index fallback and the actual response headers. A local build does not demonstrate that a public host enforces them.
+Security headers are implemented in [worker/index.js](worker/index.js) and reused for production preview. The build embeds the CSP subset supported by a meta element. The included [`wrangler.jsonc`](wrangler.jsonc) runs `dist/server/index.js` before every request, with an `ASSETS` binding to `dist/client`, so the worker's headers apply to every response; another static host needs an index fallback and the actual response headers. A local build does not demonstrate that a public host enforces them.
 
-Exact dependencies, lockfile integrity and disabled install scripts are configured. Repository CI configuration is included for future repository use; its presence is not evidence of successful remote runs, required reviews or branch protection. No status badge, published repository availability or private reporting service is asserted by this local candidate.
+Exact dependencies, lockfile integrity and disabled install scripts are configured. Repository CI configuration is included; its presence is not evidence of successful remote runs, required reviews or branch protection. This file asserts no status badge, repository availability or private reporting service; check the repository itself.
 
 ## Product status and contribution
 

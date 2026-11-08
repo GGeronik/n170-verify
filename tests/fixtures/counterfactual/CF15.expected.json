@@ -1,0 +1,14 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF15",
+  "fixture_sha256": "9baed1e0fe103641ef94d10c60cec98e39ee8f01467028bb8b43b7162fb24013",
+  "status": "CF_INVALID_INPUT",
+  "reason_code": "SAMPLE_TOO_SHORT",
+  "T": 3,
+  "periods_per_year": 252,
+  "calendar_sha256": null,
+  "books": null,
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}

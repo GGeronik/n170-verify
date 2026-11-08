@@ -1,0 +1,40 @@
+{
+  "schema": "n170.verify.counterfactual-attribution.v1",
+  "fixture": "CF05",
+  "fixture_sha256": "f4c343a54d5a615886390f35b7c10dbe2ee8401996c68e45d6419a732c688b68",
+  "status": "OK",
+  "reason_code": null,
+  "T": 12,
+  "periods_per_year": 4,
+  "calendar_sha256": "64c92ea5891f1994cab0212e53835cd133cb6da5ad7cf21d8bc45dbee0349581",
+  "books": {
+    "ACTUAL": {
+      "T": 12,
+      "win_intervals": 6,
+      "loss_intervals": 4,
+      "flat_intervals": 2,
+      "win_rate": 0.5,
+      "gain_to_pain_ratio": 2.3571428571428577,
+      "mean_win": 0.0165,
+      "mean_loss_abs": 0.010499999999999999,
+      "payoff_asymmetry": 1.5714285714285716,
+      "cumulative_return": 0.05753050089126854,
+      "cagr": 0.01882040391677564,
+      "max_drawdown": 0.013499999999999955,
+      "ulcer_index": 0.006943222114647714,
+      "max_drawdown_duration_intervals": 2,
+      "max_drawdown_recovery_intervals": 1,
+      "max_drawdown_recovered": true,
+      "post_drawdown_rms_vol": 0.014835767590522573,
+      "high_water_rms_vol": 0.010012492197250393,
+      "post_drawdown_vol_scaling_ratio": 1.4817257580082546,
+      "post_drawdown_behavior_code": "ELEVATED_POST_DRAWDOWN_RISK",
+      "upside_capture": null,
+      "downside_capture": null,
+      "capture_asymmetry": null
+    }
+  },
+  "attribution": null,
+  "decision_chain_summary": null,
+  "lean_replay_verification": null
+}

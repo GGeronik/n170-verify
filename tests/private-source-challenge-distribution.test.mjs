@@ -140,9 +140,9 @@ ${body}
   assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
-test("exact ten downloads retain the accepted six private-source artifacts and older four", () => check(String.raw`
+test("exact six downloads retain the accepted six private-source artifacts and no older kit", () => check(String.raw`
 assert len(pins) == 6
-expected_names = {prefix+name for name in pins} | {'release-assets/challenge-kit/'+name for name in expected['old_downloads']}
+expected_names = {prefix+name for name in pins}
 assert set(policy['downloads']) == expected_names, 'missing or extra download (including the required challenge pack)'
 assert {name for name in policy['files'] if name.startswith('release-assets/')} == expected_names
 for name, pin in pins.items():
@@ -153,15 +153,16 @@ for name, pin in pins.items():
  assert (app/'dist/client'/route/name).read_bytes() == raw, 'delivered bytes: '+name
 assert {p.relative_to(app/'release-assets/private-source-challenge').as_posix() for p in (app/'release-assets/private-source-challenge').rglob('*') if p.is_file()} == set(pins)
 assert {p.relative_to(app/'dist/client/private-source-challenge').as_posix() for p in (app/'dist/client/private-source-challenge').rglob('*') if p.is_file()} == set(pins)
-for name, digest in expected['old_downloads'].items():
- source = 'release-assets/challenge-kit/'+name
- raw = (app/source).read_bytes()
- assert hashlib.sha256(raw).hexdigest() == digest, source
- assert policy['downloads'][source] == dict(identity(raw), path='challenge-kit/'+name)
- assert (app/'dist/client/challenge-kit'/name).read_bytes() == raw, name
+for name in expected['old_downloads']:
+ old_source = 'release-assets/challenge-kit/'+name
+ assert old_source not in policy['files'], old_source
+ assert old_source not in policy['downloads'], old_source
+ assert not (app/'dist/client/challenge-kit'/name).exists(), name
 with zipfile.ZipFile(app/'dist/client/n170-verify-source.zip') as archive:
  for source in expected_names:
   assert archive.read('app/'+source) == (app/source).read_bytes(), 'editable source archive: '+source
+ for name in expected['old_downloads']:
+  assert 'app/release-assets/challenge-kit/'+name not in archive.namelist(), name
 `));
 
 test("frozen challenge and toolkit retain nested identities and unchanged checker modules", () => check(String.raw`

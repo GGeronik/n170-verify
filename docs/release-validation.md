@@ -1,9 +1,9 @@
 # Validation scope and reproduction
 
-This public guide describes checks to run; it is not a result report. Apart from the separately pinned synthetic challenge packs, historical
+This public guide describes checks to run; it is not a result report. Apart from the separately pinned synthetic challenge pack, historical
 internal logs, screenshots and handoffs are outside the public inventory. Keep
 results tied to the exact received source ZIP hash or the distinct hash of a
-modified build. Automated agent checks are not an external audit or an
+modified build. Automated checks are not an external audit or an
 outside-user study.
 
 ## Receipt and clean build
@@ -26,6 +26,8 @@ without importing the JavaScript calculations. Tests preserve v3/v4 signatures,
 arithmetic, correction history, import limits, private-data boundaries and public
 build checks. A test's existence does not demonstrate that it passed in your
 source/environment; retain the command and complete output.
+
+Some tests need retained evidence or separately installed software that is not part of this source, and are skipped without it. At this revision, `npm test` runs 792 tests: 788 pass and 4 are skipped unless `N170_ACCOUNTING_V2_PACKAGE_ROOT` (2 tests), `N170_RUN_REVIEW_PACKAGE_ROOT` (1) or `N170_WALLET_SCOPE_PACKAGE` (1) names a retained package. `python3 -S -m unittest discover -s toolkit-tests` runs 150 tests: 125 pass and 25 are skipped unless `N170_ACCOUNTING_EVIDENCE` names a directory of retained accounting captures. `python3 -m unittest discover -s accounting-tests` runs 51 tests: 48 pass and 3 are skipped unless `N170_BEANCOUNT_PYTHON` names a separately installed pinned oracle interpreter. A skipped test is not a pass; record skips with their conditions.
 
 For reproducibility, independently extract the same verified ZIP into two clean
 directories, install the same locked dependencies with the same Node/npm/Python
@@ -64,7 +66,7 @@ six downloads together. The
 provide the verifier and runner commands, required runtimes and fixed identities.
 This workflow uses the included accepted checker without rebuilding the app,
 installing npm dependencies or running a financial engine. It is separate from
-the earlier 175-case kit and from tests of a newly rebuilt combined application.
+the earlier 175-case kit, which is not distributed here, and from tests of a newly rebuilt combined application.
 
 Keep the accepted challenge ZIP SHA-256
 `e7471919bdf7f5b42ab233d6c89c834a2a3f1952fd0aa268a5931a4b53b35f57`

@@ -1,0 +1,4631 @@
+[
+  {
+    "id": "F01",
+    "input": "tests/fixtures/headline/F01.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F04a",
+    "input": "tests/fixtures/headline/F04a.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "schedule_status": "incompatible_spacing",
+    "statistics_expectation": "SCHEDULE_ANNUALIZATION_REFUSED",
+    "statistics_computed": false,
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F04b",
+    "input": "tests/fixtures/headline/F04b.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": [
+        {
+          "start": "2026-01-02",
+          "end": "2026-01-16"
+        }
+      ]
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": [
+          {
+            "start": "2026-01-02",
+            "end": "2026-01-16"
+          }
+        ]
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified · 1 gap(s) between disclosed periods"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": [
+          {
+            "start": "2026-01-02",
+            "end": "2026-01-16"
+          }
+        ]
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified · 1 gap(s) between disclosed periods"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F06",
+    "input": "tests/fixtures/headline/F06.json",
+    "previous": "tests/fixtures/headline/F06.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "CONFLICT",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "CONFLICT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: CONFLICTING_HISTORY",
+        "code": "CONFLICTING_HISTORY",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "CONFLICT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: CONFLICTING_HISTORY",
+        "code": "CONFLICTING_HISTORY",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F07",
+    "input": "tests/fixtures/headline/F07.json",
+    "previous": null,
+    "facts": {
+      "parse": "INVALID_INPUT",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not established"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not established"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F10a",
+    "input": "tests/fixtures/headline/F10a.html",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F10b",
+    "input": "tests/fixtures/headline/F10b.json",
+    "previous": null,
+    "facts": {
+      "parse": "INVALID_INPUT",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not established"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not established"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "C-ID",
+    "input": "tests/fixtures/headline/C-ID.json",
+    "previous": "tests/fixtures/headline/C-ID.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "IDENTICAL",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "identical",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "IDENTICAL",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · same as your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "IDENTICAL",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · same as your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "C-EX",
+    "input": "tests/fixtures/headline/C-EX.json",
+    "previous": "tests/fixtures/headline/C-EX.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "EXTENDED",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "extended",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "EXTENDED",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · extends your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "EXTENDED",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · extends your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "C-TR",
+    "input": "tests/fixtures/headline/C-TR.json",
+    "previous": "tests/fixtures/headline/C-TR.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "TRUNCATION",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "truncated",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "TRUNCATION",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: TRUNCATION",
+        "code": "TRUNCATION",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "TRUNCATION",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: TRUNCATION",
+        "code": "TRUNCATION",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "C-RP",
+    "input": "tests/fixtures/headline/C-RP.json",
+    "previous": "tests/fixtures/headline/C-RP.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "REPLACEMENT",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "replacement",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "REPLACEMENT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: REPLACEMENT",
+        "code": "REPLACEMENT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "REPLACEMENT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: REPLACEMENT",
+        "code": "REPLACEMENT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "K-EXP",
+    "input": "tests/fixtures/headline/K-EXP.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "REPLACEMENT",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "browser_options": {
+      "expectedKeyCode": "37f3-3343-0e13-4371-2057"
+    },
+    "observed_browser_message": "This profile was signed with a different key than the expected key code.",
+    "cli_supported": false,
+    "cli_unsupported_reason": "Expected key codes and checkpoints are not CLI headline options in v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "REPLACEMENT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: REPLACEMENT",
+        "code": "REPLACEMENT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "supported": false,
+      "reason": "Expected key codes and checkpoints are not CLI headline options in v1."
+    }
+  },
+  {
+    "id": "K-FP1",
+    "input": "tests/fixtures/headline/K-FP1.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "REPLACEMENT",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "browser_options": {
+      "publishedFingerprints": "n170-verify key=37f3-3343-0e13-4371-2057 record=1 end=2026-01-02 sha256=55553920c20914d70e13ebc70417b0e1c7a3d7424749d15f990f345a510225c1"
+    },
+    "observed_browser_message": "The published fingerprint on line 1 belongs to a different key.",
+    "cli_supported": false,
+    "cli_unsupported_reason": "Expected key codes and checkpoints are not CLI headline options in v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "REPLACEMENT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: REPLACEMENT",
+        "code": "REPLACEMENT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "supported": false,
+      "reason": "Expected key codes and checkpoints are not CLI headline options in v1."
+    }
+  },
+  {
+    "id": "K-FP2",
+    "input": "tests/fixtures/headline/K-FP2.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "TRUNCATION",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "browser_options": {
+      "publishedFingerprints": "n170-verify key=2dc4-71e6-cc30-843d-550e record=2 end=2026-01-03 sha256=0a86c977874177853d1b0dcdff7a5cc1c4ec116dd25fae5a7a259c87fc9719f9"
+    },
+    "observed_browser_message": "This profile has fewer records than a published fingerprint (record 2): later records were removed.",
+    "cli_supported": false,
+    "cli_unsupported_reason": "Expected key codes and checkpoints are not CLI headline options in v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "TRUNCATION",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: TRUNCATION",
+        "code": "TRUNCATION",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "supported": false,
+      "reason": "Expected key codes and checkpoints are not CLI headline options in v1."
+    }
+  },
+  {
+    "id": "K-FP3",
+    "input": "tests/fixtures/headline/K-FP3.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "CONFLICT",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "browser_options": {
+      "publishedFingerprints": "n170-verify key=2dc4-71e6-cc30-843d-550e record=1 end=2026-01-02 sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "observed_browser_message": "Record 1 does not match the supplied fingerprint. Its publication date has not been established.",
+    "cli_supported": false,
+    "cli_unsupported_reason": "Expected key codes and checkpoints are not CLI headline options in v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "CONFLICT",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: CONFLICTING_HISTORY",
+        "code": "CONFLICTING_HISTORY",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "supported": false,
+      "reason": "Expected key codes and checkpoints are not CLI headline options in v1."
+    }
+  },
+  {
+    "id": "N-M",
+    "input": "tests/fixtures/headline/N-M.json",
+    "previous": "tests/fixtures/headline/N-M.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "VALID",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "matched",
+    "checker_exit": 0,
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": "matched",
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "matched",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "matched",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "N-P",
+    "input": "tests/fixtures/headline/N-P.json",
+    "previous": "tests/fixtures/headline/N-P.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "VALID",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "partial",
+    "checker_exit": 2,
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": "partial",
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "partial",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "CONTINUITY_ANCHOR_PARTIAL",
+            "reasons": [],
+            "text": "CONTINUITY_ANCHOR_PARTIAL: Key linkage is valid; retained history anchors only part of the chain."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "partial",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "CONTINUITY_ANCHOR_PARTIAL",
+            "reasons": [],
+            "text": "CONTINUITY_ANCHOR_PARTIAL: Key linkage is valid; retained history anchors only part of the chain."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "N-N",
+    "input": "tests/fixtures/headline/N-N.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "VALID",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "not_supplied",
+    "checker_exit": 2,
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": "not_supplied",
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "not_supplied",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "CONTINUITY_ANCHOR_NOT_SUPPLIED",
+            "reasons": [],
+            "text": "CONTINUITY_ANCHOR_NOT_SUPPLIED: Key linkage is valid; no retained history anchor was supplied."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "VALID",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": "not_supplied",
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "CONTINUITY_ANCHOR_NOT_SUPPLIED",
+            "reasons": [],
+            "text": "CONTINUITY_ANCHOR_NOT_SUPPLIED: Key linkage is valid; no retained history anchor was supplied."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "N-C",
+    "input": "tests/fixtures/headline/N-C.json",
+    "previous": "tests/fixtures/headline/N-C.previous.json",
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "CONFLICT",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "checker_status": "conflict",
+    "checker_exit": 2,
+    "context": {
+      "record_reasons": [],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "CONFLICT",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: CONTINUITY_CONFLICT",
+        "code": "CONTINUITY_CONFLICT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "CONFLICT",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "CONFLICT: CONTINUITY_CONFLICT",
+        "code": "CONTINUITY_CONFLICT",
+        "exit": 2,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid across the supplied key chain · conflicts with your retained copy"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F02",
+    "input": "tests/fixtures/headline/F02.csv",
+    "preparation_only": true,
+    "flow_valuation_supplied": false,
+    "flow_timing": "intraperiod_not_established",
+    "expected_refusal": {
+      "text": "Row 2: cash-flow-adjusted wealth is zero or negative. Total loss and recapitalization are unsupported; keep this observation and obtain a separate accounting review.",
+      "code": null
+    },
+    "notes": "Flow equals closing equity; current calculator refuses nonpositive adjusted wealth. Error has no code. No invented timing rule or Dietz method.",
+    "browser_expected": {
+      "supported": false,
+      "reason": "Preparation calculator regression, not headline verifier."
+    },
+    "cli_expected": {
+      "supported": false,
+      "reason": "Preparation calculator regression, not headline verifier."
+    }
+  },
+  {
+    "id": "R-V",
+    "input": "tests/fixtures/headline/R-V.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/R-V.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+      "reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": false
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": true,
+        "signed_scope": true,
+        "signed_returns": true,
+        "private_intervals": true
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SOURCE-RECONCILED RECORD · under owner assertions",
+        "code": null,
+        "exit": 0,
+        "sublabel": "owner-supplied source bytes matched the signed event; the source is not authenticated",
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Owner-supplied source bytes matched the signed event; the source is not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "R-M",
+    "input": "tests/fixtures/headline/R-M.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "MISMATCH",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/R-M.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "MISMATCH",
+      "reasons": [
+        "SIGNED_RETURNS_MISMATCH",
+        "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+      ],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": false
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": false,
+        "signed_scope": true,
+        "signed_returns": false,
+        "private_intervals": true
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [
+        "SIGNED_RETURNS_MISMATCH",
+        "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+      ],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "MISMATCH",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [
+          "SIGNED_RETURNS_MISMATCH",
+          "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+        ],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: PRIVATE_SOURCE_MISMATCH",
+        "code": "PRIVATE_SOURCE_MISMATCH",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "R-N",
+    "input": "tests/fixtures/headline/R-N.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NOT_ASSESSABLE",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/R-N.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "NOT_ASSESSABLE",
+      "reasons": [
+        "FLOW_TIMING_UNKNOWN",
+        "PRIVATE_INTERVAL_UNRESOLVED",
+        "PRIVATE_RECONCILIATION_BLOCKED"
+      ],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": false
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": true,
+        "signed_scope": true,
+        "signed_returns": true,
+        "private_intervals": false
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [
+        "FLOW_TIMING_UNKNOWN",
+        "PRIVATE_INTERVAL_UNRESOLVED",
+        "PRIVATE_RECONCILIATION_BLOCKED"
+      ],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NOT_ASSESSABLE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [
+          "FLOW_TIMING_UNKNOWN",
+          "PRIVATE_INTERVAL_UNRESOLVED",
+          "PRIVATE_RECONCILIATION_BLOCKED"
+        ],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "PRIVATE_SOURCE_NOT_ASSESSABLE",
+            "reasons": [
+              "FLOW_TIMING_UNKNOWN",
+              "PRIVATE_INTERVAL_UNRESOLVED",
+              "PRIVATE_RECONCILIATION_BLOCKED"
+            ],
+            "text": "PRIVATE_SOURCE_NOT_ASSESSABLE: The supplied private-source check could not assess the selected event."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "R-I",
+    "input": "tests/fixtures/headline/R-I.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "INVALID_INPUT",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/R-I.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "INVALID_INPUT",
+      "reasons": [
+        "INVALID_PRIVATE_SCHEMA"
+      ],
+      "selected_event": null,
+      "checks": {
+        "signed_profile": false,
+        "source_bytes": false,
+        "source_normalization": false,
+        "signed_source_commitments": false,
+        "signed_scope": false,
+        "signed_returns": false,
+        "private_intervals": false
+      },
+      "counts": {
+        "retained_sources": 0,
+        "observations": 0,
+        "intervals": 0
+      },
+      "source_decisions": [],
+      "currency_evidence": "unassessed",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [
+        "INVALID_PRIVATE_SCHEMA"
+      ],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "INVALID_INPUT",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [
+          "INVALID_PRIVATE_SCHEMA"
+        ],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "PRIVATE_SOURCE_INPUT_INVALID",
+            "reasons": [
+              "INVALID_PRIVATE_SCHEMA"
+            ],
+            "text": "PRIVATE_SOURCE_INPUT_INVALID: The supplied private-source input was invalid and was not used."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-W",
+    "input": "tests/fixtures/headline/M-W.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESSED"
+    },
+    "receipt_input": "tests/fixtures/witness/W-OK.receipt.json",
+    "witness_options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": "ndcdyn.interactivebrokers.com",
+      "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+      "other_effective_slots": 2,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESSED"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": "ndcdyn.interactivebrokers.com",
+        "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+        "other_effective_slots": 2,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "WITNESSED RECORD",
+        "code": null,
+        "exit": 0,
+        "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+        "qualifications": [
+          {
+            "code": "OTHER_PERIODS_NOT_WITNESSED",
+            "reasons": [],
+            "text": "OTHER_PERIODS_NOT_WITNESSED: 2 other effective periods in this record are not witnessed."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESSED"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": "ndcdyn.interactivebrokers.com",
+        "witness_key_code": "fa06-b0ff-e89f-e266-cfdb",
+        "other_effective_slots": 2,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "WITNESSED RECORD",
+        "code": null,
+        "exit": 0,
+        "sublabel": "Record 1 (2026-01-01 – 2026-01-02) fetched from ndcdyn.interactivebrokers.com; witness key fa06-b0ff-e89f-e266-cfdb.",
+        "qualifications": [
+          {
+            "code": "OTHER_PERIODS_NOT_WITNESSED",
+            "reasons": [],
+            "text": "OTHER_PERIODS_NOT_WITNESSED: 2 other effective periods in this record are not witnessed."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Fetched by the witness from ndcdyn.interactivebrokers.com; broker responses are not signed"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-S",
+    "input": "tests/fixtures/headline/M-S.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_NOT_ASSESSABLE"
+    },
+    "receipt_input": "tests/fixtures/witness/W-OK.receipt.json",
+    "witness_options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "receipt_result": "WITNESSED",
+    "adapter_result": "WITNESS_NOT_ASSESSABLE",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": true,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "SELECTED_EVENT_SUPERSEDED"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESS_NOT_ASSESSABLE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [
+          "SELECTED_EVENT_SUPERSEDED"
+        ],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "WITNESS_NOT_ASSESSABLE",
+            "reasons": [
+              "SELECTED_EVENT_SUPERSEDED"
+            ],
+            "text": "WITNESS_NOT_ASSESSABLE: The supplied witness receipt could not establish the source."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESS_NOT_ASSESSABLE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [
+          "SELECTED_EVENT_SUPERSEDED"
+        ],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "WITNESS_NOT_ASSESSABLE",
+            "reasons": [
+              "SELECTED_EVENT_SUPERSEDED"
+            ],
+            "text": "WITNESS_NOT_ASSESSABLE: The supplied witness receipt could not establish the source."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-R",
+    "input": "tests/fixtures/headline/M-R.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/M-R.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+      "reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": false
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": true,
+        "signed_scope": true,
+        "signed_returns": true,
+        "private_intervals": true
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 2,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 2,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SOURCE-RECONCILED RECORD · under owner assertions",
+        "code": null,
+        "exit": 0,
+        "sublabel": "owner-supplied source bytes matched the signed event; the source is not authenticated",
+        "qualifications": [
+          {
+            "code": "OTHER_PERIODS_NOT_RECONCILED",
+            "reasons": [],
+            "text": "OTHER_PERIODS_NOT_RECONCILED: 2 other effective periods in this record are not source-reconciled."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Owner-supplied source bytes matched the signed event; the source is not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-RS",
+    "input": "tests/fixtures/headline/M-RS.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NOT_ASSESSABLE",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/M-RS.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "VERIFIED_UNDER_OWNER_ASSERTIONS",
+      "reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": true
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": true,
+        "signed_scope": true,
+        "signed_returns": true,
+        "private_intervals": true
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": true,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [
+        "SELECTED_EVENT_SUPERSEDED"
+      ],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NOT_ASSESSABLE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [
+          "SELECTED_EVENT_SUPERSEDED"
+        ],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "SELF-REPORTED RECORD · arithmetic and signatures verified",
+        "code": null,
+        "exit": 0,
+        "sublabel": null,
+        "qualifications": [
+          {
+            "code": "PRIVATE_SOURCE_NOT_ASSESSABLE",
+            "reasons": [
+              "SELECTED_EVENT_SUPERSEDED"
+            ],
+            "text": "PRIVATE_SOURCE_NOT_ASSESSABLE: The supplied private-source check could not assess the selected event."
+          }
+        ],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-RSM",
+    "input": "tests/fixtures/headline/M-RSM.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "MISMATCH",
+      "witness": "NONE"
+    },
+    "reconciliation_input": "tests/fixtures/headline/M-RSM.reconciliation.json",
+    "event_sha256": "77d83dd4a8827527e3949bdca9a27a6a6cb29c8656871d4f91aae0ae4994b365",
+    "checker_result": {
+      "schema": "n170.private-source-check.v1",
+      "checker_version": "1.0.0",
+      "status": "MISMATCH",
+      "reasons": [
+        "SIGNED_RETURNS_MISMATCH",
+        "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+      ],
+      "selected_event": {
+        "sequence": 1,
+        "event_type": "performance",
+        "superseded": true
+      },
+      "checks": {
+        "signed_profile": true,
+        "source_bytes": true,
+        "source_normalization": true,
+        "signed_source_commitments": false,
+        "signed_scope": true,
+        "signed_returns": false,
+        "private_intervals": true
+      },
+      "counts": {
+        "retained_sources": 1,
+        "observations": 2,
+        "intervals": 1
+      },
+      "source_decisions": [
+        {
+          "ordinal": 1,
+          "disposition": "active",
+          "bytes_available": true,
+          "byte_binding": "matched",
+          "text_decoding": "valid_utf8",
+          "reason_present": false
+        }
+      ],
+      "currency_evidence": "owner_assertion",
+      "limitations": [
+        "ACCOUNT_ALIAS_AND_ACCOUNT_ID_LINK_NOT_ESTABLISHED",
+        "FLOW_TIMING_IS_OWNER_ASSERTION",
+        "HIDDEN_FLOW_REVIEW_IS_OWNER_ASSERTION",
+        "SCHEDULE_IS_OWNER_ASSERTION",
+        "EXCLUSIONS_AND_SUPERSESSION_ARE_OWNER_ASSERTIONS",
+        "SOURCE_AUTHENTICITY_NOT_ESTABLISHED",
+        "ACCOUNT_COMPLETENESS_NOT_ESTABLISHED",
+        "IDENTITY_NOT_ESTABLISHED",
+        "INDEPENDENT_PUBLICATION_NOT_ESTABLISHED",
+        "CURRENCY_IS_OWNER_ASSERTION"
+      ]
+    },
+    "browser_supported": false,
+    "browser_unsupported_reason": "No private-source input in browser v1.",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": true,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [
+        "SIGNED_RETURNS_MISMATCH",
+        "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+      ],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "supported": false,
+      "reason": "No private-source input in browser v1."
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "MISMATCH",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [
+          "SIGNED_RETURNS_MISMATCH",
+          "SIGNED_SOURCE_COMMITMENT_MISMATCH"
+        ],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: PRIVATE_SOURCE_MISMATCH",
+        "code": "PRIVATE_SOURCE_MISMATCH",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "M-SM",
+    "input": "tests/fixtures/headline/M-SM.json",
+    "previous": null,
+    "facts": {
+      "parse": "OK",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "WITNESS_MISMATCH"
+    },
+    "receipt_input": "tests/fixtures/witness/W-SUPERSEDED-MISMATCH.receipt.json",
+    "witness_options": {
+      "recordPayloadHash": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+      "trustedWitnessKeys": [
+        "fa06-b0ff-e89f-e266-cfdb"
+      ],
+      "allowedBrokerHosts": [
+        "ndcdyn.interactivebrokers.com"
+      ]
+    },
+    "event_sha256": "b64c266f17152172e7f7ab9d40f2e3ed7732310e062992ba518741362de743de",
+    "context": {
+      "record_reasons": [],
+      "selected_event": {
+        "sequence": 1,
+        "start": "2026-01-01",
+        "end": "2026-01-02"
+      },
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": true,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [
+        "RECEIPT_RECONCILIATION_MISMATCH",
+        "FLOW_MISCLASSIFICATION"
+      ],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESS_MISMATCH"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [
+          "RECEIPT_RECONCILIATION_MISMATCH",
+          "FLOW_MISCLASSIFICATION"
+        ],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: WITNESS_MISMATCH",
+        "code": "WITNESS_MISMATCH",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "OK",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "WITNESS_MISMATCH"
+      },
+      "context": {
+        "record_reasons": [],
+        "selected_event": {
+          "sequence": 1,
+          "start": "2026-01-01",
+          "end": "2026-01-02"
+        },
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": true,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [
+          "RECEIPT_RECONCILIATION_MISMATCH",
+          "FLOW_MISCLASSIFICATION"
+        ],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: WITNESS_MISMATCH",
+        "code": "WITNESS_MISMATCH",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Reproduced from disclosed returns"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Valid for this key · no retained copy checked"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "F-ARITH",
+    "input": "tests/fixtures/headline/F-ARITH.json",
+    "previous": null,
+    "facts": {
+      "parse": "INVALID_INPUT",
+      "payload_hash": "MATCH",
+      "signatures": "VALID",
+      "chain": "VALID",
+      "continuity": "NONE",
+      "comparison": "NONE",
+      "reconciliation": "NONE",
+      "witness": "NONE"
+    },
+    "context": {
+      "record_reasons": [
+        "ARITHMETIC_NOT_REPRODUCED"
+      ],
+      "selected_event": null,
+      "witness_host": null,
+      "witness_key_code": null,
+      "other_effective_slots": 0,
+      "selected_event_superseded": false,
+      "continuity_anchor": null,
+      "reconciliation_reasons": [],
+      "witness_reasons": [],
+      "timestamp_proof": "NONE",
+      "expected_key": "not_supplied",
+      "checkpoint_checked": false,
+      "gaps": []
+    },
+    "browser_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [
+          "ARITHMETIC_NOT_REPRODUCED"
+        ],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not reproduced"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    },
+    "cli_expected": {
+      "facts": {
+        "parse": "INVALID_INPUT",
+        "payload_hash": "MATCH",
+        "signatures": "VALID",
+        "chain": "VALID",
+        "continuity": "NONE",
+        "comparison": "NONE",
+        "reconciliation": "NONE",
+        "witness": "NONE"
+      },
+      "context": {
+        "record_reasons": [
+          "ARITHMETIC_NOT_REPRODUCED"
+        ],
+        "selected_event": null,
+        "witness_host": null,
+        "witness_key_code": null,
+        "other_effective_slots": 0,
+        "selected_event_superseded": false,
+        "continuity_anchor": null,
+        "reconciliation_reasons": [],
+        "witness_reasons": [],
+        "timestamp_proof": "NONE",
+        "expected_key": "not_supplied",
+        "checkpoint_checked": false,
+        "gaps": []
+      },
+      "headline": {
+        "version": "n170.verify.headline.v1",
+        "headline": "REJECTED: INVALID_INPUT",
+        "code": "INVALID_INPUT",
+        "exit": 1,
+        "sublabel": null,
+        "qualifications": [],
+        "ladder": [
+          {
+            "row": "Calculations",
+            "text": "Not reproduced"
+          },
+          {
+            "row": "Signatures and history",
+            "text": "Not established"
+          },
+          {
+            "row": "Source",
+            "text": "Self-reported · not authenticated"
+          },
+          {
+            "row": "Key",
+            "text": "Not established"
+          },
+          {
+            "row": "Time",
+            "text": "No independent evidence"
+          },
+          {
+            "row": "Coverage",
+            "text": "Supplied observations for the declared account only; lifetime inception unverified"
+          }
+        ]
+      }
+    }
+  }
+]

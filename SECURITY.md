@@ -1,6 +1,6 @@
 # Security policy and trust boundaries
 
-Updated 18 September 2026 for the standalone N170 Verify local candidate with additive continuity support under acceptance review. This policy describes implementation and intended reporting scope; it does not certify a deployment or imply that remote security controls have executed.
+Updated 27 October 2026 for N170 Verify with additive continuity support under acceptance review. This policy describes implementation and intended reporting scope; it does not certify a deployment or imply that remote security controls have executed.
 
 ## Supported code and evidence
 
@@ -8,7 +8,7 @@ Maintenance targets the current application. No older software release has a sep
 
 ## Reporting
 
-Use the actual repository's private vulnerability-reporting route only after confirming that it is available and enabled. This local archive does not establish a reachable repository or reporting endpoint. If no verified route is available, request a private contact channel from the maintainer without posting vulnerability details. Do not publish sensitive findings in an issue or PR.
+Use the repository's private vulnerability-reporting form (https://github.com/GGeronik/n170-verify/security/advisories/new) only after confirming that it is available and enabled; this file cannot establish that it is reachable. If no verified route is available, request a private contact channel from the maintainer without posting vulnerability details. Do not publish sensitive findings in an issue or PR.
 
 A useful report identifies the affected source revision/build, browser and operating system, observed versus expected behavior, required attacker capabilities, and minimal synthetic reproduction steps. Do not include financial account credentials, real account files or private keys. Response and resolution times are best effort; no response SLA is promised.
 
@@ -84,15 +84,13 @@ contain source code, settings, data, paths and logs; deliberate sharing requires
 review of those bytes. A reading summary omits those artifacts and cannot stand
 in for them. The public source/toolkit archives contain the explicitly reviewed
 source inventory, not private acceptance logs or user financial evidence. The
-separate frozen challenge kit contains its selected public synthetic receipts
-and older tested source; it excludes continuity and accounting and is not a
-security assessment of this combined source.
+separately pinned 68-case private-source challenge pack contains synthetic fixtures and its accepted checker; it is not a security assessment of this combined source.
 
 ## Configured controls versus executed evidence
 
 Pinned exact package versions, lockfile integrity and disabled install scripts are configured. Public repository CI configuration is included for future use. Configuration does not demonstrate remote execution, enabled private reporting, required review, branch protection or a successfully secured release. Check the actual repository configuration and run evidence before making those claims. No unexecuted badges are used as release evidence.
 
-The [public validation guide](docs/release-validation.md) describes reproducible checks and their limitations; historical internal logs and screenshots are not included in the public source inventory. [Release readiness](docs/release-readiness.md) distinguishes unresolved external prerequisites. Local agent-run tests are not an external audit, outside-user study or assurance about a deployed service.
+The [public validation guide](docs/release-validation.md) describes reproducible checks and their limitations; historical internal logs and screenshots are not included in the public source inventory. [Release readiness](docs/release-readiness.md) distinguishes unresolved external prerequisites. Local automated tests are not an external audit, outside-user study or assurance about a deployed service.
 
 Verify original received archive bytes against a separately retained SHA-256 before extracting or editing, as described in [README.md](README.md). The public build hashes the current explicit inventory into a new artifact; an edited source tree does not have to match the original immutable receipt. Preserve both identities. Archive integrity checks do not authenticate the producer, make dependencies trustworthy, or detect a producer that intentionally rebuilds different internally consistent unsigned evidence.
 
