@@ -183,6 +183,10 @@ test("XSS sanitizers strip HTML tags, quotes, control chars, and javascript: URI
     sanitizePlainInput('<img src=x onerror="alert(1)">Sharpe 4.2 javascript:evil()', 80),
     "Sharpe 4.2 evil()",
   );
+  assert.equal(
+    sanitizePlainInput('on"error="alert(1) oonload=evil2() javajavascript:script:evil() <scr<script>ipt>x', 80),
+    "alert(1) evil2() evil() x",
+  );
   assert.equal(sanitizeHandleInput("  <svg>@quant_trader!</svg> "), "@quant_trader");
   assert.equal(sanitizeOriginUrl("javascript:alert(1)"), "https://verify.n170.io");
   assert.equal(

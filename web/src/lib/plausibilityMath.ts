@@ -321,18 +321,96 @@ export function parsePlausibilityQueryParams(
  * Strictly strips HTML/XML brackets, control characters, bidi overrides, and unsafe URI
  * schemes so user-supplied handles/claims can never inject markup or script payloads.
  */
+function stripAngleBracketBlocks(input: string): string {
+  let current = input;
+  while (true) {
+    const closeIdx = current.indexOf(">");
+    if (closeIdx === -1) break;
+    const openIdx = current.lastIndexOf("<", closeIdx);
+    if (openIdx === -1) {
+      current = current.slice(0, closeIdx) + " " + current.slice(closeIdx + 1);
+    } else {
+      current = current.slice(0, openIdx) + " " + current.slice(closeIdx + 1);
+    }
+  }
+  return current;
+}
+
+function stripUnsafeSchemesAndHandlers(input: string): string {
+  let current = input;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const lower = current.toLowerCase();
+    for (const scheme of ["javascript:", "vbscript:", "data:"]) {
+      let searchFrom = 0;
+      while (searchFrom < lower.length) {
+        const idx = lower.indexOf(scheme, searchFrom);
+        if (idx === -1) break;
+        if (scheme === "data:" && idx > 0 && /[a-z0-9]/i.test(current[idx - 1])) {
+          searchFrom = idx + scheme.length;
+          continue;
+        }
+        let endIdx = idx + scheme.length;
+        while (endIdx < current.length && current[endIdx] === " ") endIdx += 1;
+        current = current.slice(0, idx) + current.slice(endIdx);
+        changed = true;
+        break;
+      }
+      if (changed) break;
+    }
+    if (changed) continue;
+
+    // Strip any inline event-handler assignment (e.g. onerror=, onload=, oonload=)
+    let eqSearch = 0;
+    while (eqSearch < current.length) {
+      const eqIdx = current.indexOf("=", eqSearch);
+      if (eqIdx === -1) break;
+      let identEnd = eqIdx;
+      while (identEnd > 0 && current[identEnd - 1] === " ") identEnd -= 1;
+      let identStart = identEnd;
+      while (identStart > 0 && /[A-Za-z0-9_]/.test(current[identStart - 1])) {
+        identStart -= 1;
+      }
+      const identLower = current.slice(identStart, identEnd).toLowerCase();
+      const onPos = identLower.indexOf("on");
+      if (onPos !== -1 && onPos + 2 < identLower.length) {
+        current = current.slice(0, identStart) + current.slice(eqIdx + 1);
+        changed = true;
+        break;
+      }
+      eqSearch = eqIdx + 1;
+    }
+  }
+  return current;
+}
+
 export function sanitizePlainInput(raw: string, maxLen = 80): string {
-  const cleaned = String(raw ?? "")
-    .replace(/[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069\uFFFE\uFFFF]/g, " ")
-    .replace(/<@[!&]?\d+>|<!?[a-z]+>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[<>`"']/g, "")
-    .replace(/\b(?:javascript|data|vbscript)\s*:/gi, "")
-    .replace(/\bon[a-z0-9_]+\s*=/gi, "")
-    .replace(/@+(everyone|here)\b/gi, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.slice(0, maxLen);
+  const withoutControls = String(raw ?? "").replace(
+    /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069\uFFFE\uFFFF]/g,
+    " ",
+  );
+  const withoutTags = stripAngleBracketBlocks(withoutControls).replace(/[<>`"']/g, "");
+  const withoutHandlers = stripUnsafeSchemesAndHandlers(withoutTags);
+  const tokens = withoutHandlers
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((tok) => {
+      let strippedAt = tok;
+      while (strippedAt.startsWith("@")) strippedAt = strippedAt.slice(1);
+      const lowerRem = strippedAt.toLowerCase();
+      if (
+        strippedAt.length < tok.length &&
+        (lowerRem === "everyone" ||
+          lowerRem === "here" ||
+          lowerRem.startsWith("everyone") && !/[a-z0-9_]/i.test(lowerRem[8] ?? "") ||
+          lowerRem.startsWith("here") && !/[a-z0-9_]/i.test(lowerRem[4] ?? ""))
+      ) {
+        return strippedAt;
+      }
+      return tok;
+    });
+  return tokens.join(" ").slice(0, maxLen);
 }
 
 export function sanitizeHandleInput(raw: string): string {
