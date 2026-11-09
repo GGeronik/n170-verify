@@ -13,7 +13,8 @@ import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+import urllib.error
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from n170_verify.reference.base import (
     DailyPriceEnvelope,
@@ -263,6 +264,28 @@ class QuotaBudgetTracker:
         self._call_log.append((redacted_path, weight))
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Reject HTTP redirects on pinned EODHD reference endpoints."""
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        hdrs: Any,
+        newurl: str,
+    ) -> Request | None:
+        del msg, newurl
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            f"HTTP {code} redirect forbidden for pinned reference endpoint",
+            hdrs,
+            fp,
+        )
+
+
 def _default_urllib_transport(
     url: str,
     params: Mapping[str, str],
@@ -280,7 +303,8 @@ def _default_urllib_transport(
         },
         method="GET",
     )
-    with urlopen(req, timeout=timeout_seconds) as resp:  # noqa: S310
+    opener = build_opener(_NoRedirectHandler())
+    with opener.open(req, timeout=timeout_seconds) as resp:  # noqa: S310
         raw_bytes = resp.read()
     if not raw_bytes:
         return []
@@ -300,7 +324,10 @@ def build_httpx_transport(*, timeout_seconds: float = 15.0) -> TransportCallable
             params=dict(params),
             headers={"Accept": "application/json", "User-Agent": "n170-verify/3.0"},
             timeout=timeout_seconds,
+            follow_redirects=False,
         )
+        if resp.is_redirect or (300 <= resp.status_code < 400):
+            raise RuntimeError(f"HTTP {resp.status_code} redirect forbidden for pinned reference endpoint")
         resp.raise_for_status()
         if not resp.content:
             return []

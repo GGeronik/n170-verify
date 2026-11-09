@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "n170-verify-api"
+version = "0.3.0"
+description = "Subprocess-isolated verification API, AES-256-GCM opt-in sync vault, C2SP key registry, continuity log, SVG badges, and leaderboard for N170 Verify"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+    "n170-verify-core>=0.3.0",
+]
+
+[project.optional-dependencies]
+fastapi = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "cryptography>=42.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+n170-verify-api = "app.main:run_cli"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
