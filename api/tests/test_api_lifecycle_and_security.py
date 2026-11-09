@@ -13,7 +13,7 @@ from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
 from app.badges import render_proof_badge_svg
-from app.config import ApiConfig
+from app.config import ApiConfig, default_pinned_notaries
 from app.main import VerifyApiApplication, VerifyApiTestClient, create_app
 from app.sync_vault import (
     RevocationReceipt,
@@ -1442,6 +1442,8 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             cfg_default = ApiConfig.from_env()
         self.assertEqual(cfg_default.trusted_notaries, [])
+        self.assertEqual(ApiConfig().trusted_notaries, [])
+        self.assertEqual(default_pinned_notaries(), [])
         self.assertEqual(cfg_default.sync_api_token, "")
 
         env_notaries = [

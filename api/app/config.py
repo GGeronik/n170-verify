@@ -27,27 +27,8 @@ def utc_now_iso() -> str:
 
 
 def default_pinned_notaries() -> list[NotaryNodeInfo]:
-    """Return deterministic default org/ASN-disjoint notary descriptors when none are configured."""
-    notary_a = generate_ed25519_keypair(bytes.fromhex("71" * 32))
-    notary_b = generate_ed25519_keypair(bytes.fromhex("72" * 32))
-    return [
-        NotaryNodeInfo(
-            notary_id="pse-tlsn-notary-1",
-            operator_org="Privacy & Scaling Explorations",
-            asn="AS13335",
-            public_key_hex=notary_a.public_key_hex,
-            is_debug_build=False,
-            attestation_type="production",
-        ),
-        NotaryNodeInfo(
-            notary_id="swiss-independent-notary-2",
-            operator_org="Swiss FinTech Witness Association",
-            asn="AS3303",
-            public_key_hex=notary_b.public_key_hex,
-            is_debug_build=False,
-            attestation_type="production",
-        ),
-    ]
+    """Return an empty notary list by default; trusted notary public keys must be configured explicitly."""
+    return []
 
 
 DEFAULT_CONNECTOR_APPROVAL_STATES: dict[str, ProviderApprovalState] = {
