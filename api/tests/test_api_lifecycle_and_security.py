@@ -463,7 +463,9 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 vault_master_kek_hex="cc" * 32,
                 sync_backup_retention_hours=0,
                 account_blinding_salt_hex="dd" * 32,
+                sync_api_token="sync-secret-tok-alpha",
             )
+            sync_headers = {"Authorization": "Bearer sync-secret-tok-alpha"}
             vault_app = create_app(
                 cfg,
                 oauth_revocation_callbacks={"schwab": _mock_schwab_oauth_revoke},
@@ -480,6 +482,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                         "credentials": {"oauth_access_token": "tok"},
                         "capabilities": ["read_balances", "place_order"],
                     },
+                    headers=sync_headers,
                 )
                 self.assertEqual(bad_cap_resp.status_code, 422)
                 self.assertEqual(bad_cap_resp.json()["error"], "read_only_capability_violation")
@@ -498,6 +501,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                         },
                         "capabilities": ["read_accounts", "read_balances", "read_trades"],
                     },
+                    headers=sync_headers,
                 )
                 self.assertEqual(r_a.status_code, 201, r_a.text)
                 self.assertNotIn(secret_tok_a, r_a.text)
@@ -511,6 +515,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                         "credentials": {"oauth_access_token": "beta-token"},
                         "capabilities": ["read_balances"],
                     },
+                    headers=sync_headers,
                 )
                 self.assertEqual(r_b.status_code, 201)
 
@@ -554,7 +559,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                     vault_app.sync_vault.decrypt_credentials_internal("sync-beta-002")
 
                 # DELETE /api/v1/sync/sync-alpha-001 -> OAuth revoke + zero overwrite + signed RevocationReceipt
-                del_resp = vclient.delete("/api/v1/sync/sync-alpha-001")
+                del_resp = vclient.delete("/api/v1/sync/sync-alpha-001", headers=sync_headers)
                 self.assertEqual(del_resp.status_code, 200, del_resp.text)
                 receipt = RevocationReceipt.from_dict(del_resp.json()["revocation_receipt"])
                 self.assertTrue(receipt.verify_signature())
@@ -570,11 +575,17 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 )
 
                 # Subsequent GET and DELETE return 404
-                self.assertEqual(vclient.get("/api/v1/sync/sync-alpha-001").status_code, 404)
-                self.assertEqual(vclient.delete("/api/v1/sync/sync-alpha-001").status_code, 404)
+                self.assertEqual(
+                    vclient.get("/api/v1/sync/sync-alpha-001", headers=sync_headers).status_code,
+                    404,
+                )
+                self.assertEqual(
+                    vclient.delete("/api/v1/sync/sync-alpha-001", headers=sync_headers).status_code,
+                    404,
+                )
 
                 # Also erase sync-beta-002 (even when decrypt fails, primary cryptographic erasure succeeds!)
-                del_beta = vclient.delete("/api/v1/sync/sync-beta-002")
+                del_beta = vclient.delete("/api/v1/sync/sync-beta-002", headers=sync_headers)
                 self.assertEqual(del_beta.status_code, 200, del_beta.text)
                 beta_receipt = RevocationReceipt.from_dict(del_beta.json()["revocation_receipt"])
                 self.assertTrue(beta_receipt.verify_signature())
@@ -1423,6 +1434,222 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
         self.assertEqual(self.client.get("/api/v1/proofs/missing-id").status_code, 404)
         self.assertEqual(self.client.get("/api/v1/badges/missing-id.svg").status_code, 404)
         self.assertEqual(self.client.get("/api/v1/chains/missing-chain").status_code, 404)
+
+
+    def test_from_env_defaults_zero_demo_notaries_and_parses_env_notaries_and_sync_token(self) -> None:
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            cfg_default = ApiConfig.from_env()
+        self.assertEqual(cfg_default.trusted_notaries, [])
+        self.assertEqual(cfg_default.sync_api_token, "")
+
+        env_notaries = [
+            {
+                **self.notaries[0].to_dict(),
+                "notary_id": "prod-notary-1",
+            }
+        ]
+        with mock.patch.dict(
+            os.environ,
+            {
+                "N170_VERIFY_TRUSTED_NOTARIES_JSON": json.dumps(env_notaries),
+                "N170_VERIFY_SYNC_API_TOKEN": "prod-sync-secret-99",
+            },
+            clear=True,
+        ):
+            cfg_env = ApiConfig.from_env()
+        self.assertEqual(len(cfg_env.trusted_notaries), 1)
+        self.assertEqual(cfg_env.trusted_notaries[0].notary_id, "prod-notary-1")
+        self.assertEqual(cfg_env.sync_api_token, "prod-sync-secret-99")
+
+    def test_hosted_sync_auth_no_wildcard_cors_and_duplicate_connection_conflict(self) -> None:
+        # 1. Hosted mode without sync_api_token -> 403 sync_auth_unconfigured and zero wildcard CORS
+        opt_sync = self.client.options("/api/v1/sync")
+        self.assertEqual(opt_sync.status_code, 204)
+        self.assertNotIn("Access-Control-Allow-Origin", opt_sync.headers)
+        self.assertEqual(opt_sync.headers.get("Cache-Control"), "no-store")
+
+        r_unconf_post = self.client.post(
+            "/api/v1/sync",
+            json={
+                "broker_id": "schwab",
+                "raw_account_id": "SCH-UNCONF-1",
+                "credentials": {"oauth_access_token": "tok"},
+            },
+        )
+        self.assertEqual(r_unconf_post.status_code, 403)
+        self.assertEqual(r_unconf_post.json()["error"], "sync_auth_unconfigured")
+        self.assertNotIn("Access-Control-Allow-Origin", r_unconf_post.headers)
+        self.assertEqual(r_unconf_post.headers.get("Cache-Control"), "no-store")
+
+        r_unconf_get = self.client.get("/api/v1/sync/conn-any")
+        self.assertEqual(r_unconf_get.status_code, 403)
+        self.assertEqual(r_unconf_get.json()["error"], "sync_auth_unconfigured")
+        self.assertNotIn("Access-Control-Allow-Origin", r_unconf_get.headers)
+
+        r_unconf_del = self.client.delete("/api/v1/sync/conn-any")
+        self.assertEqual(r_unconf_del.status_code, 403)
+        self.assertEqual(r_unconf_del.json()["error"], "sync_auth_unconfigured")
+        self.assertNotIn("Access-Control-Allow-Origin", r_unconf_del.headers)
+
+        r_unconf_verify_sync = self.client.post(
+            "/api/v1/verify",
+            json={
+                "broker_id": "schwab",
+                "raw_account_id": "SCH-UNCONF-2",
+                "ephemeral_credentials": {"oauth_access_token": "tok"},
+                "persist_sync": True,
+                "nav_points": [
+                    {"timestamp_utc": "2026-01-01T00:00:00Z", "nav_base": 100_000.0},
+                    {"timestamp_utc": "2026-01-31T00:00:00Z", "nav_base": 105_000.0},
+                ],
+            },
+        )
+        self.assertEqual(r_unconf_verify_sync.status_code, 403)
+        self.assertEqual(r_unconf_verify_sync.json()["error"], "sync_auth_unconfigured")
+        self.assertNotIn("Access-Control-Allow-Origin", r_unconf_verify_sync.headers)
+
+        # 2. Hosted mode WITH sync_api_token -> 401 on missing/invalid token, 409 on duplicate connection_id
+        authed_cfg = ApiConfig(
+            publisher_keypair=self.pub_kp,
+            publisher_kid="n170-active-2026",
+            db_path=":memory:",
+            sync_db_path=":memory:",
+            vault_master_kek_hex="ee" * 32,
+            sync_backup_retention_hours=0,
+            account_blinding_salt_hex="ff" * 32,
+            hosted_multi_user_mode=True,
+            sync_api_token="hosted-sync-secret-token",
+        )
+        authed_app = create_app(authed_cfg, prefer_fastapi=False)
+        aclient = VerifyApiTestClient(authed_app)
+        try:
+            for bad_hdrs in ({}, {"Authorization": "Bearer wrong-token"}, {"X-N170-Sync-Token": "wrong"}):
+                r_401 = aclient.post(
+                    "/api/v1/sync",
+                    json={
+                        "connection_id": "conn-dup-check",
+                        "broker_id": "schwab",
+                        "raw_account_id": "SCH-AUTH-1",
+                        "credentials": {"oauth_access_token": "tok-orig"},
+                    },
+                    headers=bad_hdrs,
+                )
+                self.assertEqual(r_401.status_code, 401)
+                self.assertEqual(r_401.json()["error"], "sync_unauthorized")
+                self.assertNotIn("Access-Control-Allow-Origin", r_401.headers)
+
+                r_v401 = aclient.post(
+                    "/api/v1/verify",
+                    json={
+                        "broker_id": "schwab",
+                        "raw_account_id": "SCH-AUTH-1",
+                        "ephemeral_credentials": {"oauth_access_token": "tok-orig"},
+                        "persist_sync": True,
+                        "nav_points": [
+                            {"timestamp_utc": "2026-01-01T00:00:00Z", "nav_base": 100_000.0},
+                            {"timestamp_utc": "2026-01-31T00:00:00Z", "nav_base": 105_000.0},
+                        ],
+                    },
+                    headers=bad_hdrs,
+                )
+                self.assertEqual(r_v401.status_code, 401)
+                self.assertEqual(r_v401.json()["error"], "sync_unauthorized")
+
+            good_hdrs = {"Authorization": "Bearer hosted-sync-secret-token"}
+            r_ok = aclient.post(
+                "/api/v1/sync",
+                json={
+                    "connection_id": "conn-dup-check",
+                    "broker_id": "schwab",
+                    "raw_account_id": "SCH-AUTH-1",
+                    "credentials": {"oauth_access_token": "tok-original-protected"},
+                    "capabilities": ["read_balances"],
+                },
+                headers=good_hdrs,
+            )
+            self.assertEqual(r_ok.status_code, 201, r_ok.text)
+            self.assertNotIn("Access-Control-Allow-Origin", r_ok.headers)
+            self.assertEqual(r_ok.headers.get("Cache-Control"), "no-store")
+
+            # Duplicate connection_id must fail closed with 409 and never overwrite original credentials
+            r_conflict = aclient.post(
+                "/api/v1/sync",
+                json={
+                    "connection_id": "conn-dup-check",
+                    "broker_id": "schwab",
+                    "raw_account_id": "SCH-ATTACKER-9",
+                    "credentials": {"oauth_access_token": "tok-attacker-overwrite"},
+                    "capabilities": ["read_balances"],
+                },
+                headers=good_hdrs,
+            )
+            self.assertEqual(r_conflict.status_code, 409, r_conflict.text)
+            self.assertEqual(r_conflict.json()["error"], "sync_connection_conflict")
+            dec = authed_app.sync_vault.decrypt_credentials_internal("conn-dup-check")
+            self.assertEqual(dec["oauth_access_token"], "tok-original-protected")
+        finally:
+            authed_app.close()
+
+    def test_proof_store_rejects_conflicting_proof_id_overwrite_with_409(self) -> None:
+        original_bundle = create_signed_proof_bundle(
+            proof_id="prf-immutable-conflict-test",
+            issued_at_utc="2026-02-15T12:00:00Z",
+            publisher_kid="n170-active-2026",
+            publisher_private_key_hex=self.pub_kp.private_key_hex,
+            broker_id="schwab",
+            blinded_account_tag="a9" * 32,
+            account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+            provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+            environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            source_body_sha256="b9" * 32,
+            period_start_utc="2026-01-01T00:00:00Z",
+            period_end_utc="2026-01-31T00:00:00Z",
+            base_currency="USD",
+            leaf_payloads=_build_leaf_payloads(twr_decimal=0.075),
+        )
+        r_first = self.client.post("/api/v1/proofs", json={"proof_bundle": original_bundle.to_dict()})
+        self.assertEqual(r_first.status_code, 201, r_first.text)
+        first_hash = r_first.json()["proof_hash"]
+        first_stored_at = self.client.get("/api/v1/proofs/prf-immutable-conflict-test").json()["stored_at_utc"]
+
+        # Re-submitting identical bundle is idempotent and preserves stored_at_utc
+        r_idem = self.client.post("/api/v1/proofs", json={"proof_bundle": original_bundle.to_dict()})
+        self.assertEqual(r_idem.status_code, 201, r_idem.text)
+        self.assertEqual(
+            self.client.get("/api/v1/proofs/prf-immutable-conflict-test").json()["stored_at_utc"],
+            first_stored_at,
+        )
+
+        # Submitting a different valid bundle with the same proof_id must return 409 proof_id_conflict
+        conflicting_bundle = create_signed_proof_bundle(
+            proof_id="prf-immutable-conflict-test",
+            issued_at_utc="2026-02-15T12:05:00Z",
+            publisher_kid="n170-active-2026",
+            publisher_private_key_hex=self.pub_kp.private_key_hex,
+            broker_id="schwab",
+            blinded_account_tag="a9" * 32,
+            account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+            provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+            environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            source_body_sha256="c9" * 32,
+            period_start_utc="2026-01-01T00:00:00Z",
+            period_end_utc="2026-01-31T00:00:00Z",
+            base_currency="USD",
+            leaf_payloads=_build_leaf_payloads(twr_decimal=0.42),
+        )
+        r_conflict = self.client.post(
+            "/api/v1/proofs", json={"proof_bundle": conflicting_bundle.to_dict()}
+        )
+        self.assertEqual(r_conflict.status_code, 409, r_conflict.text)
+        self.assertEqual(r_conflict.json()["error"], "proof_id_conflict")
+
+        # Original proof remains untouched
+        stored_after = self.client.get("/api/v1/proofs/prf-immutable-conflict-test").json()
+        self.assertEqual(stored_after["proof_hash"], first_hash)
 
 
 if __name__ == "__main__":

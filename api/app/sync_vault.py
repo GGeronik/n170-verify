@@ -61,6 +61,10 @@ class SyncVaultIntegrityError(SyncVaultError):
     """Raised when AES-256-GCM authentication tag or AAD verification fails."""
 
 
+class SyncVaultConflictError(SyncVaultError):
+    """Raised when attempting to enroll an already-existing sync connection_id."""
+
+
 class SyncVaultNotFoundError(SyncVaultError, KeyError):
     """Raised when a requested sync connection ID does not exist or was erased."""
 
@@ -708,7 +712,7 @@ class SyncVault:
                     (conn_id,),
                 ).fetchone()
                 if existing is not None:
-                    raise ValueError(f"Sync connection {conn_id!r} already exists")
+                    raise SyncVaultConflictError(f"Sync connection {conn_id!r} already exists")
 
                 self._conn.execute(
                     """
@@ -1023,6 +1027,7 @@ __all__ = [
     "SIGNING_DOMAIN_REVOCATION",
     "SyncConnectionRecord",
     "SyncVault",
+    "SyncVaultConflictError",
     "SyncVaultError",
     "SyncVaultIntegrityError",
     "SyncVaultNotFoundError",

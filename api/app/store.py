@@ -65,6 +65,13 @@ class ProofNotFoundError(KeyError):
     """Raised when a proof bundle or enrolled chain ID does not exist."""
 
 
+class ProofConflictError(RuntimeError):
+    """Raised when a proof_id already exists with a different canonical proof_hash."""
+
+    http_status: int = 409
+    error_code: str = "proof_id_conflict"
+
+
 class ProofBundleInvalidError(ValueError):
     """Raised when a submitted VerifyProofBundle fails cryptographic verification."""
 
@@ -453,9 +460,21 @@ class ProofStore:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
+                existing_row = self._conn.execute(
+                    "SELECT proof_hash FROM proofs WHERE proof_id = ?",
+                    (sanitized_bundle.proof_id,),
+                ).fetchone()
+                if existing_row is not None:
+                    if str(existing_row["proof_hash"]) != p_hash:
+                        raise ProofConflictError(
+                            f"Proof {sanitized_bundle.proof_id!r} already exists with a different proof_hash"
+                        )
+                    self._conn.execute("COMMIT;")
+                    return sanitized_bundle, verification
+
                 self._conn.execute(
                     """
-                    INSERT OR REPLACE INTO proofs (
+                    INSERT INTO proofs (
                         proof_id,
                         proof_hash,
                         blinded_account_tag,
@@ -945,6 +964,7 @@ __all__ = [
     "GovernanceBlockedError",
     "PaperOrSandboxRejectedError",
     "ProofBundleInvalidError",
+    "ProofConflictError",
     "ProofNotFoundError",
     "ProofStore",
     "ProviderApprovalPendingError",

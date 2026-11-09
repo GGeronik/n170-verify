@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
 import os
 import secrets
 
@@ -95,6 +96,7 @@ class ApiConfig:
     db_path: str = ":memory:"
     sync_db_path: str = ":memory:"
     vault_master_kek_hex: str = field(default_factory=lambda: secrets.token_hex(32))
+    sync_api_token: str = ""
     sync_backup_retention_hours: int = 0
     account_blinding_salt_hex: str = field(default_factory=lambda: secrets.token_hex(32))
     eodhd_api_key: str = ""
@@ -146,16 +148,28 @@ class ApiConfig:
         hosted_raw = os.environ.get("N170_VERIFY_HOSTED_MODE", "true").strip().lower()
         hosted = hosted_raw in {"1", "true", "yes", "on"}
         eodhd_key = os.environ.get("EODHD_API_KEY", "").strip()
+        sync_token = os.environ.get("N170_VERIFY_SYNC_API_TOKEN", "").strip()
+
+        raw_notaries = os.environ.get("N170_VERIFY_TRUSTED_NOTARIES_JSON", "").strip()
+        if raw_notaries:
+            parsed_notaries = json.loads(raw_notaries)
+            if not isinstance(parsed_notaries, list):
+                raise ValueError("N170_VERIFY_TRUSTED_NOTARIES_JSON must decode to a JSON array")
+            trusted_notaries = [NotaryNodeInfo.from_dict(item) for item in parsed_notaries]
+        else:
+            trusted_notaries = []
 
         return cls(
             publisher_keypair=keypair,
             publisher_kid=os.environ.get("N170_VERIFY_PUBLISHER_KID", "").strip(),
+            trusted_notaries=trusted_notaries,
             hosted_multi_user_mode=hosted,
             db_path=os.environ.get("N170_VERIFY_DB_PATH", ":memory:").strip() or ":memory:",
             sync_db_path=(
                 os.environ.get("N170_VERIFY_SYNC_DB_PATH", ":memory:").strip() or ":memory:"
             ),
             vault_master_kek_hex=kek_hex,
+            sync_api_token=sync_token,
             sync_backup_retention_hours=int(
                 os.environ.get("N170_VERIFY_SYNC_BACKUP_RETENTION_HOURS", "0")
             ),

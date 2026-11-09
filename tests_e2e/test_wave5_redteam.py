@@ -1921,6 +1921,55 @@ class TestWave5InstitutionalComplianceAndHygiene(unittest.TestCase):
             finally:
                 app.close()
 
+    def test_hosted_caller_cannot_escalate_provider_approval_state(self) -> None:
+        kp = generate_ed25519_keypair(bytes([91]) * 32)
+        cfg = ApiConfig(
+            publisher_keypair=kp,
+            publisher_kid="n170-redteam-approval-kid",
+            hosted_multi_user_mode=True,
+            db_path=":memory:",
+            sync_db_path=":memory:",
+            vault_master_kek_hex="77" * 32,
+            account_blinding_salt_hex="88" * 32,
+            sync_api_token="redteam-sync-token",
+        )
+        app = create_app(cfg, prefer_fastapi=False)
+        client = VerifyApiTestClient(app)
+        sync_hdrs = {"Authorization": "Bearer redteam-sync-token"}
+        try:
+            for gated_broker in ("robinhood_unapproved", "fidelity_pending", "ibkr_oauth"):
+                r_verify = client.post(
+                    "/api/v1/verify",
+                    json={
+                        "broker_id": gated_broker,
+                        "provider_approval_state": "approved_live",
+                        "raw_account_id": "ACC-ESCALATE-001",
+                        "ephemeral_credentials": {"oauth_access_token": "tok-escalate"},
+                        "nav_points": [
+                            {"timestamp_utc": "2026-01-01T00:00:00Z", "nav_base": 50_000.0},
+                            {"timestamp_utc": "2026-01-31T00:00:00Z", "nav_base": 52_000.0},
+                        ],
+                    },
+                )
+                self.assertEqual(r_verify.status_code, 403, f"{gated_broker}: {r_verify.text}")
+                self.assertEqual(r_verify.json()["error"], "provider_approval_pending")
+
+                r_sync = client.post(
+                    "/api/v1/sync",
+                    json={
+                        "broker_id": gated_broker,
+                        "provider_approval_state": "approved_live",
+                        "raw_account_id": "ACC-ESCALATE-001",
+                        "credentials": {"oauth_access_token": "tok-escalate"},
+                        "capabilities": ["read_balances"],
+                    },
+                    headers=sync_hdrs,
+                )
+                self.assertEqual(r_sync.status_code, 403, f"{gated_broker}: {r_sync.text}")
+                self.assertEqual(r_sync.json()["error"], "provider_approval_pending")
+        finally:
+            app.close()
+
     def test_zero_forbidden_tokens_paths_or_legacy_imports_across_n170_verify(self) -> None:
         # Construct forbidden tokens dynamically so this file contains zero literal occurrences!
         tok_a = "DE" + "FRAUD"

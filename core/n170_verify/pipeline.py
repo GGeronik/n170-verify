@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import inspect
 import math
+import os
 from pathlib import Path
 import secrets
 from statistics import mean, stdev
@@ -47,6 +48,7 @@ from n170_verify.coaching import (
     match_fifo_round_trips,
 )
 from n170_verify.connectors import (
+    CONNECTOR_CLASS_MAP,
     PaperOrSandboxAccountRejectedError,
     create_connector,
     parse_degiro_csv_bundle,
@@ -95,12 +97,21 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _coerce_source_bytes(source: str | bytes | Path, *, treat_xml: bool = False) -> bytes:
+def _coerce_source_bytes(
+    source: str | bytes | Path,
+    *,
+    treat_xml: bool = False,
+    allow_filesystem_paths: bool = True,
+) -> bytes:
     if isinstance(source, bytes):
         return source
-    if isinstance(source, Path):
-        return source.read_bytes()
+    if isinstance(source, (Path, os.PathLike)):
+        if not allow_filesystem_paths:
+            raise ValueError("Filesystem path inputs are forbidden in isolated worker mode")
+        return Path(source).read_bytes()
     if isinstance(source, str):
+        if not allow_filesystem_paths:
+            return source.encode("utf-8")
         stripped = source.lstrip()
         if treat_xml and stripped.startswith("<"):
             return source.encode("utf-8")
@@ -151,6 +162,7 @@ def _call_adapter_fetch(
     period_start_utc: str | None,
     period_end_utc: str | None,
     base_currency: str | None,
+    require_live: bool = True,
     extra_fetch_kwargs: Mapping[str, Any] | None = None,
 ) -> CanonicalPortfolioLedger:
     fetch_fn = getattr(adapter, "fetch_canonical_ledger", None) or getattr(
@@ -177,9 +189,13 @@ def _call_adapter_fetch(
         call_kwargs["period_end_utc"] = default_end
     if base_currency is not None and "base_currency" in params:
         call_kwargs["base_currency"] = base_currency
+    if "require_live" in params:
+        call_kwargs["require_live"] = require_live
 
     if extra_fetch_kwargs:
         for key, value in extra_fetch_kwargs.items():
+            if key == "require_live" and require_live:
+                continue
             if key in params or accepts_var_kw:
                 call_kwargs[key] = value
 
@@ -210,6 +226,7 @@ def ingest_portfolio_ledger(
     period_end_utc: str | None = None,
     base_currency: str | None = None,
     require_live: bool = True,
+    allow_filesystem_paths: bool = True,
 ) -> CanonicalPortfolioLedger:
     """Normalize supported offline statements or live read-only connectors into ``CanonicalPortfolioLedger``."""
     salt_hex = (blinding_salt_hex or secrets.token_hex(32)).strip().lower()
@@ -228,10 +245,15 @@ def ingest_portfolio_ledger(
             period_start_utc=period_start_utc,
             period_end_utc=period_end_utc,
             base_currency=base_currency,
+            require_live=require_live,
             extra_fetch_kwargs=connector_fetch_kwargs,
         )
     elif flex_xml is not None:
-        raw_xml = _coerce_source_bytes(flex_xml, treat_xml=True)
+        raw_xml = _coerce_source_bytes(
+            flex_xml,
+            treat_xml=True,
+            allow_filesystem_paths=allow_filesystem_paths,
+        )
         resolved_ledger = parse_ibkr_flex_xml(
             raw_xml,
             blinding_salt_hex=salt_hex,
@@ -247,17 +269,23 @@ def ingest_portfolio_ledger(
         ):
             resolved_ledger = parse_degiro_csv_bundle(
                 account_csv=(
-                    _coerce_source_bytes(degiro_account_csv)
+                    _coerce_source_bytes(
+                        degiro_account_csv, allow_filesystem_paths=allow_filesystem_paths
+                    )
                     if degiro_account_csv is not None
                     else None
                 ),
                 transactions_csv=(
-                    _coerce_source_bytes(degiro_transactions_csv)
+                    _coerce_source_bytes(
+                        degiro_transactions_csv, allow_filesystem_paths=allow_filesystem_paths
+                    )
                     if degiro_transactions_csv is not None
                     else None
                 ),
                 portfolio_csv=(
-                    _coerce_source_bytes(degiro_portfolio_csv)
+                    _coerce_source_bytes(
+                        degiro_portfolio_csv, allow_filesystem_paths=allow_filesystem_paths
+                    )
                     if degiro_portfolio_csv is not None
                     else None
                 ),
@@ -266,7 +294,9 @@ def ingest_portfolio_ledger(
             )
         else:
             assert csv_source is not None
-            raw_csv = _coerce_source_bytes(csv_source)
+            raw_csv = _coerce_source_bytes(
+                csv_source, allow_filesystem_paths=allow_filesystem_paths
+            )
             detected = _detect_csv_format(raw_csv, broker_id, csv_format)
             if detected == "degiro":
                 resolved_ledger = parse_degiro_csv_bundle(
@@ -287,6 +317,15 @@ def ingest_portfolio_ledger(
             norm_bid = "degiro_csv"
         elif norm_bid == "robinhood":
             norm_bid = "robinhood_csv"
+        kw_req_live = init_kw.pop("require_live", None)
+        effective_req_live = True if require_live else (True if kw_req_live is None else bool(kw_req_live))
+        target_cls = CONNECTOR_CLASS_MAP.get(norm_bid)
+        if target_cls is not None:
+            init_params = inspect.signature(target_cls.__init__).parameters
+            if "require_live" in init_params:
+                init_kw["require_live"] = effective_req_live
+        elif kw_req_live is not None:
+            init_kw["require_live"] = effective_req_live
         adapter_inst = create_connector(norm_bid, **init_kw)
         resolved_ledger = _call_adapter_fetch(
             adapter_inst,
@@ -294,6 +333,7 @@ def ingest_portfolio_ledger(
             period_start_utc=period_start_utc,
             period_end_utc=period_end_utc,
             base_currency=base_currency,
+            require_live=effective_req_live,
             extra_fetch_kwargs=connector_fetch_kwargs,
         )
     else:
@@ -518,6 +558,7 @@ def verify_portfolio(
     period_end_utc: str | None = None,
     base_currency: str | None = None,
     require_live: bool = True,
+    allow_filesystem_paths: bool = True,
     reference_provider: ReferenceDataProvider | None = None,
     eodhd_api_key: str | None = None,
     benchmark_symbol: str | None = None,
@@ -581,6 +622,7 @@ def verify_portfolio(
         period_end_utc=period_end_utc,
         base_currency=base_currency,
         require_live=require_live,
+        allow_filesystem_paths=allow_filesystem_paths,
     )
 
     # 2. Resolve optional market reference provider (EODHD when configured, else NullReferenceProvider)
@@ -767,6 +809,54 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
     return False
 
 
+_WORKER_CUSTOM_URL_KEYS: tuple[str, ...] = (
+    "base_url",
+    "api_url",
+    "endpoint",
+    "auth_base_url",
+    "token_url",
+    "api_base_url",
+    "flex_base_url",
+    "oauth_base_url",
+)
+
+_WORKER_STRIPPED_CONNECTOR_KEYS: frozenset[str] = frozenset(
+    {
+        *_WORKER_CUSTOM_URL_KEYS,
+        "transport",
+        "http_transport",
+        "http_client",
+        "message_transport",
+        "ccxt_exchange",
+        "opener",
+        "require_live",
+        "env",
+        "hosted_mode",
+    }
+)
+
+_PAPER_OR_SANDBOX_URL_TOKENS: tuple[str, ...] = ("paper", "sandbox", "demo", "testnet")
+
+
+def _coerce_worker_inline_bytes(val: Any, field_name: str) -> bytes | None:
+    if val is None:
+        return None
+    if isinstance(val, (Path, os.PathLike)):
+        raise ValueError(f"Filesystem path inputs are forbidden in isolated worker mode ({field_name})")
+    if isinstance(val, bytes):
+        return val
+    if isinstance(val, str):
+        return val.encode("utf-8")
+    raise TypeError(f"Unsupported {field_name} type in worker payload: {type(val).__name__}")
+
+
+def _is_forbidden_path_key(key: str) -> bool:
+    norm = key.strip().lower()
+    return norm in {"path", "file", "source", "csv_source", "flex_xml"} or norm.endswith(
+        ("_path", "_file")
+    )
+
+
 def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, Any]:
     """Top-level picklable entrypoint executed inside the isolated ``spawn`` worker subprocess.
 
@@ -779,6 +869,12 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
     salt_hex = str(job_payload.get("account_blinding_salt_hex") or secrets.token_hex(32))
     issued_at_utc = str(job_payload.get("issued_at_utc") or _utc_now_iso())
     embargo_days = int(job_payload.get("delayed_trade_guard_days", 7))
+
+    for b64_key in ("flex_xml_b64", "csv_b64", "raw_statement_b64", "raw_statement_text", "raw_statement"):
+        if isinstance(job_payload.get(b64_key), (Path, os.PathLike)):
+            raise ValueError(
+                f"Filesystem path inputs are forbidden in isolated worker mode ({b64_key})"
+            )
 
     period_start = (
         str(job_payload["period_start_utc"])
@@ -796,19 +892,27 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         else None
     )
 
-    flex_xml: bytes | str | None = None
+    flex_xml: bytes | None = None
     if job_payload.get("flex_xml_b64"):
         flex_xml = base64.b64decode(str(job_payload["flex_xml_b64"]))
     elif job_payload.get("flex_xml") is not None:
-        raw_fx = job_payload["flex_xml"]
-        flex_xml = raw_fx if isinstance(raw_fx, bytes) else str(raw_fx).encode("utf-8")
+        flex_xml = _coerce_worker_inline_bytes(job_payload["flex_xml"], "flex_xml")
 
-    csv_source: bytes | str | None = None
+    csv_source: bytes | None = None
     if job_payload.get("csv_b64"):
         csv_source = base64.b64decode(str(job_payload["csv_b64"]))
     elif job_payload.get("csv_source") is not None:
-        raw_c = job_payload["csv_source"]
-        csv_source = raw_c if isinstance(raw_c, bytes) else str(raw_c).encode("utf-8")
+        csv_source = _coerce_worker_inline_bytes(job_payload["csv_source"], "csv_source")
+
+    degiro_account_bytes = _coerce_worker_inline_bytes(
+        job_payload.get("degiro_account_csv"), "degiro_account_csv"
+    )
+    degiro_tx_bytes = _coerce_worker_inline_bytes(
+        job_payload.get("degiro_transactions_csv"), "degiro_transactions_csv"
+    )
+    degiro_port_bytes = _coerce_worker_inline_bytes(
+        job_payload.get("degiro_portfolio_csv"), "degiro_portfolio_csv"
+    )
 
     # Support raw_statement / raw_statement_text / raw_statement_b64 when real XML or CSV is submitted
     if flex_xml is None and csv_source is None:
@@ -825,10 +929,61 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             else:
                 csv_source = raw_bytes
 
-    connector_kw = dict(
-        job_payload.get("connector_kwargs") or job_payload.get("connector_credentials") or {}
+    raw_conn_kw = job_payload.get("connector_kwargs") or job_payload.get("connector_credentials")
+    has_connector_input = raw_conn_kw is not None
+    connector_kw = dict(raw_conn_kw or {})
+
+    # Inspect custom URL fields for paper/sandbox/demo/testnet tokens before stripping overrides
+    for scope_map in (job_payload, connector_kw):
+        for url_key in _WORKER_CUSTOM_URL_KEYS:
+            raw_url_val = scope_map.get(url_key)
+            if raw_url_val is not None and str(raw_url_val).strip():
+                lower_url = str(raw_url_val).strip().lower()
+                if any(tok in lower_url for tok in _PAPER_OR_SANDBOX_URL_TOKENS):
+                    raise PaperOrSandboxAccountRejectedError(
+                        f"Paper, sandbox, demo, or testnet endpoint rejected in {url_key}"
+                    )
+
+    for k in list(connector_kw.keys()):
+        k_str = str(k)
+        v_val = connector_kw[k]
+        if isinstance(v_val, (Path, os.PathLike)) or _is_forbidden_path_key(k_str):
+            raise ValueError(
+                f"Filesystem path inputs are forbidden in isolated worker mode (connector_kwargs.{k_str})"
+            )
+        if k_str.strip().lower() in _WORKER_STRIPPED_CONNECTOR_KEYS:
+            connector_kw.pop(k, None)
+
+    has_offline_or_ledger = any(
+        item is not None
+        for item in (
+            job_payload.get("ledger"),
+            flex_xml,
+            csv_source,
+            degiro_account_bytes,
+            degiro_tx_bytes,
+            degiro_port_bytes,
+        )
     )
-    connector_fetch_kw = dict(job_payload.get("connector_fetch_kwargs") or {})
+    if has_connector_input or (broker_id is not None and not has_offline_or_ledger):
+        connector_kw["require_live"] = True
+
+    raw_fetch_kw = dict(job_payload.get("connector_fetch_kwargs") or {})
+    connector_fetch_kw: dict[str, Any] = {}
+    for k, v in raw_fetch_kw.items():
+        k_str = str(k)
+        if isinstance(v, (Path, os.PathLike)) or _is_forbidden_path_key(k_str):
+            raise ValueError(
+                f"Filesystem path inputs are forbidden in isolated worker mode (connector_fetch_kwargs.{k_str})"
+            )
+        if k_str.strip().lower() == "require_live":
+            continue
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            raise ValueError(
+                f"Non-primitive value rejected in connector_fetch_kwargs.{k_str}: {type(v).__name__}"
+            )
+        connector_fetch_kw[k_str] = v
+
     if period_start is None and job_payload.get("period_start_utc"):
         connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
     if period_end is None and job_payload.get("period_end_utc"):
@@ -845,9 +1000,9 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         flex_xml=flex_xml,
         csv_source=csv_source,
         csv_format=job_payload.get("csv_format"),
-        degiro_account_csv=job_payload.get("degiro_account_csv"),
-        degiro_transactions_csv=job_payload.get("degiro_transactions_csv"),
-        degiro_portfolio_csv=job_payload.get("degiro_portfolio_csv"),
+        degiro_account_csv=degiro_account_bytes,
+        degiro_transactions_csv=degiro_tx_bytes,
+        degiro_portfolio_csv=degiro_port_bytes,
         broker_id=broker_id,
         connector_kwargs=connector_kw if connector_kw else None,
         connector_fetch_kwargs=connector_fetch_kw if connector_fetch_kw else None,
@@ -857,6 +1012,7 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         period_end_utc=period_end,
         base_currency=base_ccy,
         require_live=True,
+        allow_filesystem_paths=False,
         eodhd_api_key=job_payload.get("eodhd_api_key"),
         benchmark_symbol=job_payload.get("benchmark_symbol"),
         annual_risk_free_rate=float(job_payload.get("annual_risk_free_rate", 0.0)),

@@ -11,6 +11,7 @@ from app.store import (
     GovernanceBlockedError,
     PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
+    ProofConflictError,
     ProofNotFoundError,
     ProofStore,
 )
@@ -49,6 +50,8 @@ def handle_post_proof(
     except PaperOrSandboxRejectedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
+        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+    except ProofConflictError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ProofBundleInvalidError as exc:
         return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}

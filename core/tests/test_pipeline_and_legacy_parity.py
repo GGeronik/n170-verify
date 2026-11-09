@@ -751,5 +751,121 @@ process.stdout.write(JSON.stringify(webRes));
             app.close()
 
 
+    def test_isolated_worker_forbids_filesystem_paths_and_url_or_live_overrides(self) -> None:
+        from unittest import mock
+        from n170_verify.connectors import (
+            IbkrFlexParseError,
+            PaperOrSandboxAccountRejectedError,
+        )
+        from n170_verify.pipeline import api_worker_pipeline_entrypoint
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_xml_file = Path(tmpdir) / "host_secret_flex.xml"
+            secret_xml_file.write_text(SYNTHETIC_SAMPLE_FLEX_XML, encoding="utf-8")
+
+            # 1. Path object rejected immediately when allow_filesystem_paths=False
+            with self.assertRaisesRegex(ValueError, "Filesystem path inputs are forbidden"):
+                verify_portfolio(
+                    broker_id="ibkr_flex_offline",
+                    flex_xml=secret_xml_file,
+                    allow_filesystem_paths=False,
+                )
+
+            # 2. Existing file path passed as str is NEVER read from disk when allow_filesystem_paths=False
+            with self.assertRaises(IbkrFlexParseError):
+                verify_portfolio(
+                    broker_id="ibkr_flex_offline",
+                    flex_xml=str(secret_xml_file),
+                    allow_filesystem_paths=False,
+                )
+
+            # 3. api_worker_pipeline_entrypoint rejects Path inputs & existing file path strings
+            with self.assertRaisesRegex(ValueError, "Filesystem path inputs are forbidden"):
+                api_worker_pipeline_entrypoint(
+                    {
+                        "broker_id": "ibkr_flex_offline",
+                        "flex_xml": secret_xml_file,
+                        "publisher_kid": "worker-kid",
+                        "publisher_private_key_hex": "11" * 32,
+                    }
+                )
+            with self.assertRaises(IbkrFlexParseError):
+                api_worker_pipeline_entrypoint(
+                    {
+                        "broker_id": "ibkr_flex_offline",
+                        "flex_xml": str(secret_xml_file),
+                        "publisher_kid": "worker-kid",
+                        "publisher_private_key_hex": "11" * 32,
+                    }
+                )
+
+            # 4. connector_fetch_kwargs rejects *_path / *_file keys and non-primitive values
+            for bad_fetch_kw in (
+                {"statement_path": str(secret_xml_file)},
+                {"export_file": "foo.csv"},
+                {"nested": {"bad": 1}},
+            ):
+                with self.assertRaises(ValueError):
+                    api_worker_pipeline_entrypoint(
+                        {
+                            "broker_id": "ibkr_flex_offline",
+                            "flex_xml": SYNTHETIC_SAMPLE_FLEX_XML,
+                            "connector_fetch_kwargs": bad_fetch_kw,
+                            "publisher_kid": "worker-kid",
+                            "publisher_private_key_hex": "11" * 32,
+                        }
+                    )
+
+        # 5. Paper/sandbox URLs in job_payload or connector_kwargs fail closed
+        for bad_payload in (
+            {"base_url": "https://paper-api.alpaca.markets"},
+            {"connector_kwargs": {"endpoint": "https://testnet.binance.vision"}},
+        ):
+            with self.assertRaises(PaperOrSandboxAccountRejectedError):
+                api_worker_pipeline_entrypoint(
+                    {
+                        "broker_id": "alpaca",
+                        "ephemeral_credentials": {"api_key": "k", "api_secret": "s"},
+                        "publisher_kid": "worker-kid",
+                        "publisher_private_key_hex": "11" * 32,
+                        **bad_payload,
+                    }
+                )
+
+        # 6. Custom base_url / transport / require_live=False overrides are stripped and require_live=True forced
+        captured_call: dict[str, object] = {}
+
+        def _fake_verify_portfolio(*args: object, **kwargs: object) -> PortfolioVerificationOutput:
+            captured_call["kwargs"] = kwargs
+            return verify_portfolio(
+                broker_id="ibkr_flex_offline",
+                flex_xml=SYNTHETIC_SAMPLE_FLEX_XML.encode("utf-8"),
+                publisher_kid="worker-kid",
+                publisher_private_key_hex="11" * 32,
+                allow_filesystem_paths=False,
+            )
+
+        with mock.patch("n170_verify.pipeline.verify_portfolio", side_effect=_fake_verify_portfolio):
+            res = api_worker_pipeline_entrypoint(
+                {
+                    "broker_id": "alpaca",
+                    "ephemeral_credentials": {"api_key": "k", "api_secret": "s"},
+                    "connector_kwargs": {
+                        "base_url": "https://attacker-relay.example",
+                        "http_transport": "injected",
+                        "require_live": False,
+                    },
+                    "publisher_kid": "worker-kid",
+                    "publisher_private_key_hex": "11" * 32,
+                }
+            )
+        self.assertIn("merkle_root", res)
+        forwarded_ckw = captured_call["kwargs"]["connector_kwargs"]  # type: ignore[index]
+        self.assertNotIn("base_url", forwarded_ckw)
+        self.assertNotIn("http_transport", forwarded_ckw)
+        self.assertIs(forwarded_ckw["require_live"], True)
+        self.assertIs(captured_call["kwargs"]["allow_filesystem_paths"], False)  # type: ignore[index]
+
+
 if __name__ == "__main__":
     unittest.main()

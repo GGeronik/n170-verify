@@ -1102,6 +1102,28 @@ HttpPostTransportFn = Callable[
 ]
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject all HTTP 3xx redirects on pinned MCP Streamable HTTP endpoints."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        hdrs: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del msg, newurl
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            f"HTTP {code} redirect forbidden for pinned MCP endpoint",
+            hdrs,
+            fp,
+        )
+
+
 def _default_urllib_post_transport(
     method: str,
     url: str,
@@ -1109,12 +1131,18 @@ def _default_urllib_post_transport(
     headers: Mapping[str, str],
 ) -> tuple[int, Mapping[str, str], bytes]:
     req = urllib.request.Request(url=url, data=body, headers=dict(headers), method=method)
+    opener = urllib.request.build_opener(_NoRedirectHandler())
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with opener.open(req, timeout=30) as resp:
+            status_int = int(resp.status)
+            if 300 <= status_int < 400:
+                raise McpFirewallError(f"HTTP {status_int} redirect forbidden for pinned MCP endpoint")
             resp_headers = {k.lower(): v for k, v in resp.headers.items()}
-            return int(resp.status), resp_headers, resp.read()
+            return status_int, resp_headers, resp.read()
     except urllib.error.HTTPError as exc:
         err_body = exc.read() if exc.fp is not None else b""
+        if 300 <= int(exc.code) < 400:
+            raise McpFirewallError(f"HTTP {int(exc.code)} redirect forbidden for pinned MCP endpoint") from None
         resp_headers = {k.lower(): v for k, v in exc.headers.items()} if exc.headers else {}
         return int(exc.code), resp_headers, err_body
 

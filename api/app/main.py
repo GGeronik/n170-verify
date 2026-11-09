@@ -144,6 +144,22 @@ def _flatten_query_params(query_string: str) -> dict[str, str]:
     return {k: vals[-1] for k, vals in parsed.items() if vals}
 
 
+def _is_sync_route(path: str) -> bool:
+    return path == "/api/v1/sync" or path.startswith("/api/v1/sync/")
+
+
+def _sync_json_response(status_code: int, payload: Any) -> ApiResponse:
+    resp = ApiResponse.json_response(
+        status_code,
+        payload,
+        headers={"Cache-Control": "no-store"},
+    )
+    resp.headers.pop("Access-Control-Allow-Origin", None)
+    resp.headers.pop("Access-Control-Allow-Methods", None)
+    resp.headers.pop("Access-Control-Allow-Headers", None)
+    return resp
+
+
 _ROUTE_BADGE_RE = re.compile(r"^/api/v1/badges/(?P<proof_id>.+)\.svg$")
 _ROUTE_SYNC_ITEM_RE = re.compile(r"^/api/v1/sync/(?P<connection_id>[^/]+)$")
 _ROUTE_PROOF_DISCORD_EMBED_RE = re.compile(r"^/api/v1/proofs/(?P<proof_id>.+)/discord-embed$")
@@ -229,6 +245,17 @@ class VerifyApiApplication:
                 return ApiResponse.json_response(st, payload, headers=hdrs)
             return ApiResponse.json_response(405, {"error": "method_not_allowed"})
 
+        if verb == "OPTIONS" and _is_sync_route(path):
+            return ApiResponse(
+                status_code=204,
+                body=b"",
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Frame-Options": "DENY",
+                },
+            )
+
         if verb == "OPTIONS" and (path == "/healthz" or path.startswith("/api/v1/")):
             return ApiResponse(
                 status_code=204,
@@ -254,7 +281,10 @@ class VerifyApiApplication:
                 store=self.store,
                 sync_vault=self.sync_vault,
                 pipeline_spec=self.pipeline_spec,
+                headers=req_headers,
             )
+            if isinstance(parsed, Mapping) and bool(parsed.get("persist_sync", False)):
+                return _sync_json_response(st, resp)
             return ApiResponse.json_response(st, resp)
 
         if path == "/api/v1/verify/auto-detect":
@@ -319,27 +349,38 @@ class VerifyApiApplication:
         # 4. Opt-in Encrypted Sync Vault (/api/v1/sync & /api/v1/sync/{connection_id})
         if path == "/api/v1/sync":
             if verb != "POST":
-                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                return _sync_json_response(405, {"error": "method_not_allowed"})
             ok, parsed = _parse_json_body(body)
             if not ok:
-                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+                return _sync_json_response(400, {"error": "invalid_json", "detail": parsed})
             st, resp = handle_post_sync(
                 parsed,
                 config=self.config,
                 sync_vault=self.sync_vault,
+                headers=req_headers,
             )
-            return ApiResponse.json_response(st, resp)
+            return _sync_json_response(st, resp)
 
         sync_match = _ROUTE_SYNC_ITEM_RE.match(path)
         if sync_match is not None:
             conn_id = unquote(sync_match.group("connection_id"))
             if verb == "GET":
-                st, resp = handle_get_sync(conn_id, sync_vault=self.sync_vault)
-                return ApiResponse.json_response(st, resp)
+                st, resp = handle_get_sync(
+                    conn_id,
+                    sync_vault=self.sync_vault,
+                    config=self.config,
+                    headers=req_headers,
+                )
+                return _sync_json_response(st, resp)
             if verb == "DELETE":
-                st, resp = handle_delete_sync(conn_id, sync_vault=self.sync_vault)
-                return ApiResponse.json_response(st, resp)
-            return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                st, resp = handle_delete_sync(
+                    conn_id,
+                    sync_vault=self.sync_vault,
+                    config=self.config,
+                    headers=req_headers,
+                )
+                return _sync_json_response(st, resp)
+            return _sync_json_response(405, {"error": "method_not_allowed"})
 
         # 5. Proofs & Dynamic Verification (/api/v1/proofs, /api/v1/proofs/verify, /api/v1/proofs/{proof_id})
         if path == "/api/v1/proofs":

@@ -185,6 +185,7 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
             vault_master_kek_hex="aa" * 32,
             sync_backup_retention_hours=0,
             account_blinding_salt_hex="bb" * 32,
+            sync_api_token="e2e-sync-token-16",
         )
         self.app = create_app(self.config, prefer_fastapi=False)
         self.client = VerifyApiTestClient(self.app)
@@ -885,6 +886,7 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
         self.assertEqual(self.app.sync_vault.connection_count(), 0)
 
         # 2. Opt-in sync enrollment + DELETE /api/v1/sync/{id} cryptographic RevocationReceipt
+        sync_auth_headers = {"Authorization": "Bearer e2e-sync-token-16"}
         sync_resp = self.client.post(
             "/api/v1/sync",
             json={
@@ -893,10 +895,11 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
                 "credentials": {"access_token": "alpaca-ro-sync-16"},
                 "capabilities": ["read_account_profile", "read_balances", "fetch_positions"],
             },
+            headers=sync_auth_headers,
         )
         self.assertEqual(sync_resp.status_code, 201, sync_resp.text)
         conn_id = sync_resp.json()["connection"]["connection_id"]
-        del_resp = self.client.delete(f"/api/v1/sync/{conn_id}")
+        del_resp = self.client.delete(f"/api/v1/sync/{conn_id}", headers=sync_auth_headers)
         self.assertEqual(del_resp.status_code, 200, del_resp.text)
         rev_receipt = RevocationReceipt.from_dict(del_resp.json()["revocation_receipt"])
         self.assertTrue(rev_receipt.verify_signature())

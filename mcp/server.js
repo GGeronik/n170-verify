@@ -468,6 +468,37 @@ function verifySelectiveDisclosure(merkleRootHex, disclosedLeaves, undisclosedLe
 /* Transcript Safety, Witness Quorum (k >= 2 Disjoint), & C2SP Registry       */
 /* -------------------------------------------------------------------------- */
 
+const IBKR_WITNESS_SNIS = Object.freeze(
+  new Set([
+    "api.ibkr.com",
+    "ndcdyn.interactivebrokers.com",
+    "gdcdyn.interactivebrokers.com",
+    "www.interactivebrokers.com",
+  ])
+);
+
+const BROKER_WITNESS_SNI_ALLOWLIST = Object.freeze({
+  ibkr: IBKR_WITNESS_SNIS,
+  ibkr_flex: IBKR_WITNESS_SNIS,
+  ibkr_flex_offline: IBKR_WITNESS_SNIS,
+  ibkr_flex_web: IBKR_WITNESS_SNIS,
+  ibkr_oauth: IBKR_WITNESS_SNIS,
+  interactive_brokers: IBKR_WITNESS_SNIS,
+  schwab: Object.freeze(new Set(["api.schwabapi.com"])),
+  schwab_csv: Object.freeze(new Set(["api.schwabapi.com"])),
+  alpaca: Object.freeze(new Set(["api.alpaca.markets"])),
+  tradier: Object.freeze(new Set(["api.tradier.com"])),
+  trading212: Object.freeze(new Set(["live.trading212.com"])),
+  ctrader: Object.freeze(new Set(["openapi.ctrader.com", "live.ctraderapi.com"])),
+  ctrader_oauth: Object.freeze(new Set(["openapi.ctrader.com", "live.ctraderapi.com"])),
+  coinbase: Object.freeze(new Set(["api.coinbase.com", "api.exchange.coinbase.com"])),
+  coinbaseadvanced: Object.freeze(new Set(["api.coinbase.com", "api.exchange.coinbase.com"])),
+  coinbase_advanced: Object.freeze(new Set(["api.coinbase.com", "api.exchange.coinbase.com"])),
+  binance: Object.freeze(new Set(["api.binance.com"])),
+  kraken: Object.freeze(new Set(["api.kraken.com"])),
+  bybit: Object.freeze(new Set(["api.bybit.com"])),
+});
+
 function inspectTranscriptSafety(att) {
   const violations = [];
   if (att.protocol !== REQUIRED_TLSN_PROTOCOL) {
@@ -661,12 +692,37 @@ async function verifyC2spCheckpoint(checkpoint, publisherPubHex) {
   return true;
 }
 
-async function evaluateSignerTrust(bundle, signatureValid, registryDoc) {
+async function evaluateSignerTrust(bundle, signatureValid, registryDoc, registryTrusted = true) {
   if (!signatureValid || !registryDoc || typeof registryDoc !== "object") {
     return "unrecognized_self_hosted_signer";
   }
   const keys = Array.isArray(registryDoc.keys) ? registryDoc.keys : [];
   const keyMap = new Map(keys.map((k) => [k.publisher_kid, k]));
+
+  if (!registryTrusted) {
+    const untrustedKeyRec = keyMap.get(bundle.publisher_kid);
+    if (
+      untrustedKeyRec &&
+      String(untrustedKeyRec.public_key_hex || "").trim().toLowerCase() ===
+        bundle.publisher_public_key_hex
+    ) {
+      const untrustedStatus = String(untrustedKeyRec.status || "").trim().toLowerCase();
+      if (untrustedStatus === "revoked") {
+        return "revoked_key";
+      }
+      if (untrustedKeyRec.revoked_after_utc) {
+        const issuedMs = parseUtcTimestampMs(bundle.issued_at_utc, "issued_at_utc");
+        const revMs = parseUtcTimestampMs(
+          untrustedKeyRec.revoked_after_utc,
+          "revoked_after_utc"
+        );
+        if (issuedMs >= revMs) {
+          return "revoked_key";
+        }
+      }
+    }
+    return "unrecognized_self_hosted_signer";
+  }
 
   if (registryDoc.checkpoint) {
     const ckptKey = keyMap.get(registryDoc.checkpoint.publisher_kid);
@@ -748,16 +804,24 @@ async function evaluateOriginAssurance({
     };
   }
 
+  const bundleBrokerNorm = String(bundle.broker_id || "").trim().toLowerCase();
+
   // 1. First-party BrokerNativeSignature check
   if (bundle.broker_native_signature) {
     const bSig = bundle.broker_native_signature;
+    const sigBrokerNorm = String(bSig.broker_id || "").trim().toLowerCase();
+    const brokerIdMatches = !bundleBrokerNorm || sigBrokerNorm === bundleBrokerNorm;
     const brokerKeys =
       pinnedBrokerKeys && typeof pinnedBrokerKeys === "object"
-        ? pinnedBrokerKeys[bSig.broker_id.toLowerCase()]
+        ? pinnedBrokerKeys[sigBrokerNorm]
         : null;
     const pinnedPub = brokerKeys ? brokerKeys[bSig.key_id] : null;
     let brokerOk = false;
-    if (
+    if (!brokerIdMatches) {
+      reasons.push(
+        `BrokerNativeSignature broker_id '${bSig.broker_id}' does not match bundle broker_id '${bundle.broker_id}'`
+      );
+    } else if (
       pinnedPub &&
       bSig.signed_payload_sha256 === normSourceSha &&
       bSig.algorithm.trim().toLowerCase() === "ed25519"
@@ -786,7 +850,9 @@ async function evaluateOriginAssurance({
         downgrade_reasons: [],
       };
     }
-    reasons.push("BrokerNativeSignature failed verification against pinned broker keys");
+    if (brokerIdMatches) {
+      reasons.push("BrokerNativeSignature failed verification against pinned broker keys");
+    }
   }
 
   // 2. Dynamic k >= 2 org/ASN-disjoint TLSNotary witness quorum check
@@ -852,8 +918,37 @@ async function evaluateOriginAssurance({
       continue;
     }
 
+    const sniKey = String(att.server_sni || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\.+$/, "");
+    const targetTrimmed = String(att.sanitized_request_target || "").trim();
+    const targetLower = targetTrimmed.toLowerCase();
+    if (targetLower.startsWith("http://") || targetLower.startsWith("https://")) {
+      let parsedHost = "";
+      try {
+        parsedHost = new URL(targetTrimmed).hostname.trim().toLowerCase().replace(/\.+$/, "");
+      } catch {
+        parsedHost = "";
+      }
+      if (parsedHost !== sniKey) {
+        reasons.push(
+          `Notary '${att.notary_id}' sanitized_request_target host mismatches server_sni '${sniKey}'`
+        );
+        continue;
+      }
+    }
+    if (bundleBrokerNorm) {
+      const allowedSnis = BROKER_WITNESS_SNI_ALLOWLIST[bundleBrokerNorm];
+      if (!allowedSnis || !allowedSnis.has(sniKey)) {
+        reasons.push(
+          `Notary '${att.notary_id}' server_sni '${sniKey}' is not an official TLS endpoint for broker_id='${bundle.broker_id}'`
+        );
+        continue;
+      }
+    }
+
     const tsMs = parseUtcTimestampMs(att.session_timestamp_utc, "session_timestamp_utc");
-    const sniKey = att.server_sni.trim().toLowerCase();
     if (!validBySni.has(sniKey)) {
       validBySni.set(sniKey, []);
     }
@@ -1293,7 +1388,13 @@ function verifyProspectiveChain(bundles, continuityLogLeaves, nowUtc) {
 
 async function verifyProofBundle(
   rawBundle,
-  { registryDoc = null, chainHistory = null, continuityLogLeaves = null, nowUtc = null } = {}
+  {
+    registryDoc = null,
+    registryTrusted = true,
+    chainHistory = null,
+    continuityLogLeaves = null,
+    nowUtc = null,
+  } = {}
 ) {
   const bundle = normalizeBundle(rawBundle);
   const errors = [];
@@ -1343,7 +1444,12 @@ async function verifyProofBundle(
     }
   }
 
-  const signerTrust = await evaluateSignerTrust(bundle, signatureValid, registryDoc);
+  const signerTrust = await evaluateSignerTrust(
+    bundle,
+    signatureValid,
+    registryDoc,
+    registryTrusted
+  );
   if (signerTrust === "revoked_key") {
     errors.push(`Publisher signing key '${bundle.publisher_kid}' is revoked`);
   }
@@ -1351,7 +1457,15 @@ async function verifyProofBundle(
   let publisherOrg = "N170";
   let notaries = [];
   let pinnedBrokerKeys = null;
-  if (registryDoc && typeof registryDoc === "object") {
+  if (!registryTrusted) {
+    notaries = [];
+    pinnedBrokerKeys = null;
+    if (registryDoc && typeof registryDoc === "object") {
+      warnings.push(
+        "Caller-supplied registry_doc is untrusted; configure N170_VERIFY_API_URL or host defaultRegistryDoc for official signer/notary trust"
+      );
+    }
+  } else if (registryDoc && typeof registryDoc === "object") {
     notaries = Array.isArray(registryDoc.notaries) ? registryDoc.notaries : [];
     pinnedBrokerKeys = registryDoc.pinned_broker_keys || null;
     for (const rec of registryDoc.keys || []) {
@@ -1606,25 +1720,32 @@ async function fetchJsonFromPinnedApi(url, fetchImpl, resourceLabel) {
   return parsed;
 }
 
-async function resolveDefaultRegistryDoc(explicitDoc, options) {
-  if (explicitDoc) {
-    return explicitDoc;
-  }
-  if (options.defaultRegistryDoc) {
-    return options.defaultRegistryDoc;
-  }
+async function resolveMcpToolRegistry(callerRegistryDoc, options = {}) {
+  const pinnedDoc = options.trustedRegistryDoc || options.defaultRegistryDoc || null;
   const apiBaseUrl = String(options.apiBaseUrl || process.env.N170_VERIFY_API_URL || "")
     .trim()
     .replace(/\/+$/, "");
-  if (!apiBaseUrl) {
-    return null;
+
+  if (pinnedDoc || apiBaseUrl) {
+    const extraWarnings = callerRegistryDoc
+      ? ["Ignored caller-supplied registry_doc because a pinned N170 Verify registry is configured"]
+      : [];
+    if (pinnedDoc) {
+      return { registryDoc: pinnedDoc, registryTrusted: true, extraWarnings };
+    }
+    const fetchImpl = options.fetchImpl || globalThis.fetch;
+    const fetchedDoc = await fetchJsonFromPinnedApi(
+      `${apiBaseUrl}/.well-known/n170-verify-keys.json`,
+      fetchImpl,
+      "/.well-known/n170-verify-keys.json"
+    );
+    return { registryDoc: fetchedDoc, registryTrusted: true, extraWarnings };
   }
-  const fetchImpl = options.fetchImpl || globalThis.fetch;
-  return fetchJsonFromPinnedApi(
-    `${apiBaseUrl}/.well-known/n170-verify-keys.json`,
-    fetchImpl,
-    "/.well-known/n170-verify-keys.json"
-  );
+
+  if (callerRegistryDoc) {
+    return { registryDoc: callerRegistryDoc, registryTrusted: false, extraWarnings: [] };
+  }
+  return { registryDoc: null, registryTrusted: true, extraWarnings: [] };
 }
 
 async function executeVerifyTool(name, rawArgs, options = {}) {
@@ -1663,15 +1784,19 @@ async function executeVerifyTool(name, rawArgs, options = {}) {
     if (!args.bundle || typeof args.bundle !== "object" || Array.isArray(args.bundle)) {
       throw new VerifyMcpError("invalid_arguments", "n170_verify_check_bundle requires bundle object");
     }
-    const resolvedRegistry = await resolveDefaultRegistryDoc(args.registry_doc, options);
+    const { registryDoc: resolvedRegistry, registryTrusted, extraWarnings } =
+      await resolveMcpToolRegistry(args.registry_doc, options);
     const result = await verifyProofBundle(args.bundle, {
       registryDoc: resolvedRegistry,
+      registryTrusted,
       chainHistory: args.chain_history || null,
       continuityLogLeaves: args.continuity_log_leaves || null,
       nowUtc: args.now_utc || null,
     });
+    const mergedWarnings = [...new Set([...extraWarnings, ...result.warnings])];
     return {
       ...result,
+      warnings: mergedWarnings,
       transcript_privacy_notice: TRANSCRIPT_PRIVACY_NOTICE,
     };
   }
@@ -1732,10 +1857,13 @@ async function executeVerifyTool(name, rawArgs, options = {}) {
       requestedLeaves = new Set(args.leaf_names);
     }
 
-    const resolvedRegistry = await resolveDefaultRegistryDoc(args.registry_doc, options);
+    const { registryDoc: resolvedRegistry, registryTrusted, extraWarnings } =
+      await resolveMcpToolRegistry(args.registry_doc, options);
     const verification = await verifyProofBundle(targetBundle, {
       registryDoc: resolvedRegistry,
+      registryTrusted,
     });
+    verification.warnings = [...new Set([...extraWarnings, ...verification.warnings])];
     const normalized = normalizeBundle(targetBundle);
     const disclosedPayloads = {};
     for (const leaf of normalized.disclosed_leaves) {
@@ -1890,6 +2018,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  BROKER_WITNESS_SNI_ALLOWLIST,
   CANONICAL_LEAF_NAMES,
   LEAF_DOMAIN_PREFIX,
   MCP_PROTOCOL_VERSION,

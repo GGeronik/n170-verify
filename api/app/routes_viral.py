@@ -27,6 +27,7 @@ from app.store import (
     GovernanceBlockedError,
     PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
+    ProofConflictError,
     ProofNotFoundError,
     ProofStore,
 )
@@ -1556,6 +1557,8 @@ def handle_post_verify_auto_detect(
                 bundle, opt_in_leaderboard=opt_in_leaderboard
             )
             rows_written = 1
+        except ProofConflictError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except ProofBundleInvalidError as exc:
             return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
     else:

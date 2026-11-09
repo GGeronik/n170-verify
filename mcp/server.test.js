@@ -250,10 +250,52 @@ log_leaves = [
     ContinuityLogLeaf(log_index=1, chain_id="chain-ibkr-1", blinded_account_tag=acct_tag, sequence_number=1, proof_hash=p1.proof_hash(), logged_at_utc=p1.issued_at_utc).to_dict(),
 ]
 
+w_evil1 = create_signed_witness_attestation(
+    notary_private_key_hex=notary1_kp.private_key_hex,
+    notary_id="notary-cf",
+    server_sni="evil-replica.example",
+    sanitized_request_target="/AccountManagement/FlexWebService/GetStatement?t=[REDACTED]&q=[REDACTED]&v=3",
+    redacted_headers=["Authorization: [REDACTED]"],
+    commitment_kind=TranscriptCommitmentKind.WHOLE_BODY_SHA256,
+    response_body_sha256=source_sha,
+    session_timestamp_utc="2026-02-01T00:01:00Z",
+)
+w_evil2 = create_signed_witness_attestation(
+    notary_private_key_hex=notary2_kp.private_key_hex,
+    notary_id="notary-pse",
+    server_sni="evil-replica.example",
+    sanitized_request_target="/AccountManagement/FlexWebService/GetStatement?t=[REDACTED]&q=[REDACTED]&v=3",
+    redacted_headers=["Authorization: [REDACTED]"],
+    commitment_kind=TranscriptCommitmentKind.WHOLE_BODY_SHA256,
+    response_body_sha256=source_sha,
+    session_timestamp_utc="2026-02-01T00:02:00Z",
+)
+bundle_evil_sni = create_signed_proof_bundle(
+    proof_id="prf-evil-sni",
+    issued_at_utc="2026-02-01T00:05:00Z",
+    publisher_kid="n170-active-2026",
+    publisher_private_key_hex=pub_kp.private_key_hex,
+    broker_id="ibkr",
+    blinded_account_tag=acct_tag,
+    account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+    provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+    environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+    claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+    source_body_sha256=source_sha,
+    period_start_utc="2026-01-01T00:00:00Z",
+    period_end_utc="2026-01-31T23:59:59Z",
+    base_currency="USD",
+    leaf_payloads=leaves,
+    witness_attestations=[w_evil1, w_evil2],
+)
+py_evil_sni_res = verify_proof_bundle(bundle_evil_sni, registry_doc=registry)
+
 jcs_probe = {"z": [1.0, -0.0, 1e-7, 1e21], "a": "hello\\nworld", "\\u00e9": True}
 print(json.dumps({
     "registry": registry.to_dict(),
     "bundle_witnessed": bundle_witnessed.to_dict(),
+    "bundle_evil_sni": bundle_evil_sni.to_dict(),
+    "py_evil_sni_result": py_evil_sni_res.to_dict(),
     "redacted_bundle": redacted_bundle.to_dict(),
     "py_redacted_result": py_res.to_dict(),
     "bundle_single_w": bundle_single_w.to_dict(),
@@ -266,7 +308,7 @@ print(json.dumps({
 }))
 `;
 
-  const stdout = execFileSync("python3", ["-B", "-c", pyScript], {
+  const stdout = execFileSync(process.env.PYTHON_BIN || "python3", ["-B", "-c", pyScript], {
     env: {
       ...process.env,
       PYTHONDONTWRITEBYTECODE: "1",
@@ -374,18 +416,20 @@ test("MCP JSON-RPC tools enforce additionalProperties=false, zero credentials/pa
   assert.deepEqual(capPayload.canonical_leaf_names, CANONICAL_LEAF_NAMES);
   assert.equal(capPayload.transcript_privacy_notice, TRANSCRIPT_PRIVACY_NOTICE);
 
-  const checkResp = await handleJsonRpcMessage({
-    jsonrpc: "2.0",
-    id: 3,
-    method: "tools/call",
-    params: {
-      name: "n170_verify_check_bundle",
-      arguments: {
-        bundle: FIXTURES.redacted_bundle,
-        registry_doc: FIXTURES.registry,
+  const checkResp = await handleJsonRpcMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "n170_verify_check_bundle",
+        arguments: {
+          bundle: FIXTURES.redacted_bundle,
+        },
       },
     },
-  });
+    { defaultRegistryDoc: FIXTURES.registry }
+  );
   assert.equal(checkResp.result.isError, false);
   const checkPayload = JSON.parse(checkResp.result.content[0].text);
   assert.equal(checkPayload.valid, true);
@@ -520,4 +564,132 @@ test("MCP inspect_public_proof & check_bundle resolve pinned apiBaseUrl via fetc
     "https://verify-api.internal/api/v1/proofs/prf-py-node-witnessed",
     "https://verify-api.internal/.well-known/n170-verify-keys.json",
   ]);
+});
+
+test("Red-team: caller-supplied arguments.registry_doc without host config is untrusted", async () => {
+  const untrustedResp = await handleJsonRpcMessage({
+    jsonrpc: "2.0",
+    id: 201,
+    method: "tools/call",
+    params: {
+      name: "n170_verify_check_bundle",
+      arguments: {
+        bundle: FIXTURES.redacted_bundle,
+        registry_doc: FIXTURES.registry,
+      },
+    },
+  });
+  assert.equal(untrustedResp.result.isError, false);
+  const payload = JSON.parse(untrustedResp.result.content[0].text);
+  assert.equal(payload.valid, true);
+  assert.equal(payload.signer_trust_status, "unrecognized_self_hosted_signer");
+  assert.equal(payload.effective_origin_assurance, "self_reported");
+  assert.notEqual(payload.signer_trust_status, "official_n170_hosted");
+  assert.notEqual(payload.effective_origin_assurance, "independently_witnessed_tls");
+  assert.ok(
+    payload.warnings.some((w) =>
+      w.includes("Caller-supplied registry_doc is untrusted")
+    )
+  );
+
+  // Revoked key in caller-supplied registry_doc still fails closed as revoked_key
+  const revokedReg = structuredClone(FIXTURES.registry);
+  revokedReg.keys[0].status = "revoked";
+  const revokedResp = await handleJsonRpcMessage({
+    jsonrpc: "2.0",
+    id: 202,
+    method: "tools/call",
+    params: {
+      name: "n170_verify_check_bundle",
+      arguments: {
+        bundle: FIXTURES.redacted_bundle,
+        registry_doc: revokedReg,
+      },
+    },
+  });
+  const revokedPayload = JSON.parse(revokedResp.result.content[0].text);
+  assert.equal(revokedPayload.valid, false);
+  assert.equal(revokedPayload.signer_trust_status, "revoked_key");
+});
+
+test("Red-team: caller-supplied arguments.registry_doc cannot override pinned defaultRegistryDoc or apiBaseUrl", async () => {
+  const emptyAttackerRegistry = {
+    updated_at_utc: "2026-02-01T00:00:00Z",
+    keys: [],
+    notaries: [],
+  };
+
+  // 1. Pinned defaultRegistryDoc wins over forged caller registry_doc
+  const respPinnedDoc = await handleJsonRpcMessage(
+    {
+      jsonrpc: "2.0",
+      id: 203,
+      method: "tools/call",
+      params: {
+        name: "n170_verify_check_bundle",
+        arguments: {
+          bundle: FIXTURES.redacted_bundle,
+          registry_doc: emptyAttackerRegistry,
+        },
+      },
+    },
+    { defaultRegistryDoc: FIXTURES.registry }
+  );
+  const pinnedPayload = JSON.parse(respPinnedDoc.result.content[0].text);
+  assert.equal(pinnedPayload.signer_trust_status, "official_n170_hosted");
+  assert.equal(pinnedPayload.effective_origin_assurance, "independently_witnessed_tls");
+  assert.ok(
+    pinnedPayload.warnings.includes(
+      "Ignored caller-supplied registry_doc because a pinned N170 Verify registry is configured"
+    )
+  );
+
+  // 2. Pinned apiBaseUrl wins over forged caller registry_doc containing attacker keys
+  const respPinnedApi = await handleJsonRpcMessage(
+    {
+      jsonrpc: "2.0",
+      id: 204,
+      method: "tools/call",
+      params: {
+        name: "n170_verify_check_bundle",
+        arguments: {
+          bundle: FIXTURES.redacted_bundle,
+          registry_doc: FIXTURES.registry,
+        },
+      },
+    },
+    {
+      apiBaseUrl: "https://verify-api.internal",
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => emptyAttackerRegistry,
+      }),
+    }
+  );
+  const apiPayload = JSON.parse(respPinnedApi.result.content[0].text);
+  assert.equal(apiPayload.signer_trust_status, "unrecognized_self_hosted_signer");
+  assert.equal(apiPayload.effective_origin_assurance, "self_reported");
+  assert.ok(
+    apiPayload.warnings.includes(
+      "Ignored caller-supplied registry_doc because a pinned N170 Verify registry is configured"
+    )
+  );
+});
+
+test("Red-team: mismatched witness server_sni (evil-replica.example) is rejected identically to Python", async () => {
+  const nodeRes = await verifyProofBundle(FIXTURES.bundle_evil_sni, {
+    registryDoc: FIXTURES.registry,
+  });
+  const pyRes = FIXTURES.py_evil_sni_result;
+  assert.equal(nodeRes.valid, true);
+  assert.equal(nodeRes.effective_origin_assurance, "operator_retrieved");
+  assert.equal(nodeRes.effective_origin_assurance, pyRes.effective_origin_assurance);
+  assert.equal(nodeRes.witness_quorum.valid_witness_count, 0);
+  assert.equal(nodeRes.witness_quorum.disjoint_quorum_size, 0);
+  assert.ok(
+    nodeRes.warnings.some((w) =>
+      w.includes("is not an official TLS endpoint for broker_id='ibkr'")
+    )
+  );
 });

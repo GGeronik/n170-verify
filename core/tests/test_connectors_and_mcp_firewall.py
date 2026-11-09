@@ -1794,5 +1794,105 @@ class TestOfflineCsvAndScraperBlock(unittest.TestCase):
         self.assertEqual(sc_ledger.flows[1].kind, FlowKind.INTERNAL_SUBACCOUNT_TRANSFER)
 
 
+
+class TestNoRedirectHttpTransportHardening(unittest.TestCase):
+    def test_live_http_transports_forbid_3xx_redirects_closed(self) -> None:
+        import io
+        from unittest import mock
+        import urllib.error
+        import urllib.request
+        from n170_verify.connectors.ccxt_crypto import _NoRedirectHandler, invoke_http_transport
+        from n170_verify.connectors.mcp_allowlist_firewall import (
+            _NoRedirectHandler as _McpNoRedirectHandler,
+            _default_urllib_post_transport,
+        )
+        from n170_verify.reference.eodhd_client import (
+            _NoRedirectHandler as _EodhdNoRedirectHandler,
+            _default_urllib_transport,
+        )
+
+        req = urllib.request.Request("https://api.binance.com/api/v3/account", method="GET")
+        for handler_cls in (_NoRedirectHandler, _McpNoRedirectHandler, _EodhdNoRedirectHandler):
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                handler_cls().redirect_request(
+                    req,
+                    io.BytesIO(b""),
+                    302,
+                    "Found",
+                    {},  # type: ignore[arg-type]
+                    "https://evil-replica.example/api/v3/account",
+                )
+            self.assertEqual(ctx.exception.code, 302)
+
+        # Default urllib path in invoke_http_transport maps redirect HTTPError -> ConnectorHttpError(302)
+        redirect_err = urllib.error.HTTPError(
+            "https://api.binance.com/api/v3/account",
+            302,
+            "HTTP 302 redirect forbidden for pinned live broker endpoint",
+            {"Location": "https://evil-replica.example"},  # type: ignore[arg-type]
+            io.BytesIO(b""),
+        )
+        with mock.patch("urllib.request.OpenerDirector.open", side_effect=redirect_err):
+            with self.assertRaises(ConnectorHttpError) as c_err:
+                invoke_http_transport(
+                    None,
+                    method="GET",
+                    url="https://api.binance.com/api/v3/account",
+                    headers={"X-MBX-APIKEY": "SENSITIVE_KEY_123"},
+                )
+            self.assertEqual(c_err.exception.status_code, 302)
+            self.assertNotIn("SENSITIVE_KEY_123", str(c_err.exception))
+
+            with self.assertRaises(McpFirewallError):
+                _default_urllib_post_transport("POST", "https://api.alpaca.markets/mcp", b"{}", {})
+
+            with self.assertRaises(urllib.error.HTTPError) as eodhd_err:
+                _default_urllib_transport("https://eodhd.com/api/eod/SPY.US", {})
+            self.assertEqual(eodhd_err.exception.code, 302)
+
+        # Client with .request() receives follow_redirects=False and rejects 3xx / is_redirect
+        seen_kwargs: dict[str, Any] = {}
+
+        class _MockRedirectClient:
+            def request(
+                self,
+                method: str,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                content: bytes | None = None,
+                timeout: float = 20.0,
+                follow_redirects: bool = True,
+            ) -> Any:
+                seen_kwargs["follow_redirects"] = follow_redirects
+
+                class _Resp:
+                    status_code = 307
+                    is_redirect = True
+                    headers = {"Location": "https://sandbox.alpaca.markets"}
+                    content = b""
+
+                return _Resp()
+
+        with self.assertRaises(ConnectorHttpError) as req_err:
+            invoke_http_transport(
+                _MockRedirectClient(),
+                method="GET",
+                url="https://api.alpaca.markets/v2/account",
+            )
+        self.assertFalse(seen_kwargs["follow_redirects"])
+        self.assertEqual(req_err.exception.status_code, 307)
+
+        # Callable transport returning 301/302/307 is also rejected closed
+        for code in (301, 302, 307):
+            with self.assertRaises(ConnectorHttpError) as call_err:
+                invoke_http_transport(
+                    lambda _m, _u, _h, _b, c=code: (c, {"Location": "https://evil.example"}, b""),
+                    method="GET",
+                    url="https://api.kraken.com/0/private/Balance",
+                )
+            self.assertEqual(call_err.exception.status_code, code)
+
+
 if __name__ == "__main__":
     unittest.main()

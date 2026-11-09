@@ -8,14 +8,19 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.config import ApiConfig
+from app.routes_sync import (
+    resolve_clamped_provider_approval_state,
+    verify_sync_authorization,
+)
 from app.store import (
     GovernanceBlockedError,
     PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
+    ProofConflictError,
     ProofStore,
     enforce_bundle_governance,
 )
-from app.sync_vault import SyncVault
+from app.sync_vault import SyncVault, SyncVaultConflictError
 from app.worker_isolation import (
     WorkerIsolationError,
     WorkerPipelineSpec,
@@ -72,12 +77,12 @@ def _resolve_environment_tier(payload: Mapping[str, Any]) -> EnvironmentTier:
 def _resolve_provider_approval_state(
     payload: Mapping[str, Any], config: ApiConfig
 ) -> ProviderApprovalState:
-    raw_state = payload.get("provider_approval_state")
-    if raw_state is not None:
-        return ProviderApprovalState(str(raw_state))
     broker_id = str(payload.get("broker_id", "")).strip().lower()
-    return config.connector_approval_states.get(
-        broker_id, ProviderApprovalState.OFFLINE_EXPORT_ONLY
+    return resolve_clamped_provider_approval_state(
+        payload.get("provider_approval_state"),
+        broker_id=broker_id,
+        config=config,
+        unhosted_default=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     )
 
 
@@ -88,6 +93,7 @@ def handle_post_verify(
     store: ProofStore,
     sync_vault: SyncVault,
     pipeline_spec: WorkerPipelineSpec = None,
+    headers: Mapping[str, str] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Execute ``POST /api/v1/verify`` inside a single-use ``spawn`` worker subprocess."""
     if not isinstance(payload, Mapping):
@@ -115,6 +121,11 @@ def handle_post_verify(
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
 
     persist_sync = bool(payload.get("persist_sync", False))
+    if persist_sync:
+        auth_ok, auth_status, auth_err = verify_sync_authorization(headers, config)
+        if not auth_ok:
+            return auth_status, auth_err
+
     publish_proof = bool(payload.get("publish_proof", False))
     opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
 
@@ -155,6 +166,11 @@ def handle_post_verify(
                 "detail": "persist_sync=True requires non-empty sync_credentials",
             }
         try:
+            sync_conn_id = (
+                str(payload["connection_id"])
+                if payload.get("connection_id") is not None
+                else None
+            )
             sync_rec = sync_vault.create_connection(
                 broker_id=bundle.broker_id,
                 credentials=sync_creds,
@@ -163,9 +179,12 @@ def handle_post_verify(
                 account_scope=bundle.account_scope,
                 provider_approval_state=bundle.provider_approval_state,
                 environment_tier=bundle.environment_tier,
+                connection_id=sync_conn_id,
             )
             sync_record_dict = sync_rec.to_dict()
             rows_written += 1
+        except SyncVaultConflictError as exc:
+            return 409, {"error": "sync_connection_conflict", "detail": str(exc)}
         except (ReadOnlyCapabilityViolationError, ValueError) as exc:
             return 422, {"error": "validation_error", "detail": str(exc)}
 
@@ -175,6 +194,8 @@ def handle_post_verify(
                 bundle, opt_in_leaderboard=opt_in_leaderboard
             )
             rows_written += 1
+        except ProofConflictError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except ProofBundleInvalidError as exc:
             return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
     else:

@@ -163,6 +163,28 @@ HttpTransportCallable = Callable[
 ]
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject all HTTP 3xx redirects on pinned live brokerage endpoints."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        hdrs: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del msg, newurl
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            f"HTTP {code} redirect forbidden for pinned live broker endpoint",
+            hdrs,
+            fp,
+        )
+
+
 def invoke_http_transport(
     transport: HttpTransportCallable | Any | None,
     method: str,
@@ -194,11 +216,18 @@ def invoke_http_transport(
     try:
         if transport is None:
             req = urllib.request.Request(url=url, data=body, headers=hdrs, method=method.upper())
+            opener = urllib.request.build_opener(_NoRedirectHandler())
             try:
-                with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+                with opener.open(req, timeout=timeout_seconds) as resp:
+                    status_int = int(resp.status)
+                    if 300 <= status_int < 400:
+                        raise ConnectorHttpError(
+                            status_int,
+                            f"HTTP {status_int} redirect forbidden for pinned live broker endpoint",
+                        )
                     resp_hdrs = {k.lower(): v for k, v in resp.headers.items()}
                     return HttpExchangeResponse(
-                        status_code=int(resp.status),
+                        status_code=status_int,
                         headers=resp_hdrs,
                         body=resp.read(),
                     )
@@ -209,26 +238,50 @@ def invoke_http_transport(
                     if http_exc.headers is not None
                     else {}
                 )
+                code_int = int(http_exc.code)
+                if 300 <= code_int < 400:
+                    raise ConnectorHttpError(
+                        code_int,
+                        f"HTTP {code_int} redirect forbidden for pinned live broker endpoint",
+                        headers=resp_hdrs,
+                    ) from None
                 return HttpExchangeResponse(
-                    status_code=int(http_exc.code),
+                    status_code=code_int,
                     headers=resp_hdrs,
                     body=err_body,
                 )
 
         if hasattr(transport, "request") and callable(transport.request):
-            # Seamless httpx.Client / requests.Session compatibility.
+            # Seamless httpx.Client / requests.Session compatibility (redirects disabled).
+            import inspect as _inspect
+
             kwargs: dict[str, Any] = {"headers": hdrs}
             if body is not None:
                 kwargs["content"] = body
+            try:
+                req_params = _inspect.signature(transport.request).parameters
+                if "follow_redirects" in req_params:
+                    kwargs["follow_redirects"] = False
+                elif "allow_redirects" in req_params:
+                    kwargs["allow_redirects"] = False
+            except (TypeError, ValueError):
+                pass
             raw_resp = transport.request(method.upper(), url, **kwargs)
+            status_int = int(raw_resp.status_code)
             resp_hdrs = {str(k).lower(): str(v) for k, v in raw_resp.headers.items()}
+            if bool(getattr(raw_resp, "is_redirect", False)) or (300 <= status_int < 400):
+                raise ConnectorHttpError(
+                    status_int,
+                    f"HTTP {status_int} redirect forbidden for pinned live broker endpoint",
+                    headers=resp_hdrs,
+                )
             raw_bytes = (
                 bytes(raw_resp.content)
                 if hasattr(raw_resp, "content")
                 else str(raw_resp.text).encode("utf-8")
             )
             return HttpExchangeResponse(
-                status_code=int(raw_resp.status_code),
+                status_code=status_int,
                 headers=resp_hdrs,
                 body=raw_bytes,
             )
@@ -236,9 +289,22 @@ def invoke_http_transport(
         if callable(transport):
             raw_out = transport(method.upper(), url, hdrs, body)
             if isinstance(raw_out, HttpExchangeResponse):
+                if 300 <= int(raw_out.status_code) < 400:
+                    raise ConnectorHttpError(
+                        int(raw_out.status_code),
+                        f"HTTP {int(raw_out.status_code)} redirect forbidden for pinned live broker endpoint",
+                        headers=raw_out.headers,
+                    )
                 return raw_out
             status, out_hdrs, out_payload = raw_out
+            status_int = int(status)
             norm_hdrs = {str(k).lower(): str(v) for k, v in (out_hdrs or {}).items()}
+            if 300 <= status_int < 400:
+                raise ConnectorHttpError(
+                    status_int,
+                    f"HTTP {status_int} redirect forbidden for pinned live broker endpoint",
+                    headers=norm_hdrs,
+                )
             if isinstance(out_payload, bytes):
                 payload_bytes = out_payload
             elif isinstance(out_payload, str):
@@ -246,13 +312,16 @@ def invoke_http_transport(
             else:
                 payload_bytes = json.dumps(out_payload, separators=(",", ":")).encode("utf-8")
             return HttpExchangeResponse(
-                status_code=int(status),
+                status_code=status_int,
                 headers=norm_hdrs,
                 body=payload_bytes,
             )
     except Exception as exc:
         if isinstance(exc, ReadOnlyCapabilityViolationError):
             raise
+        if isinstance(exc, ConnectorHttpError):
+            safe_err = redact_sensitive_text(str(exc), secrets_list)
+            raise ConnectorHttpError(exc.status_code, safe_err, headers=exc.headers) from None
         safe_url = redact_sensitive_text(url, secrets_list)
         safe_err = redact_sensitive_text(str(exc), secrets_list)
         raise ConnectorHttpError(0, f"HTTP {method.upper()} {safe_url} failed: {safe_err}") from None
