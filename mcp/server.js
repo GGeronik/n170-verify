@@ -1720,11 +1720,20 @@ async function fetchJsonFromPinnedApi(url, fetchImpl, resourceLabel) {
   return parsed;
 }
 
+function trimTrailingSlashes(value) {
+  const trimmed = String(value || "").trim();
+  let end = trimmed.length;
+  while (end > 0 && trimmed.charCodeAt(end - 1) === 47) {
+    end -= 1;
+  }
+  return trimmed.slice(0, end);
+}
+
 async function resolveMcpToolRegistry(callerRegistryDoc, options = {}) {
   const pinnedDoc = options.trustedRegistryDoc || options.defaultRegistryDoc || null;
-  const apiBaseUrl = String(options.apiBaseUrl || process.env.N170_VERIFY_API_URL || "")
-    .trim()
-    .replace(/\/+$/, "");
+  const apiBaseUrl = trimTrailingSlashes(
+    options.apiBaseUrl || process.env.N170_VERIFY_API_URL || ""
+  );
 
   if (pinnedDoc || apiBaseUrl) {
     const extraWarnings = callerRegistryDoc
@@ -1819,9 +1828,9 @@ async function executeVerifyTool(name, rawArgs, options = {}) {
       if (!/^[A-Za-z0-9._:-]{1,128}$/.test(args.proof_id)) {
         throw new VerifyMcpError("invalid_arguments", "proof_id violates allowed identifier pattern");
       }
-      const apiBaseUrl = String(options.apiBaseUrl || process.env.N170_VERIFY_API_URL || "")
-        .trim()
-        .replace(/\/+$/, "");
+      const apiBaseUrl = trimTrailingSlashes(
+        options.apiBaseUrl || process.env.N170_VERIFY_API_URL || ""
+      );
       if (typeof options.publicProofResolver === "function") {
         targetBundle = await options.publicProofResolver(args.proof_id);
       } else if (apiBaseUrl) {

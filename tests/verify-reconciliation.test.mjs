@@ -29,9 +29,12 @@ test('unknown, duplicate, missing and placeholder flags refuse without reflectin
 });
 
 test('filesystem errors are fixed codes without path or OS error disclosure', () => {
-  const secret = join(tmpdir(), 'missing-SECRET-ACCOUNT-532593.json');
-  const result = runCli(['--record', secret, '--event-sha256', 'a'.repeat(64), '--reconciliation', secret]);
-  assert.equal(result.exitCode, 3); assert.ok(!result.output.includes(secret)); assert.ok(!result.output.includes('ENOENT'));
+  const folder = mkdtempSync(join(tmpdir(), 'n170-missing-check-'));
+  try {
+    const secret = join(folder, 'missing-SECRET-ACCOUNT-532593.json');
+    const result = runCli(['--record', secret, '--event-sha256', 'a'.repeat(64), '--reconciliation', secret]);
+    assert.equal(result.exitCode, 3); assert.ok(!result.output.includes(secret)); assert.ok(!result.output.includes('ENOENT'));
+  } finally { rmSync(folder, { recursive: true, force: true }); }
 });
 
 test('symlink, directory and oversized signed inputs refuse before private parsing', () => {

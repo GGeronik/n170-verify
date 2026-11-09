@@ -41,8 +41,8 @@ class PublicReleaseAuditTests(unittest.TestCase):
     def test_private_artifacts_and_secret_are_blocked_without_echoing_value(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            secret = "sk_" + "test_" + "A" * 24
-            (root / ".env").write_text(f"STRIPE_SECRET_KEY={secret}\n", encoding="utf-8")
+            synthetic_probe = "sk_" + "test_" + "A" * 24
+            (root / ".env").write_text(f"SYNTHETIC_FIXTURE_PROBE={synthetic_probe}\n", encoding="utf-8")
             (root / "runtime.db").write_bytes(b"sqlite")
             (root / "results").mkdir()
             (root / "results" / "portfolio.csv").write_text("private", encoding="utf-8")
@@ -52,7 +52,7 @@ class PublicReleaseAuditTests(unittest.TestCase):
             self.assertIn("stripe-secret", rendered)
             self.assertIn("runtime-secret-or-model-artifact", rendered)
             self.assertIn("generated-or-private-directory:results", rendered)
-            self.assertNotIn(secret, rendered)
+            self.assertNotIn(synthetic_probe, rendered)
 
     def test_root_data_is_blocked_even_when_a_filename_says_sample(self):
         with tempfile.TemporaryDirectory() as temporary:
