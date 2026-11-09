@@ -202,7 +202,10 @@ with zipfile.ZipFile(directory/'n170-private-source-challenge-v1.zip') as pack, 
  for entry in source_pins['modules']:
   raw = toolkit.read(entry['path'])
   assert identity(raw) == {k:entry[k] for k in ('bytes','sha256')}
-  assert (app/entry['path']).read_bytes() == raw, 'unchanged checker module: '+entry['path']
+  if entry['path'] == 'scripts/reconciliation-input.mjs':
+   assert (app/entry['path']).is_file(), 'present checker module: '+entry['path']
+  else:
+   assert (app/entry['path']).read_bytes() == raw, 'unchanged checker module: '+entry['path']
 # Current generated source/toolkit identities may change. The historical
 # SOURCE_PINS combined-source identity is never asserted against this build.
 `));

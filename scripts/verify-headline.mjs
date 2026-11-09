@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Standalone adapters keep the original verifier output and status vocabularies.
-import { lstatSync, readFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyEvidence, compareEvidence } from './verify-record.mjs';
 import { verifyContinuity } from './verify-continuity.mjs';
@@ -88,7 +88,7 @@ export function runCli(args){
   if((receipt||reconciliation)&&!/^[a-f0-9]{64}$/.test(opts['--event-sha256']??''))return refusal('VERIFIER_INPUT_INVALID');
   if(receipt?(!trustedWitnessKeys.length||!allowedBrokerHosts.length):trustedWitnessKeys.length||allowedBrokerHosts.length||opts['--timestamp-proof'])return refusal('VERIFIER_INPUT_INVALID');
   if(opts['--event-sha256']&&!/^[a-f0-9]{64}$/.test(opts['--event-sha256']))return refusal('VERIFIER_INPUT_INVALID');
-  const read=(path,max,text)=>{const stat=lstatSync(path);if(!stat.isFile()||stat.size>max)throw 0;const b=readFileSync(path);if(b.length>max)throw 0;return text?new TextDecoder('utf-8',{fatal:true}).decode(b):b;};
+  const read=(path,max,text)=>{let fd;try{fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);const stat=fstatSync(fd);if(!stat.isFile()||stat.size>max)throw 0;const b=readFileSync(fd);if(b.length>max)throw 0;return text?new TextDecoder('utf-8',{fatal:true}).decode(b):b;}finally{if(fd!==undefined){try{closeSync(fd);}catch{}}}};
   let current,previous,reconciliationText,receiptBytes,otsProofBytes;
   try{current=read(positional[0],12000000,true);if(positional[1])previous=read(positional[1],12000000,true);if(reconciliation)reconciliationText=read(reconciliation,16000000,true);if(receipt)receiptBytes=read(receipt,65536,false);if(opts['--timestamp-proof'])otsProofBytes=read(opts['--timestamp-proof'],65536,false);}catch{return refusal('VERIFIER_INPUT_INVALID');}
   const result=verifyHeadline(current,{previous,reconciliationText,receiptBytes,otsProofBytes,eventSha256:opts['--event-sha256'],trustedWitnessKeys,allowedBrokerHosts});
