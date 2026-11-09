@@ -61,6 +61,51 @@ const CONTROL_ESCAPES: Readonly<Record<number, string>> = {
   0x5c: "\\\\",
 };
 
+const IBKR_WITNESS_SNIS: ReadonlySet<string> = new Set<string>([
+  "api.ibkr.com",
+  "ndcdyn.interactivebrokers.com",
+  "gdcdyn.interactivebrokers.com",
+  "www.interactivebrokers.com",
+]);
+
+const SCHWAB_WITNESS_SNIS: ReadonlySet<string> = new Set<string>([
+  "api.schwabapi.com",
+]);
+
+const CTRADER_WITNESS_SNIS: ReadonlySet<string> = new Set<string>([
+  "openapi.ctrader.com",
+  "live.ctraderapi.com",
+]);
+
+const COINBASE_WITNESS_SNIS: ReadonlySet<string> = new Set<string>([
+  "api.coinbase.com",
+  "api.exchange.coinbase.com",
+]);
+
+export const BROKER_WITNESS_SNI_ALLOWLIST: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  ibkr: IBKR_WITNESS_SNIS,
+  ibkr_flex: IBKR_WITNESS_SNIS,
+  ibkr_flex_offline: IBKR_WITNESS_SNIS,
+  ibkr_flex_web: IBKR_WITNESS_SNIS,
+  ibkr_oauth: IBKR_WITNESS_SNIS,
+  interactive_brokers: IBKR_WITNESS_SNIS,
+  schwab: SCHWAB_WITNESS_SNIS,
+  schwab_csv: SCHWAB_WITNESS_SNIS,
+  alpaca: new Set<string>(["api.alpaca.markets"]),
+  tradier: new Set<string>(["api.tradier.com"]),
+  trading212: new Set<string>(["live.trading212.com"]),
+  ctrader: CTRADER_WITNESS_SNIS,
+  ctrader_oauth: CTRADER_WITNESS_SNIS,
+  coinbase: COINBASE_WITNESS_SNIS,
+  coinbaseadvanced: COINBASE_WITNESS_SNIS,
+  coinbase_advanced: COINBASE_WITNESS_SNIS,
+  binance: new Set<string>(["api.binance.com"]),
+  kraken: new Set<string>(["api.kraken.com"]),
+  bybit: new Set<string>(["api.bybit.com"]),
+};
+
 const REDACTED_PLACEHOLDERS = new Set<string>([
   "[redacted]",
   "<redacted>",
@@ -1418,6 +1463,7 @@ export async function evaluateOriginAssurance(options: {
   brokerNativeSignature?: BrokerNativeSignature | null;
   pinnedBrokerKeys?: Readonly<Record<string, Readonly<Record<string, string>>>> | null;
   maxWitnessSkewSeconds?: number;
+  brokerId?: string | null;
 }): Promise<WitnessQuorumEvaluation> {
   const reasons: string[] = [];
   const normSourceSha = validateHexDigest(
@@ -1466,26 +1512,38 @@ export async function evaluateOriginAssurance(options: {
     };
   }
 
-  const brokerSigOk = await verifyBrokerNativeSignature(
-    options.brokerNativeSignature,
-    normSourceSha,
-    options.pinnedBrokerKeys,
-  );
-  if (brokerSigOk) {
-    return {
-      effective_origin_assurance: OriginAssurance.BROKER_SIGNED,
-      valid_witness_count: 0,
-      disjoint_quorum_size: 0,
-      distinct_org_count: 0,
-      distinct_asn_count: 0,
-      broker_signature_valid: true,
-      downgrade_reasons: [],
-    };
-  }
-  if (options.brokerNativeSignature != null) {
+  const brokerIdNorm =
+    options.brokerId != null ? options.brokerId.trim().toLowerCase() : null;
+  if (
+    options.brokerNativeSignature != null &&
+    brokerIdNorm != null &&
+    options.brokerNativeSignature.broker_id.trim().toLowerCase() !== brokerIdNorm
+  ) {
     reasons.push(
-      "BrokerNativeSignature failed verification against pinned broker keys",
+      `BrokerNativeSignature broker_id ${JSON.stringify(options.brokerNativeSignature.broker_id)} mismatches bundle broker_id ${JSON.stringify(options.brokerId)}`,
     );
+  } else {
+    const brokerSigOk = await verifyBrokerNativeSignature(
+      options.brokerNativeSignature,
+      normSourceSha,
+      options.pinnedBrokerKeys,
+    );
+    if (brokerSigOk) {
+      return {
+        effective_origin_assurance: OriginAssurance.BROKER_SIGNED,
+        valid_witness_count: 0,
+        disjoint_quorum_size: 0,
+        distinct_org_count: 0,
+        distinct_asn_count: 0,
+        broker_signature_valid: true,
+        downgrade_reasons: [],
+      };
+    }
+    if (options.brokerNativeSignature != null) {
+      reasons.push(
+        "BrokerNativeSignature failed verification against pinned broker keys",
+      );
+    }
   }
 
   const notaryMap = new Map(
@@ -1567,11 +1625,47 @@ export async function evaluateOriginAssurance(options: {
       continue;
     }
 
+    const sniKey = att.server_sni.trim().toLowerCase().replace(/\.+$/, "");
+    const targetTrimmed = att.sanitized_request_target.trim();
+    const targetLower = targetTrimmed.toLowerCase();
+    if (
+      targetLower.startsWith("http://") ||
+      targetLower.startsWith("https://") ||
+      targetTrimmed.startsWith("//")
+    ) {
+      let parsedHost = "";
+      try {
+        const candidateUrl = targetTrimmed.startsWith("//")
+          ? `https:${targetTrimmed}`
+          : targetTrimmed;
+        parsedHost = new URL(candidateUrl).hostname
+          .trim()
+          .toLowerCase()
+          .replace(/\.+$/, "");
+      } catch {
+        parsedHost = "";
+      }
+      if (parsedHost !== sniKey) {
+        reasons.push(
+          `Notary ${JSON.stringify(att.notary_id)} sanitized_request_target host mismatches server_sni ${JSON.stringify(sniKey)}`,
+        );
+        continue;
+      }
+    }
+    if (brokerIdNorm != null) {
+      const allowedSnis = BROKER_WITNESS_SNI_ALLOWLIST[brokerIdNorm];
+      if (!allowedSnis || !allowedSnis.has(sniKey)) {
+        reasons.push(
+          `Notary ${JSON.stringify(att.notary_id)} server_sni ${JSON.stringify(sniKey)} is not an official TLS endpoint for broker_id=${JSON.stringify(options.brokerId)}`,
+        );
+        continue;
+      }
+    }
+
     const tsMs = parseUtcTimestampMs(
       att.session_timestamp_utc,
       "WitnessAttestation.session_timestamp_utc",
     );
-    const sniKey = att.server_sni.trim().toLowerCase();
     const bucket = validBySni.get(sniKey) ?? [];
     bucket.push({ node: notary, tsMs });
     validBySni.set(sniKey, bucket);
@@ -2176,6 +2270,7 @@ export async function verifyProofBundle(
   const witnessEval = await evaluateOriginAssurance({
     sourceBodySha256: bundle.source_body_sha256,
     signerTrust,
+    brokerId: bundle.broker_id,
     publisherKid: bundle.publisher_kid,
     publisherPublicKeyHex: bundle.publisher_public_key_hex,
     publisherOrg,

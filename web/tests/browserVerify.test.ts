@@ -355,11 +355,11 @@ base_payloads = {
 body_sha = hashlib.sha256(b"statement-bytes-v3").hexdigest()
 acct_tag = hashlib.sha256(b"blinded-acct-v3").hexdigest()
 
-def make_att(kp, nid, target="/v2/accounts/[REDACTED]/positions?token=[REDACTED]", commit=TranscriptCommitmentKind.WHOLE_BODY_SHA256):
+def make_att(kp, nid, target="/v2/accounts/[REDACTED]/positions?token=[REDACTED]", commit=TranscriptCommitmentKind.WHOLE_BODY_SHA256, sni="api.alpaca.markets"):
     return create_signed_witness_attestation(
         notary_private_key_hex=kp.private_key_hex,
         notary_id=nid,
-        server_sni="api.alpaca.markets",
+        server_sni=sni,
         sanitized_request_target=target,
         redacted_headers=["APCA-API-KEY-ID: [REDACTED]"],
         commitment_kind=commit,
@@ -645,10 +645,68 @@ cases.append(pack_case("broken_chain_truncated_tail_in_tlog", chain_g, log_leave
 # 11. Enrolled account presenting unenrolled snapshot -> continuity_broken
 cases.append(pack_case("enrolled_account_presenting_unenrolled_snapshot", b_honest, log_leaves=trunc_leaves))
 
+# 12. Attacker-controlled server_sni ("evil-replica.example") rejected from witness quorum
+b_evil_sni = create_signed_proof_bundle(
+    proof_id="case-evil-sni",
+    issued_at_utc="2026-04-01T00:10:00Z",
+    publisher_kid="pub-live",
+    publisher_private_key_hex=pub_live.private_key_hex,
+    broker_id="ibkr",
+    blinded_account_tag=acct_tag,
+    account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+    provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+    environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+    claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+    source_body_sha256=body_sha,
+    period_start_utc="2026-03-01T00:00:00Z",
+    period_end_utc="2026-03-31T23:59:59Z",
+    base_currency="USD",
+    leaf_payloads=base_payloads,
+    witness_attestations=[
+        make_att(notary_a, "notary-a", sni="evil-replica.example"),
+        make_att(notary_b, "notary-b", sni="evil-replica.example"),
+    ],
+)
+cases.append(pack_case("evil_replica_sni_rejected", b_evil_sni))
+
+# 13. Mismatched sanitized_request_target URL host vs server_sni rejected from witness quorum
+b_target_mismatch = create_signed_proof_bundle(
+    proof_id="case-target-host-mismatch",
+    issued_at_utc="2026-04-01T00:10:00Z",
+    publisher_kid="pub-live",
+    publisher_private_key_hex=pub_live.private_key_hex,
+    broker_id="ibkr",
+    blinded_account_tag=acct_tag,
+    account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+    provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+    environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+    claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+    source_body_sha256=body_sha,
+    period_start_utc="2026-03-01T00:00:00Z",
+    period_end_utc="2026-03-31T23:59:59Z",
+    base_currency="USD",
+    leaf_payloads=base_payloads,
+    witness_attestations=[
+        make_att(
+            notary_a,
+            "notary-a",
+            target="https://evil-replica.example/v1/api/portfolio/subaccounts?token=[REDACTED]",
+            sni="api.ibkr.com",
+        ),
+        make_att(
+            notary_b,
+            "notary-b",
+            target="https://evil-replica.example/v1/api/portfolio/subaccounts?token=[REDACTED]",
+            sni="api.ibkr.com",
+        ),
+    ],
+)
+cases.append(pack_case("target_host_mismatch_rejected", b_target_mismatch))
+
 print(json.dumps(cases))
 `);
 
-  assert.equal(cases.length, 11);
+  assert.equal(cases.length, 13);
 
   for (const tc of cases) {
     const tsRes = await verifyProofBundle(tc.bundle, {
@@ -930,3 +988,101 @@ print(json.dumps({
   }
 });
 
+
+test("Unpinned or cross-broker witness server_sni is rejected from WebCrypto quorum", async () => {
+  const spoofedBundle = runPythonJson<VerifyProofBundle>(`
+import hashlib, json
+from n170_verify.contracts import (
+    AccountScope, EnvironmentTier, OriginAssurance, ProviderApprovalState, create_signed_proof_bundle,
+)
+from n170_verify.crypto import (
+    TranscriptCommitmentKind, create_signed_witness_attestation, generate_ed25519_keypair,
+)
+pub_live = generate_ed25519_keypair(bytes([11]) * 32)
+notary_a = generate_ed25519_keypair(bytes([31]) * 32)
+notary_b = generate_ed25519_keypair(bytes([32]) * 32)
+body_sha = hashlib.sha256(b"spoofed-sni-statement").hexdigest()
+acct_tag = hashlib.sha256(b"spoofed-sni-acct").hexdigest()
+payloads = {
+    "core_metrics": {"twr_decimal": 0.12, "observation_count": 35},
+    "indexed_curve": {"base_index": 100.0, "points": [{"timestamp_utc": "2026-01-01T00:00:00Z", "index_value": 100.0, "drawdown_pct": 0.0}]},
+    "reconciliation": {"status": "reconciled_within_tolerance"},
+    "coaching_and_context": {"odean_pgr_plr_spread": -0.02},
+    "capital_bracket": {"capital_bracket": "over_1m"},
+    "benchmark_alpha": {"benchmark_symbol": "SPY", "alpha_decimal": 0.03},
+    "delayed_closed_trades": {"embargo_days": 7, "trades": []},
+}
+atts = [
+    create_signed_witness_attestation(
+        notary_private_key_hex=kp.private_key_hex,
+        notary_id=nid,
+        server_sni="evil-replica.example",
+        sanitized_request_target="/v1/api/portfolio/subaccounts?token=[REDACTED]",
+        redacted_headers=["Authorization: [REDACTED]"],
+        commitment_kind=TranscriptCommitmentKind.WHOLE_BODY_SHA256,
+        response_body_sha256=body_sha,
+        session_timestamp_utc="2026-03-31T23:59:50Z",
+    )
+    for kp, nid in ((notary_a, "notary-a"), (notary_b, "notary-b"))
+]
+b = create_signed_proof_bundle(
+    proof_id="prf-spoofed-sni-web",
+    issued_at_utc="2026-04-01T00:10:00Z",
+    publisher_kid="pub-live",
+    publisher_private_key_hex=pub_live.private_key_hex,
+    broker_id="ibkr",
+    blinded_account_tag=acct_tag,
+    account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+    provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+    environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+    claimed_origin_assurance=OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+    source_body_sha256=body_sha,
+    period_start_utc="2026-03-01T00:00:00Z",
+    period_end_utc="2026-03-31T23:59:59Z",
+    base_currency="USD",
+    leaf_payloads=payloads,
+    witness_attestations=atts,
+)
+print(json.dumps(b.to_dict()))
+`);
+
+  const reg = runPythonJson<PublisherKeyRegistryDocument>(`
+import hashlib, json
+from n170_verify.crypto import (
+    NotaryNodeInfo, PublisherKeyRecord, PublisherKeyRegistryDocument,
+    create_signed_c2sp_checkpoint, generate_ed25519_keypair,
+)
+pub_live = generate_ed25519_keypair(bytes([11]) * 32)
+notary_a = generate_ed25519_keypair(bytes([31]) * 32)
+notary_b = generate_ed25519_keypair(bytes([32]) * 32)
+witness_cosig = generate_ed25519_keypair(bytes([41]) * 32)
+ckpt = create_signed_c2sp_checkpoint(
+    origin="n170.verify/test/v3",
+    size=42,
+    root_hash_hex=hashlib.sha256(b"ckpt-sni-test").hexdigest(),
+    publisher_kid="pub-live",
+    publisher_private_key_hex=pub_live.private_key_hex,
+    witness_signers=[("w1", witness_cosig.private_key_hex, witness_cosig.public_key_hex, "2026-04-01T00:05:00Z")],
+)
+doc = PublisherKeyRegistryDocument(
+    updated_at_utc="2026-04-01T00:05:00Z",
+    keys=[PublisherKeyRecord(publisher_kid="pub-live", public_key_hex=pub_live.public_key_hex, status="active", not_before_utc="2025-01-01T00:00:00Z", issuer_org="N170")],
+    notaries=[
+        NotaryNodeInfo(notary_id="notary-a", public_key_hex=notary_a.public_key_hex, operator_org="PSE-Notary-Alpha", asn="AS13335"),
+        NotaryNodeInfo(notary_id="notary-b", public_key_hex=notary_b.public_key_hex, operator_org="Swiss-Witness-Beta", asn="AS16509"),
+    ],
+    checkpoint=ckpt,
+)
+print(json.dumps(doc.to_dict()))
+`);
+
+  const res = await verifyProofBundle(spoofedBundle, { registryDoc: reg });
+  assert.notEqual(res.effective_origin_assurance, OriginAssurance.INDEPENDENTLY_WITNESSED_TLS);
+  assert.equal(res.witness_quorum.valid_witness_count, 0);
+  assert.equal(res.witness_quorum.disjoint_quorum_size, 0);
+  assert.ok(
+    res.witness_quorum.downgrade_reasons.some((r) =>
+      r.includes("is not an official TLS endpoint"),
+    ),
+  );
+});

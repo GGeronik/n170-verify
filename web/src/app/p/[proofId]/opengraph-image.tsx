@@ -1,5 +1,9 @@
 import { ImageResponse } from "next/og";
-import { safeDecodeURIComponent } from "@/lib/apiClient.ts";
+import {
+  fetchActiveRegistryDocument,
+  resolveShowcaseOrLiveProfile,
+  safeDecodeURIComponent,
+} from "@/lib/apiClient.ts";
 import { verifyProofBundle } from "@/lib/browserVerify.ts";
 import {
   ACCOUNT_SCOPE_META,
@@ -10,12 +14,7 @@ import {
   SIGNER_TRUST_META,
   extractTypedLeaves,
 } from "@/lib/contracts.ts";
-import {
-  BUNDLE_INSTITUTIONAL_FUND,
-  DEMO_CONTINUITY_LOG_LEAVES,
-  DEMO_REGISTRY_DOCUMENT,
-  findShowcaseProfile,
-} from "@/lib/demoFixtures.ts";
+import { DEMO_CONTINUITY_LOG_LEAVES } from "@/lib/demoFixtures.ts";
 
 export const alt = "N170 Verify v3 Institutional Performance Tear Sheet";
 export const size = {
@@ -30,12 +29,25 @@ export default async function OpenGraphImage({
   params: Promise<{ proofId: string }>;
 }) {
   const { proofId } = await params;
-  const profile = findShowcaseProfile(safeDecodeURIComponent(proofId));
-  const bundle = profile?.bundle ?? BUNDLE_INSTITUTIONAL_FUND;
+  const cleanedId = safeDecodeURIComponent(proofId);
+  const [{ registryDoc }, profile] = await Promise.all([
+    fetchActiveRegistryDocument(),
+    resolveShowcaseOrLiveProfile(cleanedId),
+  ]);
+  if (!profile) {
+    return new Response("Proof not found", {
+      status: 404,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
+  }
+  const bundle = profile.bundle;
 
   const verified = await verifyProofBundle(bundle, {
-    registryDoc: DEMO_REGISTRY_DOCUMENT,
-    chainHistory: profile?.chainHistory ?? [],
+    registryDoc,
+    chainHistory: profile.chainHistory,
     continuityLogLeaves:
       bundle.proof_id === "prf-inst-alpha-012" ? DEMO_CONTINUITY_LOG_LEAVES : null,
   });
@@ -95,7 +107,7 @@ export default async function OpenGraphImage({
               N170 VERIFY v3
             </div>
             <div style={{ fontSize: "20px", color: "#8A919E" }}>
-              {profile?.handle ?? bundle.proof_id} • Institutional Cryptographic Proof
+              {profile.handle || bundle.proof_id} • Institutional Cryptographic Proof
             </div>
           </div>
           <div
@@ -117,7 +129,7 @@ export default async function OpenGraphImage({
 
         <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
           <div style={{ fontSize: "44px", fontWeight: 600, color: "#F3F4F6" }}>
-            {profile?.strategyTitle ?? `Verified Tear Sheet (${bundle.proof_id})`}
+            {profile.strategyTitle || `Verified Tear Sheet (${bundle.proof_id})`}
           </div>
 
           <div style={{ display: "flex", gap: "24px" }}>
