@@ -110,8 +110,8 @@ class TradierReadOnlyAdapter(ReadOnlyBrokerAdapter):
             require_live=require_live,
             label="Tradier",
         )
-        host = (urllib.parse.urlsplit(cleaned_base).hostname or "").lower()
-        if "sandbox.tradier.com" in host:
+        host = (urllib.parse.urlsplit(cleaned_base).hostname or "").rstrip(".").lower()
+        if host == "sandbox.tradier.com" or host.endswith(".sandbox.tradier.com"):
             raise PaperOrSandboxAccountRejectedError(
                 f"Tradier host {host!r} rejected: sandbox.tradier.com and non-live endpoints are blocked"
             )

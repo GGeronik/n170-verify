@@ -30,9 +30,29 @@ import re
 import subprocess
 from typing import Any
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from n170_verify.contracts import ReadOnlyCapabilityViolationError
+
+
+def _extract_candidate_hostname(candidate: str) -> str:
+    raw = candidate.strip().lower()
+    if not raw:
+        return ""
+    parsed = urllib.parse.urlsplit(raw if "://" in raw else f"https://{raw}")
+    return (parsed.hostname or "").rstrip(".").lower()
+
+
+def _hostname_matches_any_domain(candidate: str, domains: Sequence[str]) -> bool:
+    host = _extract_candidate_hostname(candidate)
+    if not host:
+        return False
+    for domain in domains:
+        norm = domain.strip().lower().rstrip(".")
+        if host == norm or host.endswith(f".{norm}"):
+            return True
+    return False
 
 
 MCP_PROTOCOL_VERSION = "2025-11-25"
@@ -886,7 +906,7 @@ class McpAllowlistFirewall:
                         "ALPACA_PAPER_TRADE=true is rejected when live production provenance is required"
                     )
                 if upper_k in {"APCA_API_BASE_URL", "ALPACA_BASE_URL", "ALPACA_API_BASE_URL"}:
-                    if "paper-api.alpaca.markets" in lower_v or "sandbox" in lower_v:
+                    if _hostname_matches_any_domain(lower_v, ("paper-api.alpaca.markets",)) or "sandbox" in lower_v:
                         raise McpFirewallError(
                             "Paper/sandbox Alpaca API URL rejected by MCP firewall"
                         )
@@ -898,7 +918,7 @@ class McpAllowlistFirewall:
                     raise McpFirewallError(
                         "Trading 212 demo/paper environment rejected by MCP firewall"
                     )
-                if "demo.trading212.com" in lower_v:
+                if _hostname_matches_any_domain(lower_v, ("demo.trading212.com",)):
                     raise McpFirewallError("demo.trading212.com rejected by MCP firewall")
 
             sanitized[key] = val
@@ -1190,8 +1210,9 @@ class StreamableHttpMcpFirewallClient:
     ) -> None:
         if not endpoint_url.startswith("https://"):
             raise McpFirewallError("Streamable HTTP MCP endpoint must use https://")
-        lower_url = endpoint_url.lower()
-        if "paper-api.alpaca.markets" in lower_url or "demo.trading212.com" in lower_url:
+        if _hostname_matches_any_domain(
+            endpoint_url, ("paper-api.alpaca.markets", "demo.trading212.com")
+        ):
             raise McpFirewallError("Paper/demo MCP endpoint URLs are rejected")
 
         secrets_list = list(extra_secrets)

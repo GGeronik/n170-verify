@@ -673,11 +673,11 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             ts_ms = str(int(self._now_fn() * 1000))
             recv_window = "5000"
             sign_payload = f"{ts_ms}{self._api_key}{recv_window}{qs}"
-            sig = hmac.new(
+            sig = hmac.digest(
                 self._api_secret.encode("utf-8"),
                 sign_payload.encode("utf-8"),
-                hashlib.sha256,
-            ).hexdigest()
+                "sha256",
+            ).hex()
             url = f"{self._base_url}{path}" + (f"?{qs}" if qs else "")
             headers["X-BAPI-API-KEY"] = self._api_key
             headers["X-BAPI-TIMESTAMP"] = ts_ms

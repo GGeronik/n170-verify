@@ -269,7 +269,17 @@ async function statisticsMarkup(props) {
   }
   return renderPanel(props);
 }
-const visibleText = html => html.replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
+function visibleText(html) {
+  let out = '';
+  let inTag = false;
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+    if (ch === '<') inTag = true;
+    else if (ch === '>') inTag = false;
+    else if (!inTag) out += ch;
+  }
+  return out;
+}
 const number = value => Number(value.toPrecision(6)).toString();
 
 test('statistics panel renders ordered declarative rows with six significant digits', async () => {
