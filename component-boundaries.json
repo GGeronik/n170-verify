@@ -24,7 +24,14 @@
       "scripts/verify-dkim-statement.mjs",
       "scripts/verify-ech0196-statement.mjs",
       "scripts/verify-tlog.mjs",
-      "scripts/witness-fetch.mjs"
+      "scripts/witness-fetch.mjs",
+      "core/",
+      "api/",
+      "mcp/",
+      "web/",
+      "tests_e2e/",
+      "docker-compose.yml",
+      "scripts/public_release_audit.py"
     ],
     "notes": "Original N170 code only. Component LICENSE and NOTICE files are retained. Names and marks receive no additional license."
   },

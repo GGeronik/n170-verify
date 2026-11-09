@@ -1,0 +1,39 @@
+{
+  "name": "@n170/verify-web",
+  "version": "3.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "N170 Verify v3 — Open-source cryptographic brokerage verification, selective Merkle disclosure, and trader coaching studio.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src",
+    "test": "node --test tests/browserVerify.test.ts tests/ceremonyAndShare.test.ts tests/wave4ViralAndMath.test.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^0.475.0",
+    "next": "^15.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.0",
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.21.0",
+    "eslint-config-next": "^15.2.0",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.23"
+  }
+}

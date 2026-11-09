@@ -94,6 +94,15 @@ The [public validation guide](docs/release-validation.md) describes reproducible
 
 Verify original received archive bytes against a separately retained SHA-256 before extracting or editing, as described in [README.md](README.md). The public build hashes the current explicit inventory into a new artifact; an edited source tree does not have to match the original immutable receipt. Preserve both identities. Archive integrity checks do not authenticate the producer, make dependencies trustworthy, or detect a producer that intentionally rebuilds different internally consistent unsigned evidence.
 
+## Full-stack v3 platform controls and boundaries
+
+The modular v3 packages in [core/](core/), [api/](api/), [mcp/](mcp/), and [web/](web/) follow the same separation between cryptographic integrity and unauthenticated real-world claims:
+
+- **Dynamic origin assurance and environment gating:** `OriginAssurance` is computed by the verifier (`core/n170_verify/pipeline.py`, `mcp/server.js`, and `web/src/lib/browserVerify.ts`) from cryptographic signatures or multi-witness (`k >= 2` distinct operators) TLS attestations, never from self-declared bundle fields. Paper, demo, and sandbox endpoints or account prefixes (`DU*`, `PA*`, sandbox hosts, demo/CFD scopes) are rejected from `live_production`.
+- **Subprocess worker isolation and opt-in vault encryption:** `POST /api/v1/verify` runs portfolio verification inside a one-shot `spawn` worker subprocess (`RLIMIT_CORE=0`, `PR_SET_DUMPABLE=0` where supported by the host kernel, scrubbed environment variables) and discards raw statement bytes when the worker exits (`no_persistent_storage` by default). Opt-in recurring sync (`api/app/sync_vault.py`) encrypts credentials under per-enrollment AES-256-GCM envelope keys and performs cryptographic key erasure upon enrollment deletion.
+- **Zero-secret MCP firewall and outbound SSRF controls:** `mcp/server.js` enforces `McpAllowlistFirewall` so broker tokens, cookies, filesystem paths, and arbitrary URLs are rejected in MCP tool arguments. Outbound reference and connector clients restrict requests to pinned HTTPS endpoints and reject loopback, link-local, and RFC 1918 targets unless explicitly configured in local tests.
+- **Salted selective disclosure and release boundary auditing:** Each `VerifyProofBundle` leaf carries an independent 256-bit random salt with domain separation (`0x00` leaf, `0x01` internal node) so redacted leaves cannot be brute-forced from the Merkle root alone; disclosed leaves remain investment-sensitive data chosen by the holder. [scripts/public_release_audit.py](scripts/public_release_audit.py) scans tracked files before release to block private paths, secret material, unreviewed binaries, and internal artifacts.
+
 ## Good-faith research
 
 Use a local copy or deployment you control and synthetic or explicitly authorized data. Do not access other people's records/accounts, degrade services, contact financial providers on the project's behalf or test third-party services without authorization. This policy grants no authority over other systems and makes no legal safe-harbor promise.
