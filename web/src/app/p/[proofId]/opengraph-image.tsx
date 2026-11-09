@@ -51,6 +51,15 @@ export default async function OpenGraphImage({
     continuityLogLeaves:
       bundle.proof_id === "prf-inst-alpha-012" ? DEMO_CONTINUITY_LOG_LEAVES : null,
   });
+  if (!verified.valid || !verified.merkle_valid || !verified.signature_valid) {
+    return new Response("Proof bundle failed cryptographic verification", {
+      status: 422,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
+  }
 
   const leaves = extractTypedLeaves(bundle);
   const twrPct =
@@ -147,7 +156,7 @@ export default async function OpenGraphImage({
               <span style={{ fontSize: "15px", color: "#8A919E" }}>
                 CUMULATIVE TWR (INDEXED-100)
               </span>
-              <span style={{ fontSize: "44px", fontWeight: 700, color: "#10B981" }}>
+              <span style={{ fontSize: "44px", fontWeight: 700, color: (leaves.coreMetrics?.twr_decimal ?? 0) < 0 ? "#EF4444" : "#10B981" }}>
                 {twrPct}
               </span>
             </div>
