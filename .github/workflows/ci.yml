@@ -27,7 +27,7 @@ jobs:
       - name: Enforce public release boundary and license invariants
         run: python3 scripts/public_release_audit.py --root . --tracked --require-license
 
-  build-and-test:
+  public-browser-archive:
     name: Public browser archive build and policy checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -159,3 +159,18 @@ jobs:
         run: |
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.yml --profile ollama config --quiet
+
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - public-release-audit
+      - public-browser-archive
+      - python-verify-platform
+      - mcp-zero-secret
+      - web-obsidian-studio
+      - docker-compose-config
+    steps:
+      - name: Verify full N170 Verify CI matrix passed
+        run: echo "All 6 N170 Verify CI gates succeeded."
