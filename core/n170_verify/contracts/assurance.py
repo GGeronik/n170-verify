@@ -319,6 +319,8 @@ class ProviderApprovalState(str, Enum):
     USER_KEY_SELF_ATTESTED = "user_key_self_attested"
     PENDING_PROVIDER_APPROVAL = "pending_provider_approval"
     OFFLINE_EXPORT_ONLY = "offline_export_only"
+    AGGREGATOR_RELAYED = "aggregator_relayed"
+    PUBLIC_API_PERMISSIONLESS = "public_api_permissionless"
 
 
 class EnvironmentTier(str, Enum):
@@ -326,6 +328,7 @@ class EnvironmentTier(str, Enum):
 
     LIVE_PRODUCTION = "live_production"
     PAPER_OR_SANDBOX_REJECTED = "paper_or_sandbox_rejected"
+    UNVERIFIED_OFFLINE = "unverified_offline"
 
 
 class SignerTrustStatus(str, Enum):
