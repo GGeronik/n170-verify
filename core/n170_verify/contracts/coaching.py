@@ -13,8 +13,7 @@ from n170_verify.contracts.ledger import AssetClass
 
 
 DEFAULT_COUNTERFACTUAL_DISCLAIMER = (
-    "HYPOTHETICAL COACHING SIMULATION — Separate from verified realized performance; "
-    "does not represent actual trading results (SEC/FINRA/GIPS)."
+    "Hypothetical simulation. Not actual trading results."
 )
 
 

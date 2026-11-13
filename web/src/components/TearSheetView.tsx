@@ -233,7 +233,7 @@ export function TearSheetView({
       </div>
 
       {/* ====================================================================
-          2-Page Institutional Archival Print Layout (Active ONLY on Cmd+P)
+          2-Page Archival Print Layout (Active ONLY on Cmd+P)
           ==================================================================== */}
       <div className="print-only hidden space-y-5">
         <PerformanceTab bundle={bundle} leaves={leaves} />

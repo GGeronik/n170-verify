@@ -65,11 +65,12 @@ class ApiConfig:
     additional_registry_keys: list[PublisherKeyRecord] = field(default_factory=list)
     trusted_notaries: list[NotaryNodeInfo] = field(default_factory=default_pinned_notaries)
     pinned_broker_keys: dict[str, dict[str, str]] = field(default_factory=dict)
-    checkpoint_origin: str = "verify.n170.ai/continuity-log/v3"
+    checkpoint_origin: str = "verify.example.org/continuity-log/v3"
     checkpoint_witness_signers: list[tuple[str, str, str, str]] = field(default_factory=list)
     l2_anchor: L2BatchAnchor | None = None
 
     hosted_multi_user_mode: bool = True
+    allow_hosted_signing: bool = False
     connector_approval_states: dict[str, ProviderApprovalState] = field(
         default_factory=lambda: dict(DEFAULT_CONNECTOR_APPROVAL_STATES)
     )
@@ -128,6 +129,10 @@ class ApiConfig:
         )
         hosted_raw = os.environ.get("N170_VERIFY_HOSTED_MODE", "true").strip().lower()
         hosted = hosted_raw in {"1", "true", "yes", "on"}
+        hosted_signing_raw = (
+            os.environ.get("N170_VERIFY_ALLOW_HOSTED_SIGNING", "false").strip().lower()
+        )
+        allow_hosted_signing = hosted_signing_raw in {"1", "true", "yes", "on"}
         eodhd_key = os.environ.get("EODHD_API_KEY", "").strip()
         sync_token = os.environ.get("N170_VERIFY_SYNC_API_TOKEN", "").strip()
 
@@ -140,11 +145,18 @@ class ApiConfig:
         else:
             trusted_notaries = []
 
+        checkpoint_origin = (
+            os.environ.get("N170_VERIFY_CHECKPOINT_ORIGIN", "").strip()
+            or "verify.example.org/continuity-log/v3"
+        )
+
         return cls(
             publisher_keypair=keypair,
             publisher_kid=os.environ.get("N170_VERIFY_PUBLISHER_KID", "").strip(),
             trusted_notaries=trusted_notaries,
+            checkpoint_origin=checkpoint_origin,
             hosted_multi_user_mode=hosted,
+            allow_hosted_signing=allow_hosted_signing,
             db_path=os.environ.get("N170_VERIFY_DB_PATH", ":memory:").strip() or ":memory:",
             sync_db_path=(
                 os.environ.get("N170_VERIFY_SYNC_DB_PATH", ":memory:").strip() or ":memory:"

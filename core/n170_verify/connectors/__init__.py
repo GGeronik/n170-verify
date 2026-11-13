@@ -102,6 +102,20 @@ from n170_verify.connectors.registry import (
     list_all_connector_descriptors,
     list_connector_descriptors,
 )
+from n170_verify.connectors.snaptrade import (
+    DEFAULT_SNAPTRADE_USER_AGENT,
+    MAX_SNAPTRADE_POC_SLOTS,
+    SNAPTRADE_BLOCKED_MUTATING_ENDPOINTS,
+    SNAPTRADE_LIVE_BASE_URL,
+    SnapTradeAuthenticationError,
+    SnapTradeConnectionSlot,
+    SnapTradeError,
+    SnapTradeReadOnlyAdapter,
+    SnapTradeServiceError,
+    SnapTradeSlotCapExceededError,
+    SnapTradeSlotManager,
+    get_global_snaptrade_slot_manager,
+)
 from n170_verify.connectors.statement_csv import (
     ALLOWED_DETECTED_FORMATS,
     DegiroOfflineCsvAdapter,
@@ -137,6 +151,18 @@ from n170_verify.connectors.trading212 import (
 )
 
 __all__ = [
+    "DEFAULT_SNAPTRADE_USER_AGENT",
+    "MAX_SNAPTRADE_POC_SLOTS",
+    "SNAPTRADE_BLOCKED_MUTATING_ENDPOINTS",
+    "SNAPTRADE_LIVE_BASE_URL",
+    "SnapTradeAuthenticationError",
+    "SnapTradeConnectionSlot",
+    "SnapTradeError",
+    "SnapTradeReadOnlyAdapter",
+    "SnapTradeServiceError",
+    "SnapTradeSlotCapExceededError",
+    "SnapTradeSlotManager",
+    "get_global_snaptrade_slot_manager",
     "ALLOWED_DETECTED_FORMATS",
     "ALLOWED_JSONRPC_METHODS",
     "ALPACA_ALLOWED_TOOL_SCHEMAS",

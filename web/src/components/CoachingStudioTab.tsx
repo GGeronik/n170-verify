@@ -262,7 +262,7 @@ export function CoachingStudioTab({
                 </h3>
               </div>
               <span className="rounded border border-hairline-strong bg-elevated px-2 py-0.5 font-mono text-[10px] text-signal-emerald tabular-nums">
-                0–100 Scale
+                0-100 Scale
               </span>
             </div>
 
@@ -279,7 +279,7 @@ export function CoachingStudioTab({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="badge-ochre inline-flex items-center gap-1.5 rounded px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider">
                   <AlertTriangle className="h-3 w-3" />
-                  Hypothetical Coaching Simulation — Separate from Verified Realized Record
+                  Hypothetical Coaching Simulation: Separate from Verified Realized Record
                 </span>
               </div>
               <h3 className="editorial-serif mt-1.5 text-xl text-ink sm:text-2xl">
@@ -484,10 +484,10 @@ export function CoachingStudioTab({
             <p className="mt-1.5 text-[11.5px] text-ink-secondary tabular-nums">
               {odeanSpread > 0.1
                 ? `Positive spread indicates early winner cutting (winners held ${
-                    beh.winner_vs_loser_hold_ratio?.toFixed(2) ?? "—"
+                    beh.winner_vs_loser_hold_ratio?.toFixed(2) ?? "-"
                   }x relative to stopped losers).`
                 : `Disciplined negative/neutral spread: winners held ${
-                    beh.winner_vs_loser_hold_ratio?.toFixed(2) ?? "—"
+                    beh.winner_vs_loser_hold_ratio?.toFixed(2) ?? "-"
                   }x longer than losers.`}
             </p>
           </div>
@@ -530,18 +530,18 @@ export function CoachingStudioTab({
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <SmallKpi
               label="Win Rate"
-              value={beh.win_rate != null ? `${(beh.win_rate * 100).toFixed(1)}%` : "—"}
+              value={beh.win_rate != null ? `${(beh.win_rate * 100).toFixed(1)}%` : "-"}
             />
             <SmallKpi
               label="Profit Factor"
-              value={beh.profit_factor != null ? beh.profit_factor.toFixed(2) : "—"}
+              value={beh.profit_factor != null ? beh.profit_factor.toFixed(2) : "-"}
             />
             <SmallKpi
               label="Median Hold"
               value={
                 beh.median_holding_hours != null
                   ? `${beh.median_holding_hours.toFixed(1)}h`
-                  : "—"
+                  : "-"
               }
             />
             <SmallKpi
@@ -549,7 +549,7 @@ export function CoachingStudioTab({
               value={
                 beh.return_concentration_top5_pct != null
                   ? `${beh.return_concentration_top5_pct.toFixed(1)}%`
-                  : "—"
+                  : "-"
               }
             />
           </div>

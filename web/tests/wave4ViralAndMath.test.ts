@@ -139,7 +139,7 @@ test("16:9 & 9:16 QR share cards and Discord /verify embed strictly bind to WebC
   const card169 = renderShareCard16x9Svg(BUNDLE_DISCREPANCY_XRAY, downgradedVer, {
     title: 'Event Swing <script>alert("xss")</script>',
     handle: "@xray_audit",
-    originUrl: "https://verify.n170.io",
+    originUrl: "https://verify.example.org",
   });
   assert.ok(card169.includes('width="1280" height="720"'));
   assert.ok(card169.includes("Operator-Retrieved (Downgraded)"));
@@ -188,31 +188,31 @@ test("XSS sanitizers strip HTML tags, quotes, control chars, and javascript: URI
     "alert(1) evil2() evil() x",
   );
   assert.equal(sanitizeHandleInput("  <svg>@quant_trader!</svg> "), "@quant_trader");
-  assert.equal(sanitizeOriginUrl("javascript:alert(1)"), "https://verify.n170.io");
+  assert.equal(sanitizeOriginUrl("javascript:alert(1)"), "https://verify.example.org");
   assert.equal(
-    sanitizeOriginUrl("https://verify.n170.io/subpath/ignored"),
-    "https://verify.n170.io",
+    sanitizeOriginUrl("https://verify.example.org/subpath/ignored"),
+    "https://verify.example.org",
   );
 
   const challenge = buildPoliteChallengeReply({
     handle: '<script>bad</script>alpha_desk',
     claimText: '"+210% YTD" <iframe src="evil">',
     tone: "concise_reply",
-    originUrl: "https://verify.n170.io",
+    originUrl: "https://verify.example.org",
   });
   assert.equal(challenge.sanitizedHandle, "@badalpha_desk");
   assert.equal(challenge.replyText.includes("<"), false);
-  assert.ok(challenge.replyText.includes("100% private"));
+  assert.ok(challenge.replyText.includes("kept private"));
 
   const { iframeHtml } = buildSubstackNotionIframeSnippet(
     'prf-inst-alpha-012"><script>alert(1)</script>',
-    "https://verify.n170.io",
+    "https://verify.example.org",
     "obsidian",
   );
   assert.equal(iframeHtml.includes("<script>"), false);
   assert.ok(iframeHtml.includes("/embed/prf-inst-alpha-012scriptalert1script"));
 
-  const md = buildMarkdownBadgeSnippet("prf-inst-alpha-012", "https://verify.n170.io");
+  const md = buildMarkdownBadgeSnippet("prf-inst-alpha-012", "https://verify.example.org");
   assert.ok(md.startsWith("[![N170 Verified Performance"));
 });
 
@@ -346,7 +346,7 @@ test("Wave-4 tear-sheet analytics preserve privacy, monotonicity, compliance dis
   const twin = resolveCounterfactualTwin(BUNDLE_COACHING_STUDIO_FULL, leaves);
   assert.ok(twin);
   assert.equal(twin.is_hypothetical_simulation, true);
-  assert.ok(twin.compliance_disclaimer.includes("HYPOTHETICAL"));
+  assert.ok(twin.compliance_disclaimer.toUpperCase().includes("HYPOTHETICAL"));
   assert.ok(twin.zero_friction_ending_index >= twin.actual_ending_index);
 
   const dna = resolveQuantDnaProfile(BUNDLE_COACHING_STUDIO_FULL, leaves);

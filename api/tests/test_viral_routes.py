@@ -309,7 +309,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
                 ),
             ],
             trusted_notaries=notaries,
-            checkpoint_origin="verify.n170.ai/continuity-log/v3",
+            checkpoint_origin="verify.example.org/continuity-log/v3",
             checkpoint_witness_signers=[
                 (
                     "witness-c2sp-1",

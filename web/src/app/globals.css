@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   N170 Verify v3 — Institutional Obsidian & LP Archival Paper Design System
+   N170 Verify: Obsidian & Archival Paper Design System
    Offline-safe typography & flagship motion primitives (Zero remote DNS fetch)
    ========================================================================== */
 
@@ -35,7 +35,7 @@ html[data-theme="obsidian"] {
   --border-strong: rgba(255, 255, 255, 0.16);
   --grid-line: rgba(255, 255, 255, 0.03);
 
-  /* Restrained Signal Palette — Obsidian */
+  /* Restrained Signal Palette: Obsidian */
   --signal-emerald: #10B981;
   --signal-emerald-bg: rgba(16, 185, 129, 0.10);
   --signal-emerald-border: rgba(16, 185, 129, 0.30);
@@ -81,7 +81,7 @@ html[data-theme="paper"] {
   --border-strong: rgba(17, 18, 20, 0.19);
   --grid-line: rgba(17, 18, 20, 0.038);
 
-  /* Restrained Signal Palette — LP Archival Paper */
+  /* Restrained Signal Palette: Archival Paper */
   --signal-emerald: #047857;
   --signal-emerald-bg: rgba(4, 120, 87, 0.075);
   --signal-emerald-border: rgba(4, 120, 87, 0.26);
@@ -165,7 +165,7 @@ svg text.mono-num {
   backdrop-filter: blur(12px);
 }
 
-.bg-institutional-grid {
+.bg-telemetry-grid {
   background-image:
     radial-gradient(ellipse 80% 36% at 50% 0%, rgba(16, 185, 129, 0.055), transparent 72%),
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
@@ -290,7 +290,7 @@ input[type="range"].inst-slider::-webkit-slider-thumb:hover {
 }
 
 /* ==========================================================================
-   LP Archival Tear-Sheet Print Architecture (Cmd+P -> Clean 2-Page Export)
+   Archival Tear-Sheet Print Architecture (Cmd+P -> Clean 2-Page Export)
    ========================================================================== */
 @media print {
   @page {

@@ -1,5 +1,5 @@
 /**
- * N170 Verify v3 — Verifier-Bound 16:9 & 9:16 Share Card SVG Builders,
+ * N170 Verify: Verifier-Bound 16:9 & 9:16 Share Card SVG Builders,
  * Discord `/verify` Rich Embed JSON Builder, and XSS-Safe Embed Snippets.
  *
  * SECURITY INVARIANT: Every trust chip, badge label, and Discord embed field is
@@ -27,15 +27,15 @@ export { xmlEscape };
 
 export function sanitizeOriginUrl(rawOrigin?: string | null): string {
   const candidate = (rawOrigin ?? "").trim().replace(/\/+$/, "");
-  if (!candidate) return "https://verify.n170.io";
+  if (!candidate) return "https://verify.example.org";
   try {
     const parsed = new URL(candidate);
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return "https://verify.n170.io";
+      return "https://verify.example.org";
     }
     return `${parsed.protocol}//${parsed.host}`;
   } catch {
-    return "https://verify.n170.io";
+    return "https://verify.example.org";
   }
 }
 
@@ -89,7 +89,7 @@ export function extractVerifiedCardSummary(
       headlineStatus: "VERIFYING IN WEBCRYPTO…",
       twrLabel: "VERIFYING…",
       psrLabel: "VERIFYING…",
-      maxDdLabel: "—",
+      maxDdLabel: "-",
       capitalTierLabel: "Verifying…",
       shortProofHash: "computing…",
       shortMerkleRoot,
@@ -134,7 +134,7 @@ export function extractVerifiedCardSummary(
       headlineStatus: "VERIFICATION REJECTED",
       twrLabel: "REJECTED",
       psrLabel: "INVALID",
-      maxDdLabel: "—",
+      maxDdLabel: "-",
       capitalTierLabel: "Unverified",
       shortProofHash,
       shortMerkleRoot,
@@ -195,7 +195,7 @@ export function extractVerifiedCardSummary(
         ? `${(perf.probabilistic_sharpe_ratio * 100).toFixed(1)}%`
         : `GATED (T=${perf?.observation_count ?? 0})`;
   const maxDdLabel =
-    perf != null ? `-${Math.abs(perf.max_drawdown_decimal * 100).toFixed(2)}%` : "—";
+    perf != null ? `-${Math.abs(perf.max_drawdown_decimal * 100).toFixed(2)}%` : "-";
   const capitalTierLabel = leaves.capitalBracket
     ? CAPITAL_BRACKET_LABELS[leaves.capitalBracket]
     : "Salted-Redacted";
@@ -236,7 +236,7 @@ export function extractVerifiedCardSummary(
     ready: true,
     valid: true,
     downgraded,
-    headlineStatus: "N170 WEBCRYPTO VERIFIED v3",
+    headlineStatus: "N170 WEBCRYPTO VERIFIED",
     twrLabel,
     psrLabel,
     maxDdLabel,
@@ -447,7 +447,7 @@ export function renderShareCard16x9Svg(
     `<text x="68" y="446" font-size="14" fill="${p.primary}">proof_id: ${xmlEscape(safeProofId)} • proof_hash: ${xmlEscape(summary.shortProofHash)}</text>`,
     `<text x="68" y="478" font-size="13" fill="${p.secondary}">Scan QR or open ${xmlEscape(permalink)} to verify in window.crypto.subtle</text>`,
     chipBoxes,
-    `<text x="48" y="664" font-size="13" fill="${p.muted}">APACHE-2.0 OPEN STANDARD • N170 VERIFY v3 • ZERO RAW DOLLAR BALANCES DISCLOSED</text>`,
+    `<text x="48" y="664" font-size="13" fill="${p.muted}">APACHE-2.0 OPEN STANDARD • N170 VERIFY • ZERO RAW DOLLAR BALANCES DISCLOSED</text>`,
     `<text x="1232" y="664" text-anchor="end" font-size="13" fill="${p.emerald}">SHA-256 ${xmlEscape(summary.shortProofHash)}</text>`,
     `</g>`,
     `</svg>`,
@@ -594,7 +594,7 @@ export function buildDiscordVerifyEmbedPayload(
     allowed_mentions: { parse: [] },
     embeds: [
       {
-        title: `${titlePrefix} — ${safeTitle}`,
+        title: `${titlePrefix}: ${safeTitle}`,
         url: permalink,
         color,
         description:

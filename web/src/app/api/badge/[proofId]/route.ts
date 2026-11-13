@@ -4,7 +4,7 @@ import {
   resolveShowcaseOrLiveProfile,
   safeDecodeURIComponent,
 } from "@/lib/apiClient.ts";
-import { renderInstitutionalBadgeSvg, xmlEscape } from "@/lib/badgeSvg.ts";
+import { renderArchivalBadgeSvg, xmlEscape } from "@/lib/badgeSvg.ts";
 import { verifyProofBundle } from "@/lib/browserVerify.ts";
 import { DEMO_CONTINUITY_LOG_LEAVES } from "@/lib/demoFixtures.ts";
 import { sanitizePlainInput } from "@/lib/plausibilityMath.ts";
@@ -54,7 +54,7 @@ export async function GET(
       bundle.proof_id === "prf-inst-alpha-012" ? DEMO_CONTINUITY_LOG_LEAVES : null,
   });
 
-  const svg = renderInstitutionalBadgeSvg(bundle, verified, theme, labelParam);
+  const svg = renderArchivalBadgeSvg(bundle, verified, theme, labelParam);
 
   return new NextResponse(svg, {
     status: 200,

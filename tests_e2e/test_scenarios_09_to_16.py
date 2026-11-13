@@ -170,7 +170,7 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
             publisher_kid="n170-active-2026",
             publisher_key_not_before_utc="2025-01-01T00:00:00Z",
             trusted_notaries=self.notaries,
-            checkpoint_origin="verify.n170.ai/continuity-log/v3",
+            checkpoint_origin="verify.example.org/continuity-log/v3",
             checkpoint_witness_signers=[
                 (
                     "witness-cosigner-1",

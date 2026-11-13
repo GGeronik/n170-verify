@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 from app import __version__
 from app.badges import handle_get_badge_svg
 from app.config import ApiConfig
+from app.privacy_scanner import OutboundPrivacyScanner
 from app.routes_keys import (
     handle_get_well_known_keys,
     handle_options_well_known_keys,
@@ -110,6 +111,11 @@ class ApiResponse:
     status_code: int
     body: bytes
     headers: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        cookie_keys = [k for k in list(self.headers.keys()) if k.lower() == "set-cookie"]
+        for k in cookie_keys:
+            del self.headers[k]
 
     @classmethod
     def json_response(
@@ -215,6 +221,37 @@ class VerifyApiApplication:
         body: bytes = b"",
     ) -> ApiResponse:
         """Dispatch an HTTP request synchronously to N170 Verify route handlers."""
+        resp = self._dispatch_internal(
+            method, raw_path, query_string=query_string, headers=headers, body=body
+        )
+        for k in list(resp.headers.keys()):
+            if k.lower() == "set-cookie":
+                del resp.headers[k]
+        path = raw_path or "/"
+        if not _is_sync_route(path) and resp.status_code < 500:
+            scanner = OutboundPrivacyScanner()
+            body_text = resp.body.decode("utf-8", errors="replace")
+            violations = scanner.scan_text(body_text)
+            if violations:
+                return ApiResponse.json_response(
+                    500,
+                    {
+                        "error": "privacy_leak_blocked",
+                        "detail": "Outbound privacy scanner blocked response containing sensitive data",
+                        "violations": violations,
+                    },
+                )
+        return resp
+
+    def _dispatch_internal(
+        self,
+        method: str,
+        raw_path: str,
+        *,
+        query_string: str = "",
+        headers: Mapping[str, str] | None = None,
+        body: bytes = b"",
+    ) -> ApiResponse:
         req_headers = CaseInsensitiveHeaders(headers)
         verb = method.strip().upper()
         path = raw_path or "/"
@@ -230,6 +267,7 @@ class VerifyApiApplication:
                     "version": __version__,
                     "schema_version": VERIFY_SCHEMA_VERSION,
                     "hosted_multi_user_mode": self.config.hosted_multi_user_mode,
+                    "allow_hosted_signing": self.config.allow_hosted_signing,
                     "ed25519_backend": active_ed25519_backend(),
                     "aes_gcm_backend": active_aes_gcm_backend(),
                 },
@@ -244,6 +282,30 @@ class VerifyApiApplication:
                 st, payload, hdrs = handle_get_well_known_keys(store=self.store)
                 return ApiResponse.json_response(st, payload, headers=hdrs)
             return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+
+        # Refusal of signing oracle in hosted mode (allow_hosted_signing=False by default)
+        if path in {"/api/v1/sign", "/api/v1/proofs/sign"}:
+            if verb == "OPTIONS":
+                return ApiResponse(
+                    status_code=204,
+                    body=b"",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "POST, OPTIONS",
+                        "Access-Control-Allow-Headers": "Accept, Content-Type",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            if self.config.hosted_multi_user_mode and not self.config.allow_hosted_signing:
+                return ApiResponse.json_response(
+                    403,
+                    {
+                        "error": "signing_oracle_disabled",
+                        "detail": "Hosted mode refuses to sign payloads with server private keys",
+                    },
+                )
 
         if verb == "OPTIONS" and _is_sync_route(path):
             return ApiResponse(
@@ -586,7 +648,9 @@ def _payload_too_large_response() -> ApiResponse:
 
 async def _send_asgi_response(send: Any, resp: ApiResponse) -> None:
     asgi_headers = [
-        (k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in resp.headers.items()
+        (k.lower().encode("latin-1"), v.encode("latin-1"))
+        for k, v in resp.headers.items()
+        if k.lower() != "set-cookie"
     ]
     asgi_headers.append((b"content-length", str(len(resp.body)).encode("ascii")))
     await send({"type": "http.response.start", "status": resp.status_code, "headers": asgi_headers})
@@ -610,8 +674,9 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     fapp.sync_vault = verify_app.sync_vault  # type: ignore[attr-defined]
 
     def _to_fastapi_response(resp: ApiResponse) -> _FastAPIResponse:
+        sanitized = {k: v for k, v in resp.headers.items() if k.lower() != "set-cookie"}
         return _FastAPIResponse(
-            content=resp.body, status_code=resp.status_code, headers=resp.headers
+            content=resp.body, status_code=resp.status_code, headers=sanitized
         )
 
     async def _proxy(request: _FastAPIRequest) -> _FastAPIResponse:
@@ -652,6 +717,8 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     for route_path, methods in (
         ("/healthz", ["GET", "OPTIONS"]),
         ("/.well-known/n170-verify-keys.json", ["GET", "OPTIONS"]),
+        ("/api/v1/sign", ["POST", "OPTIONS"]),
+        ("/api/v1/proofs/sign", ["POST", "OPTIONS"]),
         ("/api/v1/verify", ["POST", "OPTIONS"]),
         ("/api/v1/verify/auto-detect", ["POST", "OPTIONS"]),
         ("/api/v1/connect/ibkr-flex-guide", ["GET", "OPTIONS"]),

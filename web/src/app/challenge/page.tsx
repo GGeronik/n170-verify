@@ -25,9 +25,9 @@ const TONE_OPTIONS: { id: ChallengeTone; label: string; desc: string }[] = [
     desc: "Collegial Fintwit / Discord / Substack invitation celebrating strong numbers.",
   },
   {
-    id: "institutional",
-    label: "Institutional LP",
-    desc: "Allocator & peer-review framing for fund managers and systematic desks.",
+    id: "professional",
+    label: "Professional Peer",
+    desc: "Allocator & peer-review framing for portfolio managers and systematic desks.",
   },
   {
     id: "concise_reply",
@@ -77,7 +77,7 @@ function PoliteChallengeStudio() {
   const originUrl =
     typeof window !== "undefined" && window.location?.origin
       ? window.location.origin
-      : "https://verify.n170.io";
+      : "https://verify.example.org";
 
   const generated = useMemo(
     () =>
@@ -109,7 +109,7 @@ function PoliteChallengeStudio() {
   };
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
         {/* Masthead */}
         <div className="flex flex-col justify-between gap-4 border-b border-hairline pb-6 lg:flex-row lg:items-end">
@@ -120,7 +120,7 @@ function PoliteChallengeStudio() {
               </span>
               <span className="text-ink-muted">•</span>
               <span className="text-signal-champagne">
-                60-Second Read-Only Proof • 100% Private Dollar NAV &amp; Open Positions
+                60-Second Read-Only Proof • Private Dollar NAV &amp; Open Positions
               </span>
             </div>
             <h1 className="editorial-serif text-3xl text-ink sm:text-5xl">
@@ -128,7 +128,7 @@ function PoliteChallengeStudio() {
             </h1>
             <p className="text-sm leading-relaxed text-ink-secondary">
               Invite any trader, educator, or emerging manager to verify pure percentage
-              returns on N170 Verify in 60 seconds — removing every legitimate privacy
+              returns on N170 Verify in 60 seconds, removing every legitimate privacy
               objection around account size, account IDs, or front-running live positions.
             </p>
           </div>
@@ -153,7 +153,7 @@ function PoliteChallengeStudio() {
         {/* Main 12-Column Studio */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Left 5 Cols: Sanitized Inputs & Tone Selector */}
-          <div className="inst-panel space-y-5 rounded-md p-5 lg:col-span-5">
+          <div className="peer-panel space-y-5 rounded-md p-5 lg:col-span-5">
             <div className="flex items-center gap-2 border-b border-hairline pb-3">
               <MessageSquareHeart className="h-4 w-4 text-signal-emerald" />
               <h2 className="text-sm font-semibold tracking-telemetry text-ink">
@@ -164,7 +164,7 @@ function PoliteChallengeStudio() {
             <div className="space-y-3.5">
               <div>
                 <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-ink-secondary">
-                  Peer Handle or Fund Name (Sanitized)
+                  Peer Handle or Strategy Name (Sanitized)
                 </label>
                 <input
                   type="text"
@@ -291,7 +291,7 @@ function PoliteChallengeStudio() {
           </div>
 
           {/* Right 7 Cols: Camera-Ready Diplomatic Invitation Card */}
-          <div className="inst-panel flex flex-col justify-between space-y-5 rounded-md bg-institutional-grid p-5 sm:p-7 lg:col-span-7">
+          <div className="peer-panel flex flex-col justify-between space-y-5 rounded-md bg-telemetry-grid p-5 sm:p-7 lg:col-span-7">
             <div className="relative overflow-hidden rounded-md border border-hairline-strong bg-canvas p-6 shadow-2xl">
               <div className="absolute inset-x-0 top-0 h-[3px] bg-signal-emerald" />
 
@@ -351,7 +351,7 @@ function PoliteChallengeStudio() {
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <PrivacyGuaranteeCard
                   icon={<EyeOff className="h-4 w-4 text-signal-emerald" />}
-                  title="$ NAV Stays 100% Private"
+                  title="$ NAV Stays Private"
                   desc="All curves rebase to Index = 100.00. Exact dollar deposits, withdrawals, and net worth never enter the public bundle."
                 />
                 <PrivacyGuaranteeCard
@@ -371,7 +371,7 @@ function PoliteChallengeStudio() {
                   Subprocess Isolation: <code className="text-ink">RLIMIT_CORE=0</code> •{" "}
                   <code className="text-ink">no_persistent_storage</code> default
                 </span>
-                <span className="text-signal-emerald">verify.n170.io/connect</span>
+                <span className="text-signal-emerald">verify.example.org/connect</span>
               </div>
             </div>
 

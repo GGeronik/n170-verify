@@ -99,10 +99,13 @@ class TradierReadOnlyAdapter(ReadOnlyBrokerAdapter):
         self,
         *,
         access_token: str,
+        approval_state: ProviderApprovalState | str | None = None,
         base_url: str = TRADIER_LIVE_BASE_URL,
         require_live: bool = True,
         http_transport: HttpTransportCallable | Any | None = None,
     ) -> None:
+        if approval_state is not None:
+            self.approval_state = ProviderApprovalState(approval_state)
         super().__init__()
         cleaned_base = validate_ssrf_safe_https_url(
             base_url or TRADIER_LIVE_BASE_URL,

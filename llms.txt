@@ -25,7 +25,7 @@ execution engine remains separately installed.
 - [Copyable instructions for an already connected broker assistant](docs/agent-instructions.txt): use only actually available, authorized, nonmutating tools; stop with a blocked packet when evidence is incomplete.
 - [Import formats](docs/import-formats.md): supported source data, reconciliation and unsupported events.
 - [Financial methods](docs/methods.md): exact decimal/rational calculations and support limits.
-- [Signed record format](FORMAT.md): v4 records, v3 compatibility, corrections and retained-copy comparison.
+- [Signed record format](FORMAT.md): v4 records, legacy compatibility, corrections and retained-copy comparison.
 - [Private account reconciliation](docs/account-reconciliation-contract.md): retained supplied-source attempts, interval dependencies and unresolved coverage, without account-completeness authentication.
 - [Captured run-review contract](verify_toolkit/RUN_REVIEW_V1.md): byte checking and selected-attempt comparison; no execution or producer authentication.
 - [Security boundaries](SECURITY.md): source, identity, privacy, signing and storage limitations.

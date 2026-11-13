@@ -53,7 +53,7 @@ A valid signature can cover fabricated numbers. A retained checkpoint binds the 
 
 New records use **format v4, calculation 2.0.0, serialization 1.0.0**. Existing v3 records retain their original calculation 1.0.0 and signature semantics. A v4 profile can append to an unchanged v3 prefix using the same key. See [FORMAT.md](FORMAT.md), [the frozen v3 specification](FORMAT-v3.md), and [financial methods](docs/methods.md).
 
-The new pipeline subtracts decimal amounts exactly using scaled integers, rounds each relative return to 10⁻⁸, and calculates displayed and signed metrics from that same series using exact rational arithmetic. Supported input is 2–500 dated observations, ≤50,000 characters, plain decimal amounts of magnitude ≤10¹⁵ and ≤18 fractional places. Gross interval factors above 10,000, wealth outside 10⁻⁶–10⁶ times opening wealth, excessive relative rounding error, total loss, negative equity and unsupported recapitalization are rejected with a next action. End-of-interval external flows are required; intraperiod flows need additional valuations.
+The new pipeline subtracts decimal amounts exactly using scaled integers, rounds each relative return to 10⁻⁸, and calculates displayed and signed metrics from that same series using exact rational arithmetic. Supported input is 2-500 dated observations, ≤50,000 characters, plain decimal amounts of magnitude ≤10¹⁵ and ≤18 fractional places. Gross interval factors above 10,000, wealth outside 10⁻⁶-10⁶ times opening wealth, excessive relative rounding error, total loss, negative equity and unsupported recapitalization are rejected with a next action. End-of-interval external flows are required; intraperiod flows need additional valuations.
 
 Annualized volatility requires at least 20 return intervals and a compatible supported schedule. This conservative product threshold is not a statistical reliability guarantee or a check against an exchange holiday calendar. Sampled drawdown cannot reveal losses between supplied observations. Fees and taxes affect results only to the extent they are already represented in source values.
 
@@ -293,7 +293,7 @@ Security headers are implemented in [worker/index.js](worker/index.js) and reuse
 
 Exact dependencies, lockfile integrity and disabled install scripts are configured. Repository CI configuration is included; its presence is not evidence of successful remote runs, required reviews or branch protection. This file asserts no status badge, repository availability or private reporting service; check the repository itself.
 
-## Full-stack v3 verification platform (`core/`, `api/`, `mcp/`, `web/`)
+## Full-stack Wave-4 verification platform (`core/`, `api/`, `mcp/`, `web/`)
 
 Alongside the standalone browser record workflow and offline toolkit above, this repository includes the modular **N170 Verify v3** verification stack (`VerifyProofBundle`, schema `n170-verify/v3`) for salted Merkle selective disclosure, calibrated brokerage reconciliation, counterfactual and behavioural coaching analytics, subprocess-isolated HTTP verification, zero-secret stdio MCP verification, and an optional Next.js tear-sheet and WebCrypto verification studio.
 
@@ -301,12 +301,12 @@ Alongside the standalone browser record workflow and offline toolkit above, this
 
 Rather than collapsing provenance into a single opaque badge, `VerifyProofBundle` verification evaluates six separate axes dynamically at check time:
 
-1. **Origin assurance (`OriginAssurance`)** — Re-derived by the verifier (`broker_signed`, `independently_witnessed_tls`, `operator_retrieved`, `self_reported`) from cryptographic evidence; self-asserted origin headers are never trusted.
-2. **Account scope (`AccountScope`)** — Separates enumerated multi-subaccount coverage (`all_enumerated_subaccounts`) from single-account survivorship uncertainty (`single_account_survivorship_uncertain`) and offline exports (`unknown_offline_scope`).
-3. **Provider approval state (`ProviderApprovalState`)** — Distinguishes live approved integrations (`approved_live`) from user-key self-attested APIs (`user_key_self_attested`), pending vendor reviews (`pending_provider_approval`), and offline exports (`offline_export_only`).
-4. **Environment tier (`EnvironmentTier`)** — Rejects paper, demo, and sandbox scopes (`DU*`, `PA*`, `paper-api.alpaca.markets`, `sandbox.tradier.com`, Trading 212 demo/CFD) from `live_production`.
-5. **Signer trust status (`SignerTrustStatus`)** — Checks Ed25519 publisher keys against a C2SP-checkpointed registry (`official_n170_hosted`, `retired_historical_valid`, `revoked_key`, `unrecognized_self_hosted_signer`).
-6. **Chain continuity mode (`ChainContinuityMode`)** — Evaluates prospective hash-linked sequence invariants (`prospective_continuous`, `retrospective_backfill`, `unenrolled_single_snapshot`, `continuity_broken`).
+1. **Origin assurance (`OriginAssurance`)** - Re-derived by the verifier (`broker_signed`, `independently_witnessed_tls`, `operator_retrieved`, `self_reported`) from cryptographic evidence; self-asserted origin headers are never trusted.
+2. **Account scope (`AccountScope`)** - Separates enumerated multi-subaccount coverage (`all_enumerated_subaccounts`) from single-account survivorship uncertainty (`single_account_survivorship_uncertain`) and offline exports (`unknown_offline_scope`).
+3. **Provider approval state (`ProviderApprovalState`)** - Distinguishes live approved integrations (`approved_live`) from user-key self-attested APIs (`user_key_self_attested`), pending vendor reviews (`pending_provider_approval`), and offline exports (`offline_export_only`).
+4. **Environment tier (`EnvironmentTier`)** - Rejects paper, demo, and sandbox scopes (`DU*`, `PA*`, `paper-api.alpaca.markets`, `sandbox.tradier.com`, Trading 212 demo/CFD) from `live_production`.
+5. **Signer trust status (`SignerTrustStatus`)** - Checks Ed25519 publisher keys against a C2SP-checkpointed registry (`official_n170_hosted`, `retired_historical_valid`, `revoked_key`, `unrecognized_self_hosted_signer`).
+6. **Chain continuity mode (`ChainContinuityMode`)** - Evaluates prospective hash-linked sequence invariants (`prospective_continuous`, `retrospective_backfill`, `unenrolled_single_snapshot`, `continuity_broken`).
 
 As with v3/v4 browser profiles, cryptographic signatures identify a signing key and committed bytes; they do not establish a person's legal identity, undisclosed accounts, or future investment skill.
 
@@ -317,7 +317,7 @@ As with v3/v4 browser profiles, cryptographic signatures identify a signing key 
 | [core/](core/) (`n170_verify`) | Unified verification pipeline (`verify_portfolio`), CLI (`n170-verify`), RFC 8785 JCS + domain-separated salted SHA-256 Merkle + Ed25519 cryptography, C2SP checkpoints, dynamic `k >= 2` TLS witness quorum checks, TWR/XIRR + Getmansky-Lo-Makarov MA(2) PSR/MinTRL econometrics (`T >= 30`), calibrated multi-section reconciliation, SEC EDGAR / FRED ALFRED / GDELT catalyst alignment, FIFO behavioural coaching, and read-only/offline broker connectors. |
 | [api/](api/) (`app`) | Subprocess-isolated (`spawn` + `RLIMIT_CORE=0` + `PR_SET_DUMPABLE=0`) HTTP/FastAPI service (`POST /api/v1/verify` with zero default retention), opt-in AES-256-GCM envelope-encrypted sync vault, `/.well-known/n170-verify-keys.json`, SVG assurance badges, and multi-axis filtered leaderboard. |
 | [mcp/](mcp/) ([mcp/README.md](mcp/README.md)) | Zero-dependency Node.js stdio MCP verifier (`mcp/server.js`) guarded by `McpAllowlistFirewall` so broker credentials, cookies, local file paths, and arbitrary URLs never enter tool arguments. |
-| [web/](web/) ([web/README.md](web/README.md)) | Next.js 15 + React 19 + TypeScript tear-sheet studio (`/p/[proofId]`), air-gapped WebCrypto verifier and selective leaf redaction studio (`/verify`), connector onboarding (`/connect`), and assurance-filtered leaderboard (`/leaderboard`). |
+| [web/](web/) ([web/README.md](web/README.md)) | Next.js 15 + React 19 + TypeScript tear-sheet studio (`/p/[proofId]`), offline WebCrypto verifier and selective leaf redaction studio (`/verify`), connector onboarding (`/connect`), and assurance-filtered leaderboard (`/leaderboard`). |
 | [tests_e2e/](tests_e2e/) | End-to-end adversarial, privacy-redaction, subprocess-isolation, and three-language (Python, Node.js MCP, WebCrypto) parity suites. |
 | [docker-compose.yml](docker-compose.yml) | Hardened container stack (`read_only: true`, `cap_drop: ALL`, `no-new-privileges`, `ulimits.core: 0`) with optional local `ollama` narration profile and [.env.example](.env.example). |
 
@@ -325,10 +325,10 @@ As with v3/v4 browser profiles, cryptographic signatures identify a signing key 
 
 Every `VerifyProofBundle` commits to seven domain-separated (`0x00` leaf / `0x01` internal node), 256-bit salted SHA-256 leaves (`core_metrics`, `indexed_curve`, `reconciliation`, `coaching_and_context`, `capital_bracket`, `benchmark_alpha`, `delayed_closed_trades`) and a one-way `HMAC-SHA256` `blinded_account_tag`. Holders can redact any subset of leaves before sharing (`--disclose`, `redact_proof_bundle_leaves`, or `/verify`) while preserving root signature verification across Python (`n170_verify`), Node.js (`mcp/server.js`), and browser WebCrypto (`web/src/lib/browserVerify.ts`).
 
-### v3 CLI, API, MCP, Web, and Docker quickstart
+### CLI, API, MCP, Web, and Docker quickstart
 
 ```sh
-# 1. Inspect v3 capabilities and generate an Ed25519 keypair outside the repo tree
+# 1. Inspect capabilities and generate an Ed25519 keypair outside the repo tree
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli capabilities
 mkdir -p /var/tmp/n170-verify-keys
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=core python3 -B -m n170_verify.cli keygen \

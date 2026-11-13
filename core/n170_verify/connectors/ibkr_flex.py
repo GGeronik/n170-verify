@@ -292,7 +292,7 @@ def _classify_cash_transaction_kind(attrs: dict[str, str], amount: float) -> Flo
             "withdrawal",
             "wire",
             "ach",
-            "electronic fund",
+            "electronic transfer",
             "cash transfer",
             "funds transfer",
             "contribution",
@@ -345,6 +345,7 @@ def parse_ibkr_flex_xml(
     provider_approval_state: ProviderApprovalState = ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     account_scope: AccountScope = AccountScope.UNKNOWN_OFFLINE_SCOPE,
     require_live: bool = True,
+    environment_tier: EnvironmentTier | str | None = None,
     max_bytes: int = DEFAULT_MAX_FLEX_BYTES,
     max_elements: int = DEFAULT_MAX_FLEX_ELEMENTS,
     max_section_rows: int = DEFAULT_MAX_SECTION_ROWS,
@@ -499,14 +500,17 @@ def parse_ibkr_flex_xml(
         if aid and aid not in raw_acct_ids:
             raw_acct_ids.append(aid)
 
-    env_tier = EnvironmentTier.LIVE_PRODUCTION
-    for aid in raw_acct_ids:
-        if _PAPER_IBKR_ACCOUNT_RE.match(aid):
-            if require_live:
-                raise PaperOrSandboxAccountRejectedError(
-                    "IBKR paper trading account (DU/DF prefix) rejected for live verification"
-                )
-            env_tier = EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
+    if environment_tier is not None:
+        env_tier = EnvironmentTier(environment_tier)
+    else:
+        env_tier = EnvironmentTier.LIVE_PRODUCTION
+        for aid in raw_acct_ids:
+            if _PAPER_IBKR_ACCOUNT_RE.match(aid):
+                if require_live:
+                    raise PaperOrSandboxAccountRejectedError(
+                        "IBKR paper trading account (DU/DF prefix) rejected for live verification"
+                    )
+                env_tier = EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
 
     raw_tag_seed = ",".join(sorted(raw_acct_ids)) if raw_acct_ids else f"anonymous_flex:{source_sha256[:16]}"
     blinded_tag = compute_blinded_account_tag("ibkr", raw_tag_seed, blinding_salt_hex)
@@ -1027,6 +1031,7 @@ class IbkrFlexOfflineAdapter(ReadOnlyBrokerAdapter):
         *,
         blinding_salt_hex: str,
         require_live: bool = True,
+        environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     ) -> CanonicalPortfolioLedger:
         return parse_ibkr_flex_xml(
             source,
@@ -1035,6 +1040,7 @@ class IbkrFlexOfflineAdapter(ReadOnlyBrokerAdapter):
             provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
             account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
             require_live=require_live,
+            environment_tier=environment_tier,
         )
 
 

@@ -50,10 +50,10 @@ export default function LeaderboardPage() {
       ]);
       const combinedProfiles: ShowcaseProfileMeta[] = [];
       const seenIds = new Set<string>();
-      for (const lp of liveProfiles ?? []) {
-        if (!seenIds.has(lp.proofId)) {
-          seenIds.add(lp.proofId);
-          combinedProfiles.push(lp);
+      for (const prof of liveProfiles ?? []) {
+        if (!seenIds.has(prof.proofId)) {
+          seenIds.add(prof.proofId);
+          combinedProfiles.push(prof);
         }
       }
       for (const sp of SHOWCASE_PROFILES) {
@@ -145,7 +145,7 @@ export default function LeaderboardPage() {
     });
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
         <div className="flex flex-col justify-between gap-4 border-b border-hairline pb-6 lg:flex-row lg:items-end">
           <div className="space-y-1.5">
@@ -160,7 +160,7 @@ export default function LeaderboardPage() {
               </span>
             </div>
             <h1 className="editorial-serif text-3xl text-ink sm:text-4xl">
-              Multi-Axis Institutional Track-Record Registry
+              Multi-Axis Track-Record Registry
             </h1>
             <p className="max-w-3xl text-sm text-ink-secondary">
               Every record below is verified in real time inside your browser via{" "}
@@ -351,19 +351,19 @@ export default function LeaderboardPage() {
                         ? `${perf.twr_decimal >= 0 ? "+" : ""}${(
                             perf.twr_decimal * 100
                           ).toFixed(2)}%`
-                        : "—"}
+                        : "-"}
                     </td>
 
                     <td className="px-4 py-4 text-right font-mono text-signal-vermilion tabular-nums">
                       {perf
                         ? `-${Math.abs(perf.max_drawdown_decimal * 100).toFixed(2)}%`
-                        : "—"}
+                        : "-"}
                     </td>
 
                     <td className="px-4 py-4 text-right font-mono text-ink tabular-nums">
                       {perf?.unsmoothed_sharpe_ratio != null
                         ? perf.unsmoothed_sharpe_ratio.toFixed(2)
-                        : "—"}
+                        : "-"}
                     </td>
 
                     <td className="px-4 py-4 text-right font-mono font-semibold text-ink tabular-nums">

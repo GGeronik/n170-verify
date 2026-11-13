@@ -15,7 +15,7 @@ export function FooterChrome() {
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-ink">
-              N170 VERIFY PROTOCOL v3
+              N170 VERIFY PROTOCOL
             </span>
             <span className="text-hairline-strong">•</span>
             <span className="font-mono text-[11px] text-signal-emerald">

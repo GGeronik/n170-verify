@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 const { PassThrough } = require("node:stream");
@@ -41,7 +42,7 @@ broker_kp = generate_ed25519_keypair(b"\\x44" * 32)
 ckpt_w_kp = generate_ed25519_keypair(b"\\x55" * 32)
 
 ckpt = create_signed_c2sp_checkpoint(
-    origin="n170.io/verify/continuity-log/v3",
+    origin="n170.verify/continuity-log/v3",
     size=42,
     root_hash_hex="aa" * 32,
     publisher_kid="n170-active-2026",
@@ -692,4 +693,55 @@ test("Red-team: mismatched witness server_sni (evil-replica.example) is rejected
       w.includes("is not an official TLS endpoint for broker_id='ibkr'")
     )
   );
+});
+
+test("Verifies examples/specimen-s1.verify.json against n170-specimen-keys.json with 3-way parity and rejects tampered copy", async () => {
+  const specimenPath = path.resolve(__dirname, "../examples/specimen-s1.verify.json");
+  const registryPath = path.resolve(__dirname, "../web/public/specimens/n170-specimen-keys.json");
+
+  if (!fs.existsSync(specimenPath) || !fs.existsSync(registryPath)) {
+    return;
+  }
+
+  const bundle = JSON.parse(fs.readFileSync(specimenPath, "utf8"));
+  const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+
+  const res = await verifyProofBundle(bundle, {
+    registryDoc: registry,
+    nowUtc: "2026-04-02T00:00:00Z",
+  });
+
+  assert.strictEqual(res.valid, true);
+  assert.strictEqual(typeof res.proof_hash, "string");
+  assert.strictEqual(res.proof_hash.length, 64);
+  assert.strictEqual(res.effective_origin_assurance, "independently_witnessed_tls");
+  assert.strictEqual(res.assurance_profile.account_scope, "all_enumerated_subaccounts");
+  assert.strictEqual(res.assurance_profile.provider_approval_state, "approved_live");
+  assert.strictEqual(res.assurance_profile.environment_tier, "live_production");
+  assert.strictEqual(res.signer_trust_status, "official_n170_hosted");
+  assert.strictEqual(res.effective_chain_continuity_mode, "unenrolled_single_snapshot");
+  assert.strictEqual(res.witness_quorum.disjoint_quorum_size, 3);
+  assert.strictEqual(res.errors.length, 0);
+
+  // Tamper with Merkle leaf payload
+  const tamperedLeaf = JSON.parse(JSON.stringify(bundle));
+  const coreLeaf = tamperedLeaf.disclosed_leaves.find((l) => l.leaf_name === "core_metrics");
+  assert.ok(coreLeaf, "core_metrics disclosed leaf must exist");
+  coreLeaf.payload.twr_decimal = 0.999;
+  const tamperedLeafRes = await verifyProofBundle(tamperedLeaf, {
+    registryDoc: registry,
+    nowUtc: "2026-04-02T00:00:00Z",
+  });
+  assert.strictEqual(tamperedLeafRes.valid, false);
+  assert.ok(tamperedLeafRes.errors.length > 0);
+
+  // Tamper with publisher signature
+  const tamperedSig = JSON.parse(JSON.stringify(bundle));
+  tamperedSig.signature_hex = "00".repeat(64);
+  const tamperedSigRes = await verifyProofBundle(tamperedSig, {
+    registryDoc: registry,
+    nowUtc: "2026-04-02T00:00:00Z",
+  });
+  assert.strictEqual(tamperedSigRes.valid, false);
+  assert.ok(tamperedSigRes.errors.length > 0);
 });

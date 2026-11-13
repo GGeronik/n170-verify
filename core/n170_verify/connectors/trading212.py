@@ -133,12 +133,15 @@ class Trading212ReadOnlyAdapter(ReadOnlyBrokerAdapter):
         *,
         api_key: str,
         api_secret: str,
+        approval_state: ProviderApprovalState | str | None = None,
         base_url: str = TRADING212_LIVE_BASE_URL,
         require_live: bool = True,
         http_transport: HttpTransportCallable | Any | None = None,
         now_fn: Callable[[], float] = time.time,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
+        if approval_state is not None:
+            self.approval_state = ProviderApprovalState(approval_state)
         super().__init__()
         cleaned_base = validate_ssrf_safe_https_url(
             base_url or TRADING212_LIVE_BASE_URL,
@@ -370,7 +373,7 @@ class Trading212ReadOnlyAdapter(ReadOnlyBrokerAdapter):
             broker_id="trading212",
             account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
             claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            provider_approval_state=self.approval_state,
             environment_tier=EnvironmentTier.LIVE_PRODUCTION,
             source_body_sha256=source_sha,
             base_currency=base_ccy,

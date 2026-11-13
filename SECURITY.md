@@ -36,7 +36,7 @@ A useful report identifies the affected source revision/build, browser and opera
 
 **Local/browser compromise is outside this application's authority.** A person or extension with effective origin/device access may read local data and use signing capabilities. Nonextractability is not a hardware or encrypted-storage guarantee. A compromised origin serving application code can undermine local assurances. Do not use this application as protection against a compromised device or deployment.
 
-**Shared data remains sensitive.** Returns, dates, source digests, scope descriptions and correction reasons may disclose investment information. Knowing source values or guessing candidate input can expose more. Raw amounts are omitted from public records by design, but owner-entered text can disclose them. Hashes are not encryption or zero-knowledge proofs. Private draft saves/exports deliberately include original financial text and reviewed edits, and the app does not encrypt draft storage.
+**Shared data remains sensitive.** Returns, dates, source digests, scope descriptions and correction reasons may disclose investment information. Knowing source values or guessing candidate input can expose more. Raw amounts are omitted from public records by design, but owner-entered text can disclose them. Hashes are not encryption or privacy-preserving proofs. Private draft saves/exports deliberately include original financial text and reviewed edits, and the app does not encrypt draft storage.
 
 **ECDSA signatures are malleable.** Both valid s forms are accepted. Record identity, predecessor links and retained checkpoints use the payload hash, so a changed signature encoding does not change the financial record's identity.
 
@@ -94,9 +94,9 @@ The [public validation guide](docs/release-validation.md) describes reproducible
 
 Verify original received archive bytes against a separately retained SHA-256 before extracting or editing, as described in [README.md](README.md). The public build hashes the current explicit inventory into a new artifact; an edited source tree does not have to match the original immutable receipt. Preserve both identities. Archive integrity checks do not authenticate the producer, make dependencies trustworthy, or detect a producer that intentionally rebuilds different internally consistent unsigned evidence.
 
-## Full-stack v3 platform controls and boundaries
+## Full-stack Wave-4 platform controls and boundaries
 
-The modular v3 packages in [core/](core/), [api/](api/), [mcp/](mcp/), and [web/](web/) follow the same separation between cryptographic integrity and unauthenticated real-world claims:
+The modular Wave-4 packages in [core/](core/), [api/](api/), [mcp/](mcp/), and [web/](web/) follow the same separation between cryptographic integrity and unauthenticated real-world claims:
 
 - **Dynamic origin assurance and environment gating:** `OriginAssurance` is computed by the verifier (`core/n170_verify/pipeline.py`, `mcp/server.js`, and `web/src/lib/browserVerify.ts`) from cryptographic signatures or multi-witness (`k >= 2` distinct operators) TLS attestations, never from self-declared bundle fields. Paper, demo, and sandbox endpoints or account prefixes (`DU*`, `PA*`, sandbox hosts, demo/CFD scopes) are rejected from `live_production`.
 - **Subprocess worker isolation and opt-in vault encryption:** `POST /api/v1/verify` runs portfolio verification inside a one-shot `spawn` worker subprocess (`RLIMIT_CORE=0`, `PR_SET_DUMPABLE=0` where supported by the host kernel, scrubbed environment variables) and discards raw statement bytes when the worker exits (`no_persistent_storage` by default). Opt-in recurring sync (`api/app/sync_vault.py`) encrypts credentials under per-enrollment AES-256-GCM envelope keys and performs cryptographic key erasure upon enrollment deletion.

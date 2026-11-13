@@ -17,7 +17,7 @@ from n170_verify.contracts import format_utc_timestamp, parse_utc_timestamp
 SEC_EASTERN_TZ = ZoneInfo("America/New_York")
 DEFAULT_SEC_SUBMISSIONS_BASE_URL: str = "https://data.sec.gov"
 DEFAULT_SEC_TICKERS_URL: str = "https://www.sec.gov/files/company_tickers.json"
-DEFAULT_SEC_USER_AGENT: str = "N170VerifyResearch/0.3 (verify-compliance@n170.io)"
+DEFAULT_SEC_USER_AGENT: str = "N170VerifyResearch/0.3 (research-compliance@example.com)"
 SEC_PUBLIC_DISSEMINATION_LAG_SECONDS: int = 180
 REG_ST_CUTOFF_ET = time(17, 30, 0)
 
@@ -55,7 +55,7 @@ class SecEdgarApiError(RuntimeError):
 
 
 def validate_sec_user_agent(user_agent: str) -> str:
-    """Validate mandatory SEC Fair Access ``User-Agent`` header with institutional contact email."""
+    """Validate mandatory SEC Fair Access ``User-Agent`` header with contact email."""
     if not isinstance(user_agent, str) or not user_agent.strip():
         raise ValueError("SEC EDGAR requires a non-empty User-Agent header with contact email")
     cleaned = user_agent.strip()
@@ -172,7 +172,7 @@ class SecEdgarFiling:
     @property
     def headline(self) -> str:
         items_suffix = f" (Items {', '.join(self.items)})" if self.items else ""
-        desc = f" — {self.primary_doc_description}" if self.primary_doc_description else ""
+        desc = f" - {self.primary_doc_description}" if self.primary_doc_description else ""
         return f"SEC Form {self.form}{items_suffix}{desc}"
 
 

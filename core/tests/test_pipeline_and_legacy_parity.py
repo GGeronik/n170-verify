@@ -62,6 +62,7 @@ from n170_verify import cli as verify_cli  # noqa: E402
 from n170_verify.connectors import PaperOrSandboxAccountRejectedError  # noqa: E402
 from n170_verify.contracts import (  # noqa: E402
     AccountScope,
+    EnvironmentTier,
     OriginAssurance,
     ProviderApprovalState,
     SignerTrustStatus,
@@ -451,7 +452,9 @@ class TestPipelineAndLegacyParity(unittest.TestCase):
             csv_format="robinhood",
             issued_at_utc="2026-01-15T00:00:00Z",
         )
-        self.assertTrue(rh_embargoed.verification.valid)
+        self.assertEqual(rh_embargoed.proof_bundle.environment_tier, EnvironmentTier.UNVERIFIED_OFFLINE)
+        self.assertTrue(rh_embargoed.verification.signature_valid)
+        self.assertTrue(rh_embargoed.verification.merkle_valid)
         self.assertEqual(len(rh_embargoed.delayed_closed_trades), 0)
         self.assertEqual(rh_embargoed.stripped_recent_closed_trades_count, 1)
 
@@ -562,7 +565,9 @@ class TestPipelineAndLegacyParity(unittest.TestCase):
                 )
             self.assertEqual(rc_csv, 0)
             csv_bundle = json.loads(csv_out_buf.getvalue())
-            self.assertTrue(verify_proof_bundle(csv_bundle).valid)
+            self.assertEqual(csv_bundle["environment_tier"], "unverified_offline")
+            self.assertTrue(verify_proof_bundle(csv_bundle).signature_valid)
+            self.assertTrue(verify_proof_bundle(csv_bundle).merkle_valid)
 
     @unittest.skipIf(VerifyApiApplication is None, "api lands in Phase 4")
     def test_full_stack_cross_runtime_e2e_api_to_mcp_and_webcrypto(self) -> None:
@@ -726,9 +731,9 @@ const { handleJsonRpcMessage } = require(input.mcp_path);
 import fs from "node:fs";
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const { verifyProofBundle } = await import(input.verify_ts_url);
-const { mergeWithDemoRegistry } = await import(input.api_client_url);
-
-const mergedReg = mergeWithDemoRegistry(input.registry);
+const clientMod = await import(input.api_client_url);
+const mergeFn = clientMod.combineRegistryDocuments || clientMod.mergeWithDemoRegistry;
+const mergedReg = mergeFn(input.registry);
 const webRes = await verifyProofBundle(input.bundle, { registryDoc: mergedReg });
 process.stdout.write(JSON.stringify(webRes));
 """

@@ -1,0 +1,253 @@
+{
+  "proof_id": "specimen-offline-unverified",
+  "issued_at_utc": "2026-04-01T12:00:00Z",
+  "publisher_kid": "n170-pub-2026-q1",
+  "publisher_public_key_hex": "74fbf42d31b2b00bf7700bcfd806d1bb9ea7b7f00fdbd003a534c805ba867d77",
+  "broker_id": "degiro",
+  "blinded_account_tag": "5685d0770fb6ec317bab2afece1139da5226cb26474790878e07190c204a775f",
+  "account_scope": "unknown_offline_scope",
+  "provider_approval_state": "offline_export_only",
+  "environment_tier": "unverified_offline",
+  "claimed_origin_assurance": "self_reported",
+  "source_body_sha256": "42919ecbf385653407d36530e48d490c38da9ae3f0ab5b0114afea69af41b6fd",
+  "period_start_utc": "2026-01-01T00:00:00Z",
+  "period_end_utc": "2026-03-31T23:59:59Z",
+  "base_currency": "EUR",
+  "merkle_root": "a5d96429adf84932fe1679f02c8f1461f12c9f5d7113f5ae2f6984d1a9fe78e9",
+  "signature_hex": "1fea8a5551c7edc9676790470a3df15e4d0c1d508b4b89c1ff466d06d0af6adc2851e48e39164e69f85a2969dd9b35d1e8d1bf1f5d45eeee0e5219affa8a960a",
+  "schema_version": "n170-verify-v3",
+  "disclosed_leaves": [
+    {
+      "leaf_name": "core_metrics",
+      "salt_hex": "ca3dbb3b83efb89f46a0b8324dad99bd8859bea1f97cd1364c40e1cdedda0a58",
+      "payload": {
+        "twr_decimal": 0.152,
+        "twr_pct": 15.2,
+        "cagr_decimal": 1.15,
+        "cagr_pct": 115.0,
+        "xirr_decimal": 1.12,
+        "annualized_volatility": 0.145,
+        "max_drawdown_decimal": 0.048,
+        "max_drawdown_pct": 4.8,
+        "sharpe_ratio": 1.85,
+        "sortino_ratio": 2.45,
+        "calmar_ratio": 3.16,
+        "observation_count": 45,
+        "trading_days": 45,
+        "start_date": "2026-01-01",
+        "end_date": "2026-03-31",
+        "base_currency": "EUR",
+        "psr_sample_eligible": true,
+        "probabilistic_sharpe_ratio": 0.941,
+        "psr_glm_unsmoothed": 0.932,
+        "min_track_record_length_days": 38.0,
+        "unconditional_monthly_var_95": 0.035,
+        "unconditional_monthly_cvar_95": 0.048,
+        "benchmark_symbol": "IWDA",
+        "benchmark_twr_decimal": 0.065,
+        "alpha_decimal": 0.087
+      },
+      "leaf_hash_hex": "1f988af9077427891dc6381a30b39e4ab0f8ab408a78c62e7337e92aa7d5050d",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "9e02ddefbe97bee2f6af0b200ad99c036bcc0decc332011288aee1f6c7374970"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "83824d1eb75aaa3989b38edf3cc72d2a481b9e06d435585ddd7efef61aa3fddd"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
+        }
+      ]
+    },
+    {
+      "leaf_name": "indexed_curve",
+      "salt_hex": "ef8930a502b78a0b5ba6bc8cb6aca2f46b583b9fa60603477bae65f7711b90e4",
+      "payload": {
+        "base_index": 100.0,
+        "points": [
+          {
+            "timestamp_utc": "2026-01-01T00:00:00Z",
+            "index_value": 100.0
+          },
+          {
+            "timestamp_utc": "2026-03-31T23:59:59Z",
+            "index_value": 115.2
+          }
+        ]
+      },
+      "leaf_hash_hex": "9e02ddefbe97bee2f6af0b200ad99c036bcc0decc332011288aee1f6c7374970",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "1f988af9077427891dc6381a30b39e4ab0f8ab408a78c62e7337e92aa7d5050d"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "83824d1eb75aaa3989b38edf3cc72d2a481b9e06d435585ddd7efef61aa3fddd"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
+        }
+      ]
+    },
+    {
+      "leaf_name": "reconciliation",
+      "salt_hex": "77cc870a79ee58c6ebabc78ce79641ebc7a3a957bc439237be4622d9839bff29",
+      "payload": {
+        "status": "reconciled_offline_export",
+        "discrepancy_count": 0,
+        "evaluated_at_utc": "2026-04-01T12:00:00Z",
+        "tolerance_bps": 10.0,
+        "sections_checked": [
+          "cash_balance",
+          "transactions",
+          "portfolio"
+        ],
+        "findings": []
+      },
+      "leaf_hash_hex": "a58673175ff1ec70ff5b473b249bd3fa58c7185d7c48b15bd3e5852e9eb6f8c1",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "b878d725ebaaea519819f37423d54f502fdd424c3147193bccde31265c55c569"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "bf1ea7ec2f20dc079625d7d9497f57ffdd681c6d8d25037c70693d943064a768"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
+        }
+      ]
+    },
+    {
+      "leaf_name": "coaching_and_context",
+      "salt_hex": "e2fa3593b2b018e36a24c4d5c4c4d5e82f9d123bc1410829e6936859a18b5ca0",
+      "payload": {
+        "cost_drag": {
+          "commission_and_fee_drag_bps": 8.5,
+          "margin_and_funding_drag_bps": 0.0,
+          "fx_conversion_drag_bps": 3.2,
+          "withholding_tax_drag_bps": 1.5,
+          "total_friction_drag_bps": 13.2,
+          "annualized_total_drag_bps": 52.8
+        },
+        "behaviour": {
+          "sample_eligible": true,
+          "min_trades_gate": 30,
+          "observed_trades": 38,
+          "observed_days": 45,
+          "median_holding_hours": 72.0,
+          "holding_horizon_label": "position_investing",
+          "win_rate": 0.684,
+          "profit_factor": 2.45,
+          "winner_vs_loser_hold_ratio": 1.82,
+          "odean_pgr_plr_spread": 0.015,
+          "post_drawdown_sizing_discipline_atr": 0.88,
+          "atr_normalized": true,
+          "return_concentration_top5_pct": 22.1,
+          "actionable_improvements": []
+        },
+        "catalyst_regime_win_rate": null,
+        "quiet_regime_win_rate": null,
+        "event_window_share_pct": 0.0,
+        "event_observations": []
+      },
+      "leaf_hash_hex": "b878d725ebaaea519819f37423d54f502fdd424c3147193bccde31265c55c569",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "a58673175ff1ec70ff5b473b249bd3fa58c7185d7c48b15bd3e5852e9eb6f8c1"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "bf1ea7ec2f20dc079625d7d9497f57ffdd681c6d8d25037c70693d943064a768"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
+        }
+      ]
+    },
+    {
+      "leaf_name": "capital_bracket",
+      "salt_hex": "5852977bcad5b18c871f45ba12abdf5404b4965ecd690b8a67b2409cce811e83",
+      "payload": {
+        "capital_bracket": "10k_to_100k",
+        "valuation_currency": "EUR"
+      },
+      "leaf_hash_hex": "c5eac72e9b56f1d130b786365ad611db34e7bd27acbaf24afa5b4bedecc11f60",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "f4c0df04b4b9c7c436adb88c1ed7df677db4ed39053e87a1aa20a531ec696de4"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
+        }
+      ]
+    },
+    {
+      "leaf_name": "benchmark_alpha",
+      "salt_hex": "18badf628ba2c78262f7d261d5587f525ec452f8ceec9ed52bbbe11ab2e3f124",
+      "payload": {
+        "benchmark_symbol": "IWDA",
+        "benchmark_twr_decimal": 0.065,
+        "alpha_decimal": 0.087,
+        "information_ratio": 1.45,
+        "beta": 0.88
+      },
+      "leaf_hash_hex": "f4c0df04b4b9c7c436adb88c1ed7df677db4ed39053e87a1aa20a531ec696de4",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "c5eac72e9b56f1d130b786365ad611db34e7bd27acbaf24afa5b4bedecc11f60"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
+        }
+      ]
+    },
+    {
+      "leaf_name": "delayed_closed_trades",
+      "salt_hex": "fad2aea211f6a4156cbecbef10142876996d95a5a4cfec2f9f740ea3d24da6c8",
+      "payload": {
+        "embargo_days": 7,
+        "trades": [],
+        "stripped_recent_count": 0
+      },
+      "leaf_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "b478e391340a4d6da289d026153db95b81fbcbb5a8cb35faeeee464dd3c5e4ef"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
+        }
+      ]
+    }
+  ],
+  "undisclosed_leaf_hashes": {},
+  "witness_attestations": [],
+  "broker_native_signature": null,
+  "prospective_chain_link": null,
+  "retention_mode": "no_persistent_storage"
+}

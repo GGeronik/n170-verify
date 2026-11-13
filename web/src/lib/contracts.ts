@@ -74,6 +74,8 @@ export const ProviderApprovalState = {
   USER_KEY_SELF_ATTESTED: "user_key_self_attested",
   PENDING_PROVIDER_APPROVAL: "pending_provider_approval",
   OFFLINE_EXPORT_ONLY: "offline_export_only",
+  AGGREGATOR_RELAYED: "aggregator_relayed",
+  PUBLIC_API_PERMISSIONLESS: "public_api_permissionless",
 } as const;
 export type ProviderApprovalState =
   (typeof ProviderApprovalState)[keyof typeof ProviderApprovalState];
@@ -81,6 +83,7 @@ export type ProviderApprovalState =
 export const EnvironmentTier = {
   LIVE_PRODUCTION: "live_production",
   PAPER_OR_SANDBOX_REJECTED: "paper_or_sandbox_rejected",
+  UNVERIFIED_OFFLINE: "unverified_offline",
 } as const;
 export type EnvironmentTier = (typeof EnvironmentTier)[keyof typeof EnvironmentTier];
 
@@ -479,7 +482,7 @@ export interface EventWindowObservation {
 }
 
 export const DEFAULT_COUNTERFACTUAL_DISCLAIMER =
-  "HYPOTHETICAL COACHING SIMULATION — Separate from verified realized performance; does not represent actual trading results (SEC/FINRA/GIPS)." as const;
+  "Hypothetical simulation. Not actual trading results." as const;
 
 export interface SessionExpectancyCell {
   weekday: number;

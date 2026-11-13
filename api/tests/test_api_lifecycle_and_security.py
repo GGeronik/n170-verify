@@ -181,7 +181,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 ),
             ],
             trusted_notaries=self.notaries,
-            checkpoint_origin="verify.n170.ai/continuity-log/v3",
+            checkpoint_origin="verify.example.org/continuity-log/v3",
             checkpoint_witness_signers=[
                 (
                     "witness-cosigner-1",

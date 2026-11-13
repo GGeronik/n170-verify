@@ -161,7 +161,7 @@ export function TrustHeader({
   const isLiveEnv = bundle.environment_tier === EnvironmentTier.LIVE_PRODUCTION;
 
   const printQr = useMemo(
-    () => generateQrCode(`https://verify.n170.io/p/${bundle.proof_id}`),
+    () => generateQrCode(`https://verify.n170.org/p/${bundle.proof_id}`),
     [bundle.proof_id],
   );
 
@@ -258,7 +258,7 @@ export function TrustHeader({
           <button
             type="button"
             onClick={() => window.print()}
-            title="Export 2-Page LP Archival Tear Sheet via Cmd+P"
+            title="Export 2-Page Archival Tear Sheet via Cmd+P"
             className="inline-flex items-center gap-1.5 rounded border border-hairline-strong bg-elevated px-3 py-2 font-mono text-xs text-ink-secondary transition hover:border-ink hover:text-ink"
           >
             <Printer className="h-3.5 w-3.5" />
@@ -364,7 +364,7 @@ export function TrustHeader({
             detail={`kid: ${bundle.publisher_kid}${
               verification?.checkpoint_verified
                 ? ` • C2SP tlog + ${verification.checkpoint_witness_count} cosigs • Base L2`
-                : " • Ed25519 domain v3"
+                : " • Ed25519 domain"
             }`}
             variant={signerVariant}
             active={activeXrayChip === "signer"}
@@ -557,7 +557,7 @@ export function TrustHeader({
                     {registryDoc.l2_anchor && (
                       <div className="truncate text-ink-muted">
                         Base L2 #{registryDoc.l2_anchor.chain_id} • block #
-                        {registryDoc.l2_anchor.block_number ?? "—"} • tx{" "}
+                        {registryDoc.l2_anchor.block_number ?? "-"} • tx{" "}
                         {registryDoc.l2_anchor.tx_hash.slice(0, 22)}…
                       </div>
                     )}

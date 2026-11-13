@@ -49,7 +49,7 @@ const VIRAL_SCENARIOS = [
   },
   {
     id: "inst_equity_2y",
-    badge: "INSTITUTIONAL BENCH",
+    badge: "BENCHMARK STANDARD",
     label: "Sharpe 2.35 over 380 Days (Equities)",
     sharpe: 2.35,
     days: 380,
@@ -191,7 +191,7 @@ function PlausibilityCalculatorContent() {
     const origin =
       typeof window !== "undefined" && window.location?.origin
         ? window.location.origin
-        : "https://verify.n170.io";
+        : "https://verify.example.org";
     const fullUrl = `${origin}/tools/plausibility${queryStr}`;
     try {
       if (typeof window !== "undefined" && window.history?.replaceState) {
@@ -218,7 +218,7 @@ function PlausibilityCalculatorContent() {
       : 0;
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-10 sm:px-6 lg:px-8">
         {/* Masthead */}
         <div className="flex flex-col justify-between gap-4 border-b border-hairline pb-6 lg:flex-row lg:items-end">
@@ -467,7 +467,7 @@ function PlausibilityCalculatorContent() {
                 <PsrConfidenceGaugeSvg psr={analysis.implied_psr} />
 
                 <div className="w-full rounded border border-hairline bg-elevated px-3 py-2 text-center font-mono text-[10.5px] text-ink-secondary tabular-nums">
-                  95.0% Institutional Threshold:{" "}
+                  95.0% Confidence Threshold:{" "}
                   <strong
                     className={
                       analysis.implied_psr >= 0.95 &&
@@ -746,7 +746,7 @@ function PsrConfidenceGaugeSvg({ psr }: { psr: number }) {
         />
       )}
 
-      {/* 95% Institutional Threshold Marker */}
+      {/* 95% Confidence Threshold Marker */}
       <line
         x1={tick95.x}
         y1={tick95.y}

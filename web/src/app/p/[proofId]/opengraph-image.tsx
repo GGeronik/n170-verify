@@ -16,7 +16,7 @@ import {
 } from "@/lib/contracts.ts";
 import { DEMO_CONTINUITY_LOG_LEAVES } from "@/lib/demoFixtures.ts";
 
-export const alt = "N170 Verify v3 Institutional Performance Tear Sheet";
+export const alt = "N170 Verify Performance Tear Sheet";
 export const size = {
   width: 1200,
   height: 630,
@@ -78,7 +78,7 @@ export default async function OpenGraphImage({
   const maxDd =
     leaves.coreMetrics != null
       ? `-${Math.abs(leaves.coreMetrics.max_drawdown_decimal * 100).toFixed(2)}%`
-      : "—";
+      : "-";
 
   const reconStatus =
     leaves.reconciliation?.status ?? ReconciliationStatus.REFERENCE_DATA_UNAVAILABLE;
@@ -113,10 +113,10 @@ export default async function OpenGraphImage({
                 fontWeight: 700,
               }}
             >
-              N170 VERIFY v3
+              N170 VERIFY
             </div>
             <div style={{ fontSize: "20px", color: "#8A919E" }}>
-              {profile.handle || bundle.proof_id} • Institutional Cryptographic Proof
+              {profile.handle || bundle.proof_id} • Cryptographic Proof
             </div>
           </div>
           <div
