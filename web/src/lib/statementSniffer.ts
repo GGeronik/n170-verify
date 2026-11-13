@@ -1,5 +1,5 @@
 /**
- * N170 Verify v3 — Universal Zero-Dropdown Brokerage & Journal Statement Sniffer.
+ * N170 Verify - Universal Zero-Dropdown Brokerage & Journal Statement Sniffer.
  *
  * Auto-detects file signatures in browser / Node WebCrypto memory across:
  * - IBKR Activity Flex XML v3 (9-section completeness & DU* paper-account guard)
@@ -225,7 +225,7 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
       previewReconciliation: ReconciliationStatus.RECONCILED_WITHIN_TOLERANCE,
       transparencyNotice:
-        "Cryptographically signed N170 bundle detected — ready for instant client-side WebCrypto verification.",
+        "Cryptographically signed N170 bundle detected: ready for instant client-side WebCrypto verification.",
     };
   }
 
@@ -262,10 +262,10 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
       previewReconciliation: recon,
       transparencyNotice: paperAccountRejected
-        ? "DU* IBKR paper-trading account prefix detected — live production gate blocks issuance."
+        ? "DU* IBKR paper-trading account prefix detected: live production gate blocks issuance."
         : missing.length === 0
           ? "All 8 mandatory non-cash & equity Flex sections present. Offline XML upload is labeled SELF_REPORTED (use 6h Flex Token or Local Gateway CLI for Witnessed TLS)."
-          : `Missing ${missing.length} Flex section(s) (${missing.join(", ")}) — reconciliation will transparently report INSUFFICIENT_SECTIONS.`,
+          : `Missing ${missing.length} Flex section(s) (${missing.join(", ")}): reconciliation will transparently report INSUFFICIENT_SECTIONS.`,
     };
   }
 
@@ -327,8 +327,8 @@ export async function sniffBrokerageStatement(
   // 4. MetaTrader 4 / MetaTrader 5 (MT4/MT5) HTML or CSV Statement
   const isMtHtml =
     (headLower.includes("<html") || headLower.includes("<!doctype html") || headLower.includes("<table")) &&
-    (headLower.includes("metatrader 4") ||
-      headLower.includes("metatrader 5") ||
+    (headLower.includes("metatrader") ||
+      headLower.includes("metaquotes") ||
       (headLower.includes("closed transactions") && headLower.includes("ticket")) ||
       (headLower.includes("trade history report") && headLower.includes("positions")));
   const isMtCsv =
@@ -366,14 +366,14 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
       previewReconciliation: ReconciliationStatus.INSUFFICIENT_SECTIONS,
       transparencyNotice: paperAccountRejected
-        ? "MT4/MT5 Demo server signature detected — live production gate blocks demo statements."
-        : "MT4/MT5 offline statement detected — unlocks friction waterfall (swap + commission bps) and behavioural coaching under honest SELF_REPORTED provenance.",
+        ? "MT4/MT5 Demo server signature detected: live production gate blocks demo statements."
+        : "MT4/MT5 offline statement detected: unlocks friction waterfall (swap + commission bps) and behavioural coaching under honest SELF_REPORTED provenance.",
     };
   }
 
   // 5. Tradovate Futures CSV
   if (
-    (firstLine.includes("_priceFormat") && firstLine.includes("buyFillId") && firstLine.includes("sellFillId")) ||
+    firstLine.includes("_priceFormat") ||
     (firstLine.includes("B/S") && firstLine.includes("Contract") && firstLine.includes("FillTime")) ||
     headLower.includes("tradovate")
   ) {
@@ -393,8 +393,8 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
       previewReconciliation: ReconciliationStatus.INSUFFICIENT_SECTIONS,
       transparencyNotice: paperAccountRejected
-        ? "Tradovate SIM/DEMO account identifier detected — live production gate blocks simulated fills."
-        : "Tradovate futures export detected — computes session expectancy matrix, Odean hold symmetry, and fee drag under SELF_REPORTED provenance.",
+        ? "Tradovate SIM/DEMO account identifier detected: live production gate blocks simulated fills."
+        : "Tradovate futures export detected: computes session expectancy matrix, Odean hold symmetry, and fee drag under SELF_REPORTED provenance.",
     };
   }
 
@@ -455,7 +455,7 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
       previewReconciliation: ReconciliationStatus.INSUFFICIENT_SECTIONS,
       transparencyNotice:
-        "Auto-detected Robinhood Activity CSV export — full flow-adjusted TWR & coaching under honest SELF_REPORTED provenance.",
+        "Auto-detected Robinhood Activity CSV export: full flow-adjusted TWR & coaching under honest SELF_REPORTED provenance.",
     };
   }
 
@@ -483,7 +483,7 @@ export async function sniffBrokerageStatement(
       previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
       previewReconciliation: ReconciliationStatus.INSUFFICIENT_SECTIONS,
       transparencyNotice:
-        "Auto-detected Charles Schwab CSV export — labeled SELF_REPORTED until Schwab OAuth live API is linked.",
+        "Auto-detected Charles Schwab CSV export: labeled SELF_REPORTED until Schwab OAuth live API is linked.",
     };
   }
 
@@ -502,7 +502,7 @@ export async function sniffBrokerageStatement(
     previewScope: AccountScope.UNKNOWN_OFFLINE_SCOPE,
     previewReconciliation: ReconciliationStatus.INSUFFICIENT_SECTIONS,
     transparencyNotice:
-      "Generic tabular statement detected — offline exports are strictly labeled SELF_REPORTED.",
+      "Generic tabular statement detected: offline exports are strictly labeled SELF_REPORTED.",
   };
 }
 
@@ -522,7 +522,7 @@ export const SYNTHETIC_DROPZONE_SPECIMENS: Record<
       `<${"FlexQueryResponse"} queryName="N170_ReadOnly_Audit_v3" type="AF">`,
       `  <FlexStatements count="1">`,
       `    <${"FlexStatement"} accountId="U9048120" fromDate="2026-01-01" toDate="2026-03-31" period="LastQuarter">`,
-      `      <AccountInformation accountId="U9048120" currency="USD" accountType="Institutional" />`,
+      `      <AccountInformation accountId="U9048120" currency="USD" accountType="Standard" />`,
       `      <EquitySummaryInBase count="63" />`,
       `      <PriorPeriodPositions count="4" />`,
       `      <OpenPositions count="3" />`,
@@ -573,7 +573,7 @@ export const SYNTHETIC_DROPZONE_SPECIMENS: Record<
       "Open Date,Close Date,Symbol,Side,Entry Price,Exit Price,Playbook,Setups,Mistakes,Custom Tags",
       "2026-02-03,2026-02-03,NVDA,LONG,128.40,134.90,Momentum_Breakout,ORB_5m;Post_Earnings_Drift,None,a_plus_execution|catalyst_aligned",
       "2026-02-06,2026-02-06,TSLA,SHORT,362.10,354.20,Mean_Reversion,VWAP_Fade,Early_Exit_Trim,ny_open_alpha",
-      "2026-02-11,2026-02-11,META,LONG,694.00,708.50,Catalyst_Swing,Gap_And_Go,None,institutional_flow",
+      "2026-02-11,2026-02-11,META,LONG,694.00,708.50,Catalyst_Swing,Gap_And_Go,None,market_flow",
     ].join("\n"),
   },
 };

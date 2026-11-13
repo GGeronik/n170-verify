@@ -1,0 +1,248 @@
+[
+  {
+    "broker_id": "ibkr_oauth",
+    "display_name": "Interactive Brokers Official OAuth Web API",
+    "approval_state": "pending_provider_approval",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "read_account_profile",
+      "list_subaccounts",
+      "fetch_nav_history",
+      "fetch_positions",
+      "fetch_executions",
+      "fetch_transactions"
+    ]
+  },
+  {
+    "broker_id": "ibkr_flex_web",
+    "display_name": "Interactive Brokers Flex Web Service v3",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "fetch_nav_history",
+      "fetch_positions",
+      "fetch_executions",
+      "fetch_cash_flows",
+      "fetch_transfers",
+      "fetch_corporate_actions"
+    ]
+  },
+  {
+    "broker_id": "ibkr_flex_offline",
+    "display_name": "Interactive Brokers Offline Flex XML Import",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "alpaca",
+    "display_name": "Alpaca Markets Live Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "read_account_profile",
+      "fetch_nav_history",
+      "fetch_positions",
+      "fetch_executions",
+      "fetch_cash_flows",
+      "fetch_corporate_actions"
+    ]
+  },
+  {
+    "broker_id": "trading212",
+    "display_name": "Trading 212 Live Invest/ISA Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "read_account_profile",
+      "fetch_nav_history",
+      "fetch_positions",
+      "fetch_executions",
+      "fetch_dividends",
+      "fetch_transactions"
+    ]
+  },
+  {
+    "broker_id": "tradier",
+    "display_name": "Tradier Brokerage Live Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_positions",
+      "fetch_transactions"
+    ]
+  },
+  {
+    "broker_id": "schwab",
+    "display_name": "Charles Schwab Trader API Read-Only Adapter",
+    "approval_state": "pending_provider_approval",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_positions",
+      "fetch_transactions"
+    ]
+  },
+  {
+    "broker_id": "schwab_csv",
+    "display_name": "Charles Schwab Offline Transactions CSV Import",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "degiro_csv",
+    "display_name": "DEGIRO Offline CSV Import (EN/NL/DE)",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "robinhood_csv",
+    "display_name": "Robinhood Offline Activity CSV Import",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "binance",
+    "display_name": "Binance Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "verify_key_permissions",
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_fills",
+      "fetch_cash_flows",
+      "read_ledgers"
+    ]
+  },
+  {
+    "broker_id": "coinbase",
+    "display_name": "Coinbase Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "verify_key_permissions",
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_fills",
+      "fetch_cash_flows",
+      "read_ledgers"
+    ]
+  },
+  {
+    "broker_id": "kraken",
+    "display_name": "Kraken Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "verify_key_permissions",
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_fills",
+      "fetch_cash_flows",
+      "read_ledgers"
+    ]
+  },
+  {
+    "broker_id": "bybit",
+    "display_name": "Bybit Read-Only Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "verify_key_permissions",
+      "read_account_profile",
+      "list_subaccounts",
+      "read_balances",
+      "fetch_fills",
+      "fetch_cash_flows",
+      "read_ledgers"
+    ]
+  },
+  {
+    "broker_id": "mt4_statement",
+    "display_name": "MetaTrader 4 Offline Statement Import (HTML/CSV)",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "mt5_statement",
+    "display_name": "MetaTrader 4/5 Offline Statement Import (HTML/CSV)",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "tradovate_csv",
+    "display_name": "Tradovate Futures Offline CSV Import",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  },
+  {
+    "broker_id": "ctrader_oauth",
+    "display_name": "Spotware cTrader Open API Read-Only OAuth2 Adapter",
+    "approval_state": "user_key_self_attested",
+    "default_origin_assurance": "operator_retrieved",
+    "supports_subaccount_enumeration": true,
+    "allowed_capabilities": [
+      "read_account_list",
+      "list_subaccounts",
+      "fetch_deals",
+      "fetch_cash_flows",
+      "read_reconcile_positions"
+    ]
+  },
+  {
+    "broker_id": "journal_migration",
+    "display_name": "TraderSync & TradeZella Offline Journal Migration Adapter",
+    "approval_state": "offline_export_only",
+    "default_origin_assurance": "self_reported",
+    "supports_subaccount_enumeration": false,
+    "allowed_capabilities": [
+      "parse_statement_export"
+    ]
+  }
+]

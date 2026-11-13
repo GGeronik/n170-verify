@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Cpu,
   FileCode2,
   Lock,
   ShieldAlert,
@@ -16,6 +17,10 @@ import {
 import Link from "next/link";
 import { type DragEvent, useState } from "react";
 import { TearSheetView } from "@/components/TearSheetView.tsx";
+import {
+  ConnectIsolationReceipt,
+  type IsolationReceiptData,
+} from "@/components/ConnectIsolationReceipt.tsx";
 import {
   fetchActiveRegistryDocument,
   getConfiguredApiBaseUrl,
@@ -34,6 +39,7 @@ import {
   type CanonicalLeafName,
   type PublisherKeyRegistryDocument,
   type RetentionMode,
+  type VerifyProofBundle,
 } from "@/lib/contracts.ts";
 import { DEMO_REGISTRY_DOCUMENT } from "@/lib/demoFixtures.ts";
 import {
@@ -42,6 +48,15 @@ import {
   sniffBrokerageStatement,
   type SniffedStatementResult,
 } from "@/lib/statementSniffer.ts";
+import {
+  resolveStatusPill,
+  validateReadOnlyScopeString,
+  type StatusPillVariant,
+} from "@/lib/connectorStatus.ts";
+import {
+  verifyWithPyodideFailsafe,
+  isPyodideFailsafeSupported,
+} from "@/lib/pyodideClient.ts";
 
 type BrokerKey =
   | "ibkr"
@@ -59,12 +74,8 @@ interface BrokerCatalogItem {
   id: BrokerKey;
   name: string;
   category: string;
-  statusPill:
-    | "Live"
-    | "Live • Scope: ACCOUNTS"
-    | "Pending Provider Approval"
-    | "Air-Gapped Export";
-  statusVariant: "emerald" | "ochre" | "champagne" | "neutral";
+  statusPill: string;
+  statusVariant: StatusPillVariant;
   approvalState: ProviderApprovalState;
   defaultOrigin: OriginAssurance;
   accountScope: AccountScope;
@@ -77,7 +88,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "ibkr",
     name: "Interactive Brokers",
     category: "Prime & Multi-Asset Custody",
-    statusPill: "Live",
+    statusPill: "Verified Direct",
     statusVariant: "emerald",
     approvalState: ProviderApprovalState.APPROVED_LIVE,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -91,7 +102,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "ctrader",
     name: "cTrader Open API (OAuth 2.0)",
     category: "Spot FX, Metals & Multi-Broker CFDs",
-    statusPill: "Live • Scope: ACCOUNTS",
+    statusPill: "Active Channel • Scope: ACCOUNTS",
     statusVariant: "emerald",
     approvalState: ProviderApprovalState.APPROVED_LIVE,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -105,7 +116,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "alpaca",
     name: "Alpaca Markets",
     category: "US Equities & Options",
-    statusPill: "Live",
+    statusPill: "Verified Direct",
     statusVariant: "emerald",
     approvalState: ProviderApprovalState.APPROVED_LIVE,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -118,7 +129,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "tradier",
     name: "Tradier Brokerage",
     category: "US Equities & Options",
-    statusPill: "Live",
+    statusPill: "Verified Direct",
     statusVariant: "emerald",
     approvalState: ProviderApprovalState.APPROVED_LIVE,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -131,7 +142,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "crypto_cex",
     name: "Binance / Coinbase / Kraken",
     category: "Digital Asset Exchanges",
-    statusPill: "Live",
+    statusPill: "Active Read-Only Key",
     statusVariant: "champagne",
     approvalState: ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -157,7 +168,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "trading212",
     name: "Trading 212",
     category: "UK / EU Equities & ISA",
-    statusPill: "Live",
+    statusPill: "Active Read-Only Key",
     statusVariant: "champagne",
     approvalState: ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     defaultOrigin: OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
@@ -171,7 +182,7 @@ const BROKERS: BrokerCatalogItem[] = [
     id: "offline_csv",
     name: "DEGIRO / Robinhood / MT4-5 / Tradovate / Journal CSV",
     category: "Zero-Dropdown Universal Statement Export",
-    statusPill: "Air-Gapped Export",
+    statusPill: "Offline Export",
     statusVariant: "neutral",
     approvalState: ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     defaultOrigin: OriginAssurance.SELF_REPORTED,
@@ -188,6 +199,7 @@ export default function ConnectWizardPage() {
   const [ibkrOauthLivePreview, setIbkrOauthLivePreview] = useState(false);
   const [simulateUnsafeWriteKey, setSimulateUnsafeWriteKey] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(true);
+  const [usePyodideFailsafe, setUsePyodideFailsafe] = useState(false);
 
   const [flexChecks, setFlexChecks] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
@@ -214,8 +226,9 @@ export default function ConnectWizardPage() {
   const [optInLeaderboard, setOptInLeaderboard] = useState(false);
   const [submittingVerify, setSubmittingVerify] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
-  const [verifyResult, setVerifyResult] =
-    useState<ApiOneShotVerifyResponse | null>(null);
+  const [issuedBundle, setIssuedBundle] = useState<VerifyProofBundle | null>(null);
+  const [isolationReceipt, setIsolationReceipt] =
+    useState<IsolationReceiptData | null>(null);
   const [liveRegistryDoc, setLiveRegistryDoc] =
     useState<PublisherKeyRegistryDocument>(DEMO_REGISTRY_DOCUMENT);
 
@@ -259,7 +272,7 @@ export default function ConnectWizardPage() {
     return base;
   };
 
-  const handleLiveStatementVerify = async () => {
+  const handleStatementVerify = async () => {
     if (!rawStatementInput.trim()) {
       setVerifyError(
         "Drop or paste a brokerage statement (XML / CSV / HTML) or specimen first.",
@@ -271,21 +284,44 @@ export default function ConnectWizardPage() {
     try {
       const meta =
         sniffedMeta ?? (await sniffBrokerageStatement(rawStatementInput));
-      const [apiResp, regInfo] = await Promise.all([
-        submitOneShotVerification({
+
+      if (usePyodideFailsafe || !configuredApiUrl) {
+        // Execute zero-network Pyodide Failsafe
+        const result = await verifyWithPyodideFailsafe({
           broker_id: meta.apiBrokerId,
           raw_statement: rawStatementInput,
           csv_format: meta.apiCsvFormat,
           disclose_leaf_names: buildDisclosedLeafNames(),
           publish_proof: publishProof,
-          opt_in_leaderboard: publishProof && optInLeaderboard,
-        }),
-        fetchActiveRegistryDocument(),
-      ]);
-      setLiveRegistryDoc(regInfo.registryDoc);
-      setVerifyResult(apiResp);
+        });
+        setIssuedBundle(result.proof_bundle);
+        setIsolationReceipt(result.isolation_receipt);
+      } else {
+        // Execute via API isolated worker
+        const [apiResp, regInfo] = await Promise.all([
+          submitOneShotVerification({
+            broker_id: meta.apiBrokerId,
+            raw_statement: rawStatementInput,
+            csv_format: meta.apiCsvFormat,
+            disclose_leaf_names: buildDisclosedLeafNames(),
+            publish_proof: publishProof,
+            opt_in_leaderboard: publishProof && optInLeaderboard,
+          }),
+          fetchActiveRegistryDocument(),
+        ]);
+        setLiveRegistryDoc(regInfo.registryDoc);
+        setIssuedBundle(apiResp.proof_bundle);
+        setIsolationReceipt({
+          mode: "backend_worker",
+          workerPid: apiResp.isolation_receipt.worker_pid,
+          rlimitCoreSoft: apiResp.isolation_receipt.rlimit_core_soft,
+          rlimitCoreHard: apiResp.isolation_receipt.rlimit_core_hard,
+          persistentRowsWritten: apiResp.isolation_receipt.persistent_rows_written,
+        });
+      }
     } catch (err) {
-      setVerifyResult(null);
+      setIssuedBundle(null);
+      setIsolationReceipt(null);
       setVerifyError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmittingVerify(false);
@@ -347,9 +383,7 @@ export default function ConnectWizardPage() {
           </div>
         </div>
 
-        {/* ====================================================================
-            HERO: UNIVERSAL ZERO-DROPDOWN AUTO-DETECT DROPZONE + 1-CLICK MIGRATION
-            ==================================================================== */}
+        {/* HERO: UNIVERSAL ZERO-DROPDOWN AUTO-DETECT DROPZONE */}
         <section className="inst-panel rounded-md p-5 sm:p-6">
           <div className="flex flex-col justify-between gap-3 border-b border-hairline pb-4 lg:flex-row lg:items-center">
             <div>
@@ -362,14 +396,31 @@ export default function ConnectWizardPage() {
               </h2>
             </div>
 
-            <span className="rounded border border-hairline-strong bg-elevated px-3 py-1.5 font-mono text-[11px] text-ink-secondary">
-              {configuredApiUrl
-                ? `Isolated Worker: ${configuredApiUrl}`
-                : "100% Local WebCrypto SHA-256 Inspection"}
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUsePyodideFailsafe((v) => !v)}
+                className={`rounded border px-3 py-1.5 font-mono text-[11px] transition ${
+                  usePyodideFailsafe
+                    ? "border-signal-emerald bg-signal-emerald-bg font-semibold text-signal-emerald"
+                    : "border-hairline-strong bg-elevated text-ink-secondary hover:text-ink"
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5" />
+                  <span>
+                    {usePyodideFailsafe
+                      ? "Pyodide Failsafe: Active (0 Network Requests)"
+                      : configuredApiUrl
+                        ? `Isolated Worker: ${configuredApiUrl}`
+                        : "Offline Mode (Pyodide Failsafe)"}
+                  </span>
+                </span>
+              </button>
+            </div>
           </div>
 
-          {/* 1-Click Specimen Pills (Including 1-Click Leave TraderSync / TradeZella Migration) */}
+          {/* 1-Click Specimen Pills */}
           <div className="mt-4 flex flex-wrap items-center gap-2 font-mono text-[11px]">
             <span className="text-ink-muted">Test Instant Signature Sniffer:</span>
             {(
@@ -420,7 +471,7 @@ export default function ConnectWizardPage() {
                 <Upload className="mt-0.5 h-5 w-5 shrink-0 text-signal-champagne" />
                 <div>
                   <p className="text-xs font-semibold text-ink sm:text-sm">
-                    Drag &amp; drop any brokerage statement or journal export — zero
+                    Drag &amp; drop any brokerage statement or journal export: zero
                     format dropdowns required
                   </p>
                   <p className="mt-0.5 text-[11.5px] text-ink-muted">
@@ -472,7 +523,7 @@ export default function ConnectWizardPage() {
                   </span>
                 </div>
 
-                {/* Transparent Badge Preview (Crucial for Journal Migration & Offline Exports) */}
+                {/* Transparent Badge Preview */}
                 <div className="grid grid-cols-1 gap-2 rounded border border-hairline bg-elevated p-3 sm:grid-cols-3">
                   <div>
                     <span className="block text-[9.5px] uppercase text-ink-muted">
@@ -543,7 +594,7 @@ export default function ConnectWizardPage() {
                   ))}
                   {sniffedMeta.paperAccountRejected && (
                     <span className="badge-vermilion rounded px-2 py-0.5 font-semibold">
-                      PAPER / DEMO ACCOUNT DETECTED — LIVE GATE BLOCKS ISSUANCE
+                      PAPER / DEMO ACCOUNT DETECTED: LIVE GATE BLOCKS ISSUANCE
                     </span>
                   )}
                 </div>
@@ -590,15 +641,18 @@ export default function ConnectWizardPage() {
                 type="button"
                 disabled={
                   submittingVerify ||
-                  !configuredApiUrl ||
                   Boolean(sniffedMeta?.paperAccountRejected)
                 }
-                onClick={() => void handleLiveStatementVerify()}
+                onClick={() => void handleStatementVerify()}
                 className="rounded border border-signal-emerald bg-signal-emerald px-4 py-2 font-mono text-xs font-semibold text-canvas transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {submittingVerify
-                  ? "Running RLIMIT_CORE=0 Worker…"
-                  : "Issue Signed .verify.json Bundle"}
+                  ? usePyodideFailsafe
+                    ? "Executing Pyodide Failsafe…"
+                    : "Running Isolated Worker…"
+                  : usePyodideFailsafe
+                    ? "Issue Proof via Pyodide Failsafe (Offline)"
+                    : "Issue Signed .verify.json Bundle"}
               </button>
             </div>
 
@@ -608,27 +662,20 @@ export default function ConnectWizardPage() {
               </div>
             )}
 
-            {verifyResult && (
+            {issuedBundle && isolationReceipt && (
               <div className="mt-4 space-y-4">
-                <div className="rounded border border-signal-emerald-border bg-signal-emerald-bg p-3.5 font-mono text-xs text-ink tabular-nums">
-                  ISOLATED WORKER RECEIPT • pid={verifyResult.isolation_receipt.worker_pid} •{" "}
-                  RLIMIT_CORE={verifyResult.isolation_receipt.rlimit_core_soft}/
-                  {verifyResult.isolation_receipt.rlimit_core_hard} • db_rows=
-                  {verifyResult.isolation_receipt.persistent_rows_written}
-                </div>
+                <ConnectIsolationReceipt receipt={isolationReceipt} />
                 <TearSheetView
-                  bundle={verifyResult.proof_bundle}
+                  bundle={issuedBundle}
                   registryDoc={liveRegistryDoc}
-                  title={`Issued Proof Bundle • ${verifyResult.proof_bundle.proof_id}`}
+                  title={`Issued Proof Bundle • ${issuedBundle.proof_id}`}
                 />
               </div>
             )}
           </div>
         </section>
 
-        {/* ====================================================================
-            COLLAPSIBLE IBKR FLEX QUERY 60-SECOND SETUP CHECKLIST (ALL 9 SECTIONS)
-            ==================================================================== */}
+        {/* IBKR FLEX QUERY 60-SECOND SETUP CHECKLIST */}
         <section className="inst-panel rounded-md p-5 sm:p-6">
           <button
             type="button"
@@ -724,9 +771,7 @@ export default function ConnectWizardPage() {
           )}
         </section>
 
-        {/* ====================================================================
-            STEP 1: Read-Only Live Broker & OAuth Catalog (Includes cTrader Scope: ACCOUNTS)
-            ==================================================================== */}
+        {/* Read-Only Live Broker & OAuth Catalog */}
         <section className="inst-panel rounded-md p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-4">
             <div>
@@ -853,7 +898,7 @@ export default function ConnectWizardPage() {
             </div>
           </div>
 
-          {/* Dual-Track IBKR Provenance Selector */}
+          {/* Provenance Channel Selector */}
           {selectedBroker === "ibkr" && (
             <div className="mt-5 rounded border border-hairline-strong bg-canvas p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
@@ -871,7 +916,7 @@ export default function ConnectWizardPage() {
                       ibkrOauthLivePreview ? "text-signal-emerald" : "text-signal-ochre"
                     }
                   >
-                    {ibkrOauthLivePreview ? "Live" : "Pending Provider Approval"}
+                    {ibkrOauthLivePreview ? "Verified Direct" : "Pending Provider Approval"}
                   </span>
                 </button>
               </div>
@@ -880,7 +925,7 @@ export default function ConnectWizardPage() {
                   active={ibkrTrack === "flex_wizard"}
                   onClick={() => setIbkrTrack("flex_wizard")}
                   title="1. Flex v3 Guided Token"
-                  badge="LIVE • 6h + IP LOCK"
+                  badge="ACTIVE • 6h + IP LOCK"
                   variant="emerald"
                   desc="ndcdyn.interactivebrokers.com read-only query with 6h expiry & CIDR lock."
                 />
@@ -888,22 +933,22 @@ export default function ConnectWizardPage() {
                   active={ibkrTrack === "local_cli"}
                   onClick={() => setIbkrTrack("local_cli")}
                   title="2. Local Gateway CLI"
-                  badge="LIVE • DAY-1"
+                  badge="ACTIVE • DAY-1"
                   variant="emerald"
                   desc="Authenticated local Client Portal Gateway + k>=2 disjoint MPC-TLS witnesses."
                 />
                 <TrackPill
                   active={ibkrTrack === "oauth"}
                   onClick={() => setIbkrTrack("oauth")}
-                  title="3. Institutional OAuth 2.0"
-                  badge={ibkrOauthLivePreview ? "LIVE" : "PENDING APPROVAL"}
+                  title="3. Direct Broker OAuth 2.0"
+                  badge={ibkrOauthLivePreview ? "ACTIVE" : "PENDING APPROVAL"}
                   variant={ibkrOauthLivePreview ? "emerald" : "ochre"}
                   desc="Direct OAuth read-only portfolio & sub-account enumeration."
                 />
                 <TrackPill
                   active={ibkrTrack === "offline_xml"}
                   onClick={() => setIbkrTrack("offline_xml")}
-                  title="4. Air-Gapped XML Drop"
+                  title="4. Offline XML Import"
                   badge="SELF-REPORTED"
                   variant="neutral"
                   desc="Offline XML reconciliation & coaching without live notary claims."
@@ -913,9 +958,7 @@ export default function ConnectWizardPage() {
           )}
         </section>
 
-        {/* ====================================================================
-            STEP 2 & STEP 3: Storage Isolation + Salted Merkle Disclosure
-            ==================================================================== */}
+        {/* STEP 2 & STEP 3: Storage Isolation + Salted Merkle Disclosure */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="inst-panel space-y-4 rounded-md p-5 lg:col-span-6">
             <div className="border-b border-hairline pb-3">
@@ -1043,7 +1086,7 @@ export default function ConnectWizardPage() {
               <div className="rounded border border-hairline bg-elevated p-3.5 font-mono text-[11px] text-ink-secondary">
                 <div className="flex items-center gap-1.5 text-[10px] uppercase text-ink-muted">
                   <Lock className="h-3 w-3 text-signal-emerald" />
-                  <span>Air-Gapped Local CLI Equivalent</span>
+                  <span>Local CLI Equivalent</span>
                 </div>
                 <p className="mt-1.5 break-all text-signal-emerald">
                   n170-verify ingest --auto-detect statement_export
@@ -1065,7 +1108,7 @@ export default function ConnectWizardPage() {
                 }
                 className="inline-flex flex-1 items-center justify-center rounded border border-signal-emerald bg-signal-emerald px-4 py-2.5 font-mono text-xs font-semibold text-canvas transition hover:opacity-90"
               >
-                Preview Matching LP Tear Sheet →
+                Preview Matching Tear Sheet →
               </Link>
               <Link
                 href="/verify"
