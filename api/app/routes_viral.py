@@ -823,12 +823,12 @@ def handle_get_challenge_card(
         "If you'd like to share a cryptographic percentage-only proof, you can generate an "
         "Ed25519-signed N170 Verify bundle in under 60 seconds while keeping your exact dollar "
         "NAV (salted RFC 6962 Merkle leaves & 100-rebased curve), raw account_id (HMAC-SHA256 "
-        "blinded), and live open positions (7-day delayed disclosure guard) 100% private."
+        "blinded), and live open positions (7-day delayed disclosure guard) private."
     )
     social_reply_text = (
         f"Nice run {display_target}{claim_clause}! Want to mint a 60-second cryptographic % TWR "
         "proof on N170 Verify? Exact $ NAV, raw account_id (HMAC-SHA256 blinded), and live open "
-        "positions (7-day delayed guard) stay 100% private via salted RFC 6962 Merkle leaves."
+        "positions (7-day delayed guard) stay private via salted RFC 6962 Merkle leaves."
     )
 
     payload: dict[str, Any] = {
@@ -841,17 +841,17 @@ def handle_get_challenge_card(
         "social_reply_text": social_reply_text,
         "estimated_verification_seconds": 60,
         "non_defamatory": True,
-        "verify_url": "https://verify.n170.ai/verify",
+        "verify_url": "https://verify.example.org/verify",
         "privacy_guarantees": {
             "dollar_nav_private": (
-                "100% private: raw dollar balances never leave the ephemeral worker; "
+                "Private by design: raw dollar balances never leave the ephemeral worker; "
                 "curves rebase to 100.0 and optional leaves use 256-bit salted RFC 6962 Merkle commitments."
             ),
             "account_id_private": (
-                "100% private: raw brokerage account_id is blinded via domain-separated HMAC-SHA256."
+                "Private by design: raw brokerage account_id is blinded via domain-separated HMAC-SHA256."
             ),
             "open_positions_private": (
-                "100% private: live open positions are excluded and closed trades younger than "
+                "Private by design: live open positions are excluded and closed trades younger than "
                 "7 days are stripped by the delayed disclosure front-running guard."
             ),
         },
@@ -945,7 +945,7 @@ def handle_get_discord_embed(
     safe_proof_label = sanitize_markdown_text(bundle.proof_id, max_len=64)
     safe_broker_label = sanitize_markdown_text(bundle.broker_id, max_len=32)
     encoded_id = quote(bundle.proof_id, safe="")
-    proof_url = f"https://verify.n170.ai/p/{encoded_id}"
+    proof_url = f"https://verify.example.org/p/{encoded_id}"
 
     trust_chips = {
         "origin_assurance": origin_val,
@@ -1045,7 +1045,7 @@ def handle_get_qr_payload(
         f"&rs={recon_status}"
         f"&as={scope_val}"
     )
-    https_url = f"https://verify.n170.ai/p/{encoded_id}"
+    https_url = f"https://verify.example.org/p/{encoded_id}"
     relative_path = f"/p/{encoded_id}"
 
     trust_enums = {
