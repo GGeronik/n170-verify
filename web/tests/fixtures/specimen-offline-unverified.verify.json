@@ -2,9 +2,9 @@
   "proof_id": "specimen-offline-unverified",
   "issued_at_utc": "2026-04-01T12:00:00Z",
   "publisher_kid": "n170-pub-2026-q1",
-  "publisher_public_key_hex": "bfb42bb4975693d3c90eeb0583435663cc2a74c66e6761c95667357db65cfc30",
+  "publisher_public_key_hex": "74fbf42d31b2b00bf7700bcfd806d1bb9ea7b7f00fdbd003a534c805ba867d77",
   "broker_id": "degiro",
-  "blinded_account_tag": "87a2273d764e55e75471c281a903b72e926bd59d4559c486d65b223457f3b1e1",
+  "blinded_account_tag": "5685d0770fb6ec317bab2afece1139da5226cb26474790878e07190c204a775f",
   "account_scope": "unknown_offline_scope",
   "provider_approval_state": "offline_export_only",
   "environment_tier": "unverified_offline",
@@ -13,13 +13,13 @@
   "period_start_utc": "2026-01-01T00:00:00Z",
   "period_end_utc": "2026-03-31T23:59:59Z",
   "base_currency": "EUR",
-  "merkle_root": "ed1dd05b55ceafef7b52b40ee9c959fbdcadadf9b6f39cb993bd1ab38223e86f",
-  "signature_hex": "573eddaeaf5c1d4907b59a9533bae218330b4f160e008d4768ec307053bfa455261cd60dfa774c676d49db8c40e74eeeceb9f328ea1c7f983537126ebc18f101",
+  "merkle_root": "a5d96429adf84932fe1679f02c8f1461f12c9f5d7113f5ae2f6984d1a9fe78e9",
+  "signature_hex": "1fea8a5551c7edc9676790470a3df15e4d0c1d508b4b89c1ff466d06d0af6adc2851e48e39164e69f85a2969dd9b35d1e8d1bf1f5d45eeee0e5219affa8a960a",
   "schema_version": "n170-verify-v3",
   "disclosed_leaves": [
     {
       "leaf_name": "core_metrics",
-      "salt_hex": "80b5b270c2cd632e3a38440b643be3719c71f3d6be1fac5b69804830bc73d965",
+      "salt_hex": "ca3dbb3b83efb89f46a0b8324dad99bd8859bea1f97cd1364c40e1cdedda0a58",
       "payload": {
         "twr_decimal": 0.152,
         "twr_pct": 15.2,
@@ -47,25 +47,25 @@
         "benchmark_twr_decimal": 0.065,
         "alpha_decimal": 0.087
       },
-      "leaf_hash_hex": "b28e04e56773ddd14f53c7795696719e6b40b677dc248b74b2d77805786ba723",
+      "leaf_hash_hex": "1f988af9077427891dc6381a30b39e4ab0f8ab408a78c62e7337e92aa7d5050d",
       "audit_path": [
         {
           "side": "right",
-          "sibling_hash_hex": "750cf1c0a3ec00ede53a68d8626e858200ba30699be5191ea92593d6d976383d"
+          "sibling_hash_hex": "9e02ddefbe97bee2f6af0b200ad99c036bcc0decc332011288aee1f6c7374970"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "0d31289b2c746485613a175c131f06a06c7b4acad5a1759c7848745d730654cb"
+          "sibling_hash_hex": "83824d1eb75aaa3989b38edf3cc72d2a481b9e06d435585ddd7efef61aa3fddd"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "473774acdafe37ba047912dcf5e3b88688d927093e7153896b20c4ca46bee48f"
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
         }
       ]
     },
     {
       "leaf_name": "indexed_curve",
-      "salt_hex": "afd219a11f8a6ba1dd66f7579e999df3cf9c058dcea2e81cde8fc9a269b12745",
+      "salt_hex": "ef8930a502b78a0b5ba6bc8cb6aca2f46b583b9fa60603477bae65f7711b90e4",
       "payload": {
         "base_index": 100.0,
         "points": [
@@ -79,25 +79,25 @@
           }
         ]
       },
-      "leaf_hash_hex": "750cf1c0a3ec00ede53a68d8626e858200ba30699be5191ea92593d6d976383d",
+      "leaf_hash_hex": "9e02ddefbe97bee2f6af0b200ad99c036bcc0decc332011288aee1f6c7374970",
       "audit_path": [
         {
           "side": "left",
-          "sibling_hash_hex": "b28e04e56773ddd14f53c7795696719e6b40b677dc248b74b2d77805786ba723"
+          "sibling_hash_hex": "1f988af9077427891dc6381a30b39e4ab0f8ab408a78c62e7337e92aa7d5050d"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "0d31289b2c746485613a175c131f06a06c7b4acad5a1759c7848745d730654cb"
+          "sibling_hash_hex": "83824d1eb75aaa3989b38edf3cc72d2a481b9e06d435585ddd7efef61aa3fddd"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "473774acdafe37ba047912dcf5e3b88688d927093e7153896b20c4ca46bee48f"
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
         }
       ]
     },
     {
       "leaf_name": "reconciliation",
-      "salt_hex": "7980980fc00d040b6f0280df61cf941142e5da7b49f2fe3db042d826ae6dad3b",
+      "salt_hex": "77cc870a79ee58c6ebabc78ce79641ebc7a3a957bc439237be4622d9839bff29",
       "payload": {
         "status": "reconciled_offline_export",
         "discrepancy_count": 0,
@@ -110,25 +110,25 @@
         ],
         "findings": []
       },
-      "leaf_hash_hex": "cf37f687d7e0efb9a76f27c336f5edb67846bb5be241bdef76f1723060c94075",
+      "leaf_hash_hex": "a58673175ff1ec70ff5b473b249bd3fa58c7185d7c48b15bd3e5852e9eb6f8c1",
       "audit_path": [
         {
           "side": "right",
-          "sibling_hash_hex": "ead53c59e9b5a0a8ac89e1a7db34b4b69046aaa22558e19230bf3fc654c5be5b"
+          "sibling_hash_hex": "b878d725ebaaea519819f37423d54f502fdd424c3147193bccde31265c55c569"
         },
         {
           "side": "left",
-          "sibling_hash_hex": "eb8644cc0253e542eba68706a3b2a9534dfcf96df2cf44b258be9858374bbba4"
+          "sibling_hash_hex": "bf1ea7ec2f20dc079625d7d9497f57ffdd681c6d8d25037c70693d943064a768"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "473774acdafe37ba047912dcf5e3b88688d927093e7153896b20c4ca46bee48f"
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
         }
       ]
     },
     {
       "leaf_name": "coaching_and_context",
-      "salt_hex": "4e5ce5277c04f05f7f1be542d96c0c8de08c6d2924f1b848ad6bc59c3ff36974",
+      "salt_hex": "e2fa3593b2b018e36a24c4d5c4c4d5e82f9d123bc1410829e6936859a18b5ca0",
       "payload": {
         "cost_drag": {
           "commission_and_fee_drag_bps": 8.5,
@@ -159,48 +159,48 @@
         "event_window_share_pct": 0.0,
         "event_observations": []
       },
-      "leaf_hash_hex": "ead53c59e9b5a0a8ac89e1a7db34b4b69046aaa22558e19230bf3fc654c5be5b",
+      "leaf_hash_hex": "b878d725ebaaea519819f37423d54f502fdd424c3147193bccde31265c55c569",
       "audit_path": [
         {
           "side": "left",
-          "sibling_hash_hex": "cf37f687d7e0efb9a76f27c336f5edb67846bb5be241bdef76f1723060c94075"
+          "sibling_hash_hex": "a58673175ff1ec70ff5b473b249bd3fa58c7185d7c48b15bd3e5852e9eb6f8c1"
         },
         {
           "side": "left",
-          "sibling_hash_hex": "eb8644cc0253e542eba68706a3b2a9534dfcf96df2cf44b258be9858374bbba4"
+          "sibling_hash_hex": "bf1ea7ec2f20dc079625d7d9497f57ffdd681c6d8d25037c70693d943064a768"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "473774acdafe37ba047912dcf5e3b88688d927093e7153896b20c4ca46bee48f"
+          "sibling_hash_hex": "dce39971eacfed3738d72da2c04ff28a62c93ddf4d022dd442cde97875178622"
         }
       ]
     },
     {
       "leaf_name": "capital_bracket",
-      "salt_hex": "d8121a9e1c2d80ee5d4f81ed6d9ab56eca121544a1e836967d7c7d47f4938a2a",
+      "salt_hex": "5852977bcad5b18c871f45ba12abdf5404b4965ecd690b8a67b2409cce811e83",
       "payload": {
         "capital_bracket": "10k_to_100k",
         "valuation_currency": "EUR"
       },
-      "leaf_hash_hex": "00a45495733b85fe16fc6af5eef08481b3ad83fc11d1034d1d0a33bf39e8565e",
+      "leaf_hash_hex": "c5eac72e9b56f1d130b786365ad611db34e7bd27acbaf24afa5b4bedecc11f60",
       "audit_path": [
         {
           "side": "right",
-          "sibling_hash_hex": "9ae76cd0663d5fc2e431190a84ee93bb2124ae588f20e6df13d080fca984465b"
+          "sibling_hash_hex": "f4c0df04b4b9c7c436adb88c1ed7df677db4ed39053e87a1aa20a531ec696de4"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "02177b437b9cba8a48a9b408784940ab24370142fd3fe16c4fa09ca0ed85c632"
+          "sibling_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640"
         },
         {
           "side": "left",
-          "sibling_hash_hex": "464c0220a9f01904ac79ec1b2c85b82253765d5e1ec39072d2922f31a9257cd0"
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
         }
       ]
     },
     {
       "leaf_name": "benchmark_alpha",
-      "salt_hex": "edf1e3653dd89f05641413691947932ba51a1d91dca42c102728930c22a04ba6",
+      "salt_hex": "18badf628ba2c78262f7d261d5587f525ec452f8ceec9ed52bbbe11ab2e3f124",
       "payload": {
         "benchmark_symbol": "IWDA",
         "benchmark_twr_decimal": 0.065,
@@ -208,39 +208,39 @@
         "information_ratio": 1.45,
         "beta": 0.88
       },
-      "leaf_hash_hex": "9ae76cd0663d5fc2e431190a84ee93bb2124ae588f20e6df13d080fca984465b",
+      "leaf_hash_hex": "f4c0df04b4b9c7c436adb88c1ed7df677db4ed39053e87a1aa20a531ec696de4",
       "audit_path": [
         {
           "side": "left",
-          "sibling_hash_hex": "00a45495733b85fe16fc6af5eef08481b3ad83fc11d1034d1d0a33bf39e8565e"
+          "sibling_hash_hex": "c5eac72e9b56f1d130b786365ad611db34e7bd27acbaf24afa5b4bedecc11f60"
         },
         {
           "side": "right",
-          "sibling_hash_hex": "02177b437b9cba8a48a9b408784940ab24370142fd3fe16c4fa09ca0ed85c632"
+          "sibling_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640"
         },
         {
           "side": "left",
-          "sibling_hash_hex": "464c0220a9f01904ac79ec1b2c85b82253765d5e1ec39072d2922f31a9257cd0"
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
         }
       ]
     },
     {
       "leaf_name": "delayed_closed_trades",
-      "salt_hex": "470f8b32ee77cfc6f0e6c41989ac204f28e1021b92af0ecb4779507f73964c38",
+      "salt_hex": "fad2aea211f6a4156cbecbef10142876996d95a5a4cfec2f9f740ea3d24da6c8",
       "payload": {
         "embargo_days": 7,
         "trades": [],
         "stripped_recent_count": 0
       },
-      "leaf_hash_hex": "02177b437b9cba8a48a9b408784940ab24370142fd3fe16c4fa09ca0ed85c632",
+      "leaf_hash_hex": "8347ee3af433540e0f229a5446af2ba3a904a399d2f00074dba371dabbfe2640",
       "audit_path": [
         {
           "side": "left",
-          "sibling_hash_hex": "1ff7f372c6a10cae13c8cadb80fb565a453bb0fb84afb26fdd4300a3c101ac45"
+          "sibling_hash_hex": "b478e391340a4d6da289d026153db95b81fbcbb5a8cb35faeeee464dd3c5e4ef"
         },
         {
           "side": "left",
-          "sibling_hash_hex": "464c0220a9f01904ac79ec1b2c85b82253765d5e1ec39072d2922f31a9257cd0"
+          "sibling_hash_hex": "ae95f20655a48bb53e610900f7f3345e4862a9687f83abf1cb53caf62cc83f0a"
         }
       ]
     }
