@@ -192,6 +192,7 @@ def parse_journal_migration_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> JournalMigrationResult:
     """Import a TraderSync or TradeZella CSV journal backup with sanitized tags and notes."""
@@ -384,7 +385,7 @@ def parse_journal_migration_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=resolved_ccy,
         period_start_utc=start_ts,

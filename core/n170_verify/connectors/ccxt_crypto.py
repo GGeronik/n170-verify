@@ -275,11 +275,12 @@ def invoke_http_transport(
                     f"HTTP {status_int} redirect forbidden for pinned live broker endpoint",
                     headers=resp_hdrs,
                 )
-            raw_bytes = (
-                bytes(raw_resp.content)
-                if hasattr(raw_resp, "content")
-                else str(raw_resp.text).encode("utf-8")
-            )
+            if hasattr(raw_resp, "content"):
+                raw_bytes = bytes(raw_resp.content)
+            elif hasattr(raw_resp, "body"):
+                raw_bytes = bytes(raw_resp.body)
+            else:
+                raw_bytes = str(raw_resp.text).encode("utf-8")
             return HttpExchangeResponse(
                 status_code=status_int,
                 headers=resp_hdrs,
@@ -568,6 +569,7 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         *,
         api_key: str = "vault-bound-key",
         api_secret: str = "vault-bound-secret",
+        approval_state: ProviderApprovalState | str | None = None,
         base_url: str | None = None,
         ccxt_exchange: Any | None = None,
         http_transport: HttpTransportCallable | Any | None = None,
@@ -585,6 +587,8 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         self.broker_id = canonical_ex
         self.display_name = f"{canonical_ex.capitalize()} Read-Only Adapter"
         self.supports_subaccount_enumeration = canonical_ex in {"coinbase", "bybit"}
+        if approval_state is not None:
+            self.approval_state = ProviderApprovalState(approval_state)
         super().__init__()
 
         default_live_url = SUPPORTED_CRYPTO_EXCHANGES[canonical_ex]
@@ -1176,7 +1180,7 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             broker_id="binance",
             account_scope=scope_info.account_scope,
             claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            provider_approval_state=self.approval_state,
             environment_tier=EnvironmentTier.LIVE_PRODUCTION,
             source_body_sha256=source_sha,
             base_currency=base_currency,
@@ -1241,7 +1245,7 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             broker_id="coinbase",
             account_scope=scope_info.account_scope,
             claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            provider_approval_state=self.approval_state,
             environment_tier=EnvironmentTier.LIVE_PRODUCTION,
             source_body_sha256=source_sha,
             base_currency=base_currency,
@@ -1350,7 +1354,7 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             broker_id="kraken",
             account_scope=scope_info.account_scope,
             claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            provider_approval_state=self.approval_state,
             environment_tier=EnvironmentTier.LIVE_PRODUCTION,
             source_body_sha256=source_sha,
             base_currency=base_currency,
@@ -1430,7 +1434,7 @@ class CcxtExchangeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             broker_id="bybit",
             account_scope=scope_info.account_scope,
             claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            provider_approval_state=self.approval_state,
             environment_tier=EnvironmentTier.LIVE_PRODUCTION,
             source_body_sha256=source_sha,
             base_currency=base_currency,

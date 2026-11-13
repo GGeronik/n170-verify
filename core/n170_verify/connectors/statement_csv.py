@@ -468,6 +468,7 @@ def parse_degiro_csv_bundle(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "EUR",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse multi-locale (EN / NL / DE) DEGIRO CSV exports preserving ISINs and FX rates."""
@@ -759,7 +760,7 @@ def parse_degiro_csv_bundle(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=base_ccy,
         period_start_utc=period_start,
@@ -779,6 +780,7 @@ def parse_robinhood_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse an offline Robinhood Account Activity CSV (`SELF_REPORTED`, `UNKNOWN_OFFLINE_SCOPE`)."""
@@ -924,7 +926,7 @@ def parse_robinhood_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=ccy,
         period_start_utc=start_ts,
@@ -942,6 +944,7 @@ def parse_schwab_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse an offline Charles Schwab Transactions CSV (`SELF_REPORTED`, `UNKNOWN_OFFLINE_SCOPE`)."""
@@ -1122,7 +1125,7 @@ def parse_schwab_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=ccy,
         period_start_utc=start_ts,
@@ -1633,8 +1636,8 @@ class DegiroOfflineCsvAdapter(OfflineExportAdapterBase):
     broker_id = "degiro_csv"
     display_name = "DEGIRO Offline CSV Import (EN/NL/DE)"
 
-    def parse_export(self, **kwargs: Any) -> CanonicalPortfolioLedger:
-        return parse_degiro_csv_bundle(**kwargs)
+    def parse_export(self, *, environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE, **kwargs: Any) -> CanonicalPortfolioLedger:
+        return parse_degiro_csv_bundle(environment_tier=environment_tier, **kwargs)
 
 
 class RobinhoodOfflineCsvAdapter(OfflineExportAdapterBase):
