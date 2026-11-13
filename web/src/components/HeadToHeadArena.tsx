@@ -169,7 +169,7 @@ export function HeadToHeadArena({
     const origin =
       typeof window !== "undefined" && window.location?.origin
         ? window.location.origin
-        : "https://verify.n170.io";
+        : "https://verify.n170.org";
     const url = `${origin}/vs/${encodeURIComponent(contenderA.routeSlug)}/${encodeURIComponent(
       contenderB.routeSlug,
     )}`;
@@ -207,8 +207,8 @@ export function HeadToHeadArena({
     },
     {
       metric: "Peak-to-Trough Max Drawdown",
-      valA: perfA ? `-${Math.abs(perfA.max_drawdown_decimal * 100).toFixed(2)}%` : "—",
-      valB: perfB ? `-${Math.abs(perfB.max_drawdown_decimal * 100).toFixed(2)}%` : "—",
+      valA: perfA ? `-${Math.abs(perfA.max_drawdown_decimal * 100).toFixed(2)}%` : "-",
+      valB: perfB ? `-${Math.abs(perfB.max_drawdown_decimal * 100).toFixed(2)}%` : "-",
       winner:
         perfA && perfB
           ? Math.abs(perfA.max_drawdown_decimal) < Math.abs(perfB.max_drawdown_decimal)
@@ -248,10 +248,10 @@ export function HeadToHeadArena({
       metric: "Annualized Friction Drag (bps/yr)",
       valA: leavesA.coaching
         ? `-${leavesA.coaching.cost_drag.annualized_total_drag_bps.toFixed(1)} bps`
-        : "—",
+        : "-",
       valB: leavesB.coaching
         ? `-${leavesB.coaching.cost_drag.annualized_total_drag_bps.toFixed(1)} bps`
-        : "—",
+        : "-",
       winner:
         leavesA.coaching && leavesB.coaching
           ? leavesA.coaching.cost_drag.annualized_total_drag_bps <

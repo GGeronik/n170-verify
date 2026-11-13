@@ -60,7 +60,7 @@ export default async function EmbedProofCardPage({
   const forcePaper = resolvedSearch.theme === "paper";
 
   const qr = generateQrCode(
-    `https://verify.n170.io/p/${encodeURIComponent(safeId)}`,
+    `https://verify.example.org/p/${encodeURIComponent(safeId)}`,
   );
 
   const { line: sparkLine, area: sparkArea } = buildCurveSparklinePaths(

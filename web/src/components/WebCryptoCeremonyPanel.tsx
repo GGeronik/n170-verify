@@ -175,8 +175,8 @@ export function WebCryptoCeremonyPanel({
               )}
               <span className="font-mono text-xs font-semibold tracking-wide text-ink">
                 {report.result.valid
-                  ? "CRYPTOGRAPHIC PROOF VERIFIED — ALL INVARIANTS SATISFIED"
-                  : "CRYPTOGRAPHIC VERIFICATION REJECTED — INVARIANT VIOLATION"}
+                  ? "CRYPTOGRAPHIC PROOF VERIFIED: ALL INVARIANTS SATISFIED"
+                  : "CRYPTOGRAPHIC VERIFICATION REJECTED: INVARIANT VIOLATION"}
               </span>
             </div>
             <span className="font-mono text-[11px] text-ink-secondary tabular-nums">
@@ -235,7 +235,7 @@ export function WebCryptoCeremonyPanel({
                     {isVisible ? step.metricSummary : "queued…"}
                   </span>
                   <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] text-ink-muted">
-                    {isVisible ? `${step.durationMs.toFixed(2)} ms` : "— ms"}
+                    {isVisible ? `${step.durationMs.toFixed(2)} ms` : "- ms"}
                   </span>
                 </div>
               </div>
@@ -372,7 +372,7 @@ const PLACEHOLDER_STEPS: CeremonyStepTrace[] = [
     id: "ed25519_sig",
     index: 3,
     label: "3. Ed25519 Signature",
-    protocolSpec: "WebCrypto • n170.verify.bundle.v3",
+    protocolSpec: "WebCrypto • n170.verify.bundle",
     status: "pass",
     durationMs: 0,
     metricSummary: "",

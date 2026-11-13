@@ -32,8 +32,8 @@ const DISSECTOR_SPECIMENS: readonly (DissectorSpecimenConfig & {
 })[] = [
   {
     id: "fund_chain_12",
-    tabLabel: "Prospective Continuous Fund Chain #12",
-    shortTag: "SPECIMEN 01 • FUND CHAIN",
+    tabLabel: "Prospective Continuous Account Chain #12",
+    shortTag: "SPECIMEN 01 • ACCOUNT CHAIN",
     strategyTitle: "Meridian Systematic Multi-Asset Master",
     subtitle:
       "k=3 Org/ASN-Disjoint MPC-TLS Notaries • Prospective Continuous Chain • All Enumerated Sub-Accounts",
@@ -57,11 +57,11 @@ const DISSECTOR_SPECIMENS: readonly (DissectorSpecimenConfig & {
   },
   {
     id: "nav_discrepancy",
-    tabLabel: "Unexplained NAV Discrepancy Caught",
-    shortTag: "SPECIMEN 03 • RESIDUAL CAUGHT",
+    tabLabel: "Unexplained NAV Discrepancy Detected",
+    shortTag: "SPECIMEN 03 • RESIDUAL DETECTED",
     strategyTitle: "Event-Driven Tech Swing (Discrepancy X-Ray)",
     subtitle:
-      "Single-Notary Dynamic Downgrade • +64.80 bps Missing-Section Residual Caught • T=22 PSR Gate",
+      "Single-Notary Dynamic Downgrade • +64.80 bps Missing-Section Residual Detected • T=22 PSR Gate",
     handle: "@swing-xray-audit",
     rawBundle: BUNDLE_DISCREPANCY_XRAY,
     chainHistory: [],
@@ -86,7 +86,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       {/* Compact Swiss Editorial Masthead + Above-the-Fold Live Proof Dissector */}
       <section className="mx-auto max-w-7xl px-4 pt-8 pb-10 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
@@ -106,8 +106,8 @@ export default function LandingPage() {
             </h1>
 
             <p className="max-w-2xl text-sm leading-relaxed text-ink-secondary sm:text-[15px]">
-              Verify institutional track records and self-directed brokerage ledgers
-              directly in <code className="text-ink">window.crypto.subtle</code> — zero
+              Verify track records and self-directed brokerage ledgers
+              directly in <code className="text-ink">window.crypto.subtle</code>: zero
               screenshots, zero exact-dollar NAV leaks, zero unverifiable single-notary
               trust claims.
             </p>
@@ -126,7 +126,7 @@ export default function LandingPage() {
               className="inline-flex items-center gap-1.5 rounded border border-hairline-strong bg-panel px-3.5 py-2.5 font-mono text-xs font-medium text-ink transition hover:border-signal-champagne"
             >
               <ShieldCheck className="h-3.5 w-3.5 text-signal-champagne" />
-              <span>Air-Gapped Verifier</span>
+              <span>Offline Verifier</span>
             </Link>
           </div>
         </div>
@@ -141,12 +141,12 @@ export default function LandingPage() {
         />
       </section>
 
-      {/* Full Interactive Institutional Tear Sheet Synchronized with Live Dissector */}
+      {/* Full Interactive Tear Sheet Synchronized with Live Dissector */}
       <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2.5">
           <div className="flex items-center gap-2 font-mono text-xs">
             <span className="text-signal-champagne font-semibold uppercase tracking-wider">
-              Synchronized LP Tear-Sheet Studio
+              Synchronized Tear-Sheet Studio
             </span>
             <span className="text-ink-muted">•</span>
             <span className="text-ink-secondary">
@@ -230,7 +230,7 @@ export default function LandingPage() {
               </h3>
               <p className="mt-1 text-xs leading-relaxed text-ink-secondary">
                 Diplomatic 1-click invitation card explaining how to prove % returns in
-                60s while keeping $ NAV and live positions 100% private.
+                60s while keeping $ NAV and live positions locally private.
               </p>
             </div>
             <span className="mt-3 inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-signal-champagne">
@@ -293,10 +293,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl">
             <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-signal-champagne">
-              Institutional Due-Diligence Matrix
+              Due-Diligence Matrix
             </p>
             <h2 className="editorial-serif mt-1 text-2xl text-ink sm:text-3xl">
-              Engineered for hedge-fund LP rooms and systematic traders
+              Engineered for systematic desks and independent traders
             </h2>
           </div>
 
@@ -306,7 +306,7 @@ export default function LandingPage() {
                 <tr>
                   <th className="px-4 py-3.5">Verification Dimension</th>
                   <th className="px-4 py-3.5 text-signal-emerald">
-                    N170 Verify v3 (Apache-2.0)
+                    N170 Verify (Apache-2.0)
                   </th>
                   <th className="px-4 py-3.5">Legacy Trackers (Myfxbook / Kinfo)</th>
                   <th className="px-4 py-3.5">Paid SaaS Journals</th>
@@ -362,7 +362,7 @@ export default function LandingPage() {
                     Naive arithmetic return &amp; raw Sharpe; display ads
                   </td>
                   <td className="px-4 py-3 text-ink-muted">
-                    $30–$80/mo closed subscription paywall
+                    $30-$80/mo closed subscription paywall
                   </td>
                 </tr>
               </tbody>

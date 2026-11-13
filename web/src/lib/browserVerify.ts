@@ -1,5 +1,5 @@
 /**
- * N170 Verify v3 — Zero-Dependency Browser & Node WebCrypto Verifier.
+ * N170 Verify: Zero-Dependency Browser & Node WebCrypto Verifier.
  *
  * Byte-for-byte compatible with Wave-1 Python:
  *   - `n170_verify.crypto.canonical` (RFC 8785 JCS UTF-16 code-unit sorting)

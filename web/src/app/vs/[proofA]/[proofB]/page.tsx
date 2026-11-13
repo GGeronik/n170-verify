@@ -52,7 +52,7 @@ export default async function HeadToHeadArenaPage({
     const safeA = sanitizePlainInput(safeDecodeURIComponent(proofA), 48);
     const safeB = sanitizePlainInput(safeDecodeURIComponent(proofB), 48);
     return (
-      <div className="bg-institutional-grid py-16">
+      <div className="bg-telemetry-grid py-16">
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <div className="inst-panel space-y-4 rounded-md p-8 text-center">
             <p className="font-mono text-xs font-semibold uppercase tracking-widest text-signal-ochre">
@@ -85,7 +85,7 @@ export default async function HeadToHeadArenaPage({
   }
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <HeadToHeadArena
           contenderA={contenderA}

@@ -116,7 +116,7 @@ export function ReconciliationTab({ leaves }: { leaves: ExtractedBundleLeaves })
             Period-by-Period NAV Identities &amp; 2-Stage Fill Envelope Checks
           </h3>
           <span className="font-mono text-[11px] text-ink-muted">
-            Neutral mathematical residuals — zero arbitrary heuristic cutoffs
+            Neutral mathematical residuals: zero arbitrary heuristic cutoffs
           </span>
         </div>
 
