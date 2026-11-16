@@ -29,8 +29,10 @@ from n170_verify.contracts import (
 PROVIDER_APPROVAL_RANK: dict[ProviderApprovalState, int] = {
     ProviderApprovalState.PENDING_PROVIDER_APPROVAL: 0,
     ProviderApprovalState.OFFLINE_EXPORT_ONLY: 1,
+    ProviderApprovalState.AGGREGATOR_RELAYED: 2,
     ProviderApprovalState.USER_KEY_SELF_ATTESTED: 2,
-    ProviderApprovalState.APPROVED_LIVE: 3,
+    ProviderApprovalState.PUBLIC_API_PERMISSIONLESS: 3,
+    ProviderApprovalState.APPROVED_LIVE: 4,
 }
 
 

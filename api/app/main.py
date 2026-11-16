@@ -30,6 +30,13 @@ from app.routes_proofs import (
     handle_post_proof,
     handle_post_verify_proof,
 )
+from app.routes_snaptrade import (
+    SnapTradeRelayCoordinator,
+    handle_get_snaptrade_status,
+    handle_post_snaptrade_portal,
+    handle_post_snaptrade_release,
+    handle_post_snaptrade_verify,
+)
 from app.routes_sync import (
     handle_delete_sync,
     handle_get_sync,
@@ -73,7 +80,7 @@ DEFAULT_JSON_HEADERS: dict[str, str] = {
     "X-Content-Type-Options": "nosniff",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type",
+    "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
 }
 
 
@@ -189,6 +196,8 @@ class VerifyApiApplication:
         sync_vault: SyncVault | None = None,
         pipeline_spec: WorkerPipelineSpec = None,
         oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
+        snaptrade_relay: SnapTradeRelayCoordinator | None = None,
+        snaptrade_http_transport: Any = None,
     ) -> None:
         self.config = config or ApiConfig()
         self.store = store or ProofStore(self.config)
@@ -202,6 +211,9 @@ class VerifyApiApplication:
             oauth_revocation_callbacks=oauth_revocation_callbacks,
         )
         self.pipeline_spec = pipeline_spec
+        self.snaptrade_relay = snaptrade_relay or SnapTradeRelayCoordinator(
+            http_transport=snaptrade_http_transport
+        )
 
     @property
     def verify_app(self) -> VerifyApiApplication:
@@ -325,7 +337,7 @@ class VerifyApiApplication:
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Accept, Content-Type",
+                    "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
                     "X-Content-Type-Options": "nosniff",
                 },
             )
@@ -366,6 +378,60 @@ class VerifyApiApplication:
             if verb != "GET":
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             st, resp = handle_get_ibkr_flex_guide()
+            return ApiResponse.json_response(st, resp)
+
+        # 3a. Ephemeral 5-slot SnapTrade V1 developer/promo relay routes
+        if path == "/api/v1/connect/snaptrade/status":
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            st, resp = handle_get_snaptrade_status(
+                config=self.config,
+                relay=self.snaptrade_relay,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/portal":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_portal(
+                parsed,
+                config=self.config,
+                relay=self.snaptrade_relay,
+                headers=req_headers,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/verify":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_verify(
+                parsed,
+                config=self.config,
+                store=self.store,
+                relay=self.snaptrade_relay,
+                pipeline_spec=self.pipeline_spec,
+                headers=req_headers,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/release":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_release(
+                parsed,
+                config=self.config,
+                relay=self.snaptrade_relay,
+                headers=req_headers,
+            )
             return ApiResponse.json_response(st, resp)
 
         # 3b. Viral tools: Claim Plausibility, Challenge Card, and Head-to-Head Comparison
@@ -672,6 +738,7 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     fapp.config = verify_app.config  # type: ignore[attr-defined]
     fapp.store = verify_app.store  # type: ignore[attr-defined]
     fapp.sync_vault = verify_app.sync_vault  # type: ignore[attr-defined]
+    fapp.snaptrade_relay = verify_app.snaptrade_relay  # type: ignore[attr-defined]
 
     def _to_fastapi_response(resp: ApiResponse) -> _FastAPIResponse:
         sanitized = {k: v for k, v in resp.headers.items() if k.lower() != "set-cookie"}
@@ -722,6 +789,10 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
         ("/api/v1/verify", ["POST", "OPTIONS"]),
         ("/api/v1/verify/auto-detect", ["POST", "OPTIONS"]),
         ("/api/v1/connect/ibkr-flex-guide", ["GET", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/status", ["GET", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/portal", ["POST", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/verify", ["POST", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/release", ["POST", "OPTIONS"]),
         ("/api/v1/tools/plausibility", ["POST", "OPTIONS"]),
         ("/api/v1/challenge-card", ["GET", "OPTIONS"]),
         ("/api/v1/vs/{proof_a}/{proof_b}", ["GET", "OPTIONS"]),
@@ -752,6 +823,8 @@ def create_app(
     sync_vault: SyncVault | None = None,
     pipeline_spec: WorkerPipelineSpec = None,
     oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
+    snaptrade_relay: SnapTradeRelayCoordinator | None = None,
+    snaptrade_http_transport: Any = None,
     prefer_fastapi: bool = True,
 ) -> Any:
     """Create the N170 Verify application (FastAPI when installed, zero-dep ASGI otherwise)."""
@@ -761,6 +834,8 @@ def create_app(
         sync_vault=sync_vault,
         pipeline_spec=pipeline_spec,
         oauth_revocation_callbacks=oauth_revocation_callbacks,
+        snaptrade_relay=snaptrade_relay,
+        snaptrade_http_transport=snaptrade_http_transport,
     )
     if prefer_fastapi and _HAS_FASTAPI:
         return mount_onto_fastapi(core_app)

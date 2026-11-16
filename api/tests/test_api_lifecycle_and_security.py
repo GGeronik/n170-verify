@@ -191,6 +191,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 )
             ],
             hosted_multi_user_mode=True,
+            allow_client_supplied_series_for_tests=True,
             db_path=":memory:",
             sync_db_path=":memory:",
             vault_master_kek_hex="aa" * 32,

@@ -543,9 +543,86 @@ def default_standalone_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
+_SYNTHETIC_SIGNING_ORACLE_KEYS: frozenset[str] = frozenset(
+    {
+        "leaf_payloads",
+        "performance_summary",
+        "reconciliation_report",
+        "coaching_report",
+        "nav_points",
+        "closed_trades",
+        "ledger",
+        "twr_decimal",
+        "cagr_decimal",
+        "xirr_decimal",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "probabilistic_sharpe_ratio",
+        "psr_glm_unsmoothed",
+        "max_drawdown_decimal",
+        "capital_bracket",
+        "alpha_decimal",
+        "benchmark_twr_decimal",
+    }
+)
+
+
+def enforce_hosted_signing_oracle_policy(
+    request_payload: Mapping[str, Any],
+    *,
+    hosted_multi_user_mode: bool,
+    allow_hosted_signing: bool,
+    allow_client_supplied_series_for_tests: bool = False,
+    has_custom_pipeline: bool = False,
+    allow_trusted_internal_ledger: bool = False,
+) -> None:
+    """Block pre-fabricated leaf_payloads/performance_summary/series in hosted mode."""
+    if (
+        not hosted_multi_user_mode
+        or allow_hosted_signing
+        or allow_client_supplied_series_for_tests
+        or has_custom_pipeline
+    ):
+        return
+
+    from app.store import SigningOracleDisabledError
+    from n170_verify.pipeline import has_real_pipeline_input
+
+    disallowed_keys = (
+        _SYNTHETIC_SIGNING_ORACLE_KEYS - {"ledger"}
+        if allow_trusted_internal_ledger
+        else _SYNTHETIC_SIGNING_ORACLE_KEYS
+    )
+    present_synthetic = sorted(
+        key for key in disallowed_keys if request_payload.get(key) is not None
+    )
+    if present_synthetic:
+        raise SigningOracleDisabledError(
+            "Hosted mode refuses to sign client-supplied synthetic payloads "
+            f"({', '.join(present_synthetic)}); submit a real brokerage statement or read-only connector"
+        )
+
+    if not has_real_pipeline_input(request_payload):
+        raise SigningOracleDisabledError(
+            "Hosted mode refuses standalone synthetic signing without real statement or read-only connector input"
+        )
+
+
 def _dispatch_default_or_real_pipeline(job_payload: Mapping[str, Any]) -> dict[str, Any]:
     """Route real statement/connector/ledger jobs to ``n170_verify.pipeline`` and synthetic payloads to standalone."""
     from n170_verify.pipeline import api_worker_pipeline_entrypoint, has_real_pipeline_input
+
+    if bool(job_payload.get("_hosted_signing_restricted", False)):
+        enforce_hosted_signing_oracle_policy(
+            job_payload,
+            hosted_multi_user_mode=True,
+            allow_hosted_signing=False,
+            allow_client_supplied_series_for_tests=False,
+            has_custom_pipeline=False,
+            allow_trusted_internal_ledger=bool(
+                job_payload.get("_allow_trusted_internal_ledger", False)
+            ),
+        )
 
     if has_real_pipeline_input(job_payload):
         return api_worker_pipeline_entrypoint(job_payload)
@@ -576,6 +653,7 @@ def _ephemeral_worker_entrypoint(
 ) -> None:
     """Entrypoint executed strictly inside a fresh ``spawn`` child process."""
     sys.dont_write_bytecode = True
+    from app.store import SigningOracleDisabledError
     from n170_verify.connectors import (
         DisallowedCapabilityError,
         MutatingCredentialRejectedError,
@@ -612,6 +690,15 @@ def _ephemeral_worker_entrypoint(
             {
                 "ok": False,
                 "error_kind": "paper_or_sandbox",
+                "message": _redact_worker_error_message(str(exc), job_payload),
+                "worker_pid": os.getpid(),
+            }
+        )
+    except SigningOracleDisabledError as exc:
+        send_conn.send(
+            {
+                "ok": False,
+                "error_kind": "signing_oracle_disabled",
                 "message": _redact_worker_error_message(str(exc), job_payload),
                 "worker_pid": os.getpid(),
             }
@@ -726,6 +813,7 @@ def run_isolated_one_shot_verification(
     pipeline_spec: WorkerPipelineSpec = None,
     retention_mode: str = "no_persistent_storage",
     persistent_rows_written: int = 0,
+    _trusted_internal_input: bool = False,
 ) -> tuple[VerifyProofBundle, WorkerIsolationReceipt, int]:
     """Execute portfolio parsing & Merkle commitment in a single-use ``spawn`` worker subprocess.
 
@@ -740,6 +828,15 @@ def run_isolated_one_shot_verification(
     broker_id = str(request_payload.get("broker_id", "")).strip().lower()
     if not broker_id:
         raise WorkerValidationError("broker_id is required")
+
+    enforce_hosted_signing_oracle_policy(
+        request_payload,
+        hosted_multi_user_mode=config.hosted_multi_user_mode,
+        allow_hosted_signing=config.allow_hosted_signing,
+        allow_client_supplied_series_for_tests=config.allow_client_supplied_series_for_tests,
+        has_custom_pipeline=(pipeline_spec is not None),
+        allow_trusted_internal_ledger=_trusted_internal_input,
+    )
 
     issued_at_utc = str(request_payload.get("issued_at_utc") or utc_now_iso())
     parse_utc_timestamp(issued_at_utc, field_name="issued_at_utc")
@@ -818,6 +915,13 @@ def run_isolated_one_shot_verification(
     worker_job["base_currency_explicit"] = base_currency_explicit
     worker_job["account_blinding_salt_hex"] = config.account_blinding_salt_hex
     worker_job["delayed_trade_guard_days"] = config.delayed_trade_guard_days
+    worker_job["_hosted_signing_restricted"] = bool(
+        config.hosted_multi_user_mode
+        and not config.allow_hosted_signing
+        and not config.allow_client_supplied_series_for_tests
+        and pipeline_spec is None
+    )
+    worker_job["_allow_trusted_internal_ledger"] = bool(_trusted_internal_input)
     if config.eodhd_api_key and not worker_job.get("eodhd_api_key"):
         worker_job["eodhd_api_key"] = config.eodhd_api_key
 
@@ -869,13 +973,19 @@ def run_isolated_one_shot_verification(
 
     exitcode = proc.exitcode
     if not worker_envelope.get("ok"):
-        from app.store import GovernanceBlockedError, PaperOrSandboxRejectedError
+        from app.store import (
+            GovernanceBlockedError,
+            PaperOrSandboxRejectedError,
+            SigningOracleDisabledError,
+        )
         from n170_verify.contracts import ReadOnlyCapabilityViolationError
 
         err_kind = worker_envelope.get("error_kind", "internal")
         msg = str(worker_envelope.get("message", "Worker execution failed"))
         if err_kind == "paper_or_sandbox":
             raise PaperOrSandboxRejectedError(msg)
+        if err_kind == "signing_oracle_disabled":
+            raise SigningOracleDisabledError(msg)
         if err_kind == "provider_approval_pending":
             raise GovernanceBlockedError(msg)
         if err_kind == "read_only_violation":

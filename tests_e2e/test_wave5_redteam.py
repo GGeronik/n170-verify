@@ -1456,6 +1456,7 @@ class TestWave5XssClickjackingAndSecretLeakage(unittest.TestCase):
             sync_db_path=str(tmp_p / "s.sqlite3"),
             publisher_keypair=self.kp,
             publisher_kid=self.kid,
+            allow_client_supplied_series_for_tests=True,
         )
         self.app = create_app(self.cfg, prefer_fastapi=False)
         self.client = VerifyApiTestClient(self.app)

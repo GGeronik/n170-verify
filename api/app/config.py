@@ -49,6 +49,11 @@ DEFAULT_CONNECTOR_APPROVAL_STATES: dict[str, ProviderApprovalState] = {
     "binance": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     "kraken": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     "bybit": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+    "ctrader": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+    "ctrader_oauth": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+    "snaptrade": ProviderApprovalState.AGGREGATOR_RELAYED,
+    "snaptrade_relay": ProviderApprovalState.AGGREGATOR_RELAYED,
+    "snaptrade_poc": ProviderApprovalState.AGGREGATOR_RELAYED,
     "fidelity_pending": ProviderApprovalState.PENDING_PROVIDER_APPROVAL,
     "robinhood_unapproved": ProviderApprovalState.PENDING_PROVIDER_APPROVAL,
 }
@@ -71,6 +76,7 @@ class ApiConfig:
 
     hosted_multi_user_mode: bool = True
     allow_hosted_signing: bool = False
+    allow_client_supplied_series_for_tests: bool = False
     connector_approval_states: dict[str, ProviderApprovalState] = field(
         default_factory=lambda: dict(DEFAULT_CONNECTOR_APPROVAL_STATES)
     )
@@ -82,6 +88,9 @@ class ApiConfig:
     sync_backup_retention_hours: int = 0
     account_blinding_salt_hex: str = field(default_factory=lambda: secrets.token_hex(32))
     eodhd_api_key: str = ""
+    snaptrade_client_id: str = ""
+    snaptrade_consumer_key: str = ""
+    snaptrade_dev_key: str = ""
 
     worker_timeout_seconds: float = 30.0
     delayed_trade_guard_days: int = 7
@@ -168,6 +177,9 @@ class ApiConfig:
             ),
             account_blinding_salt_hex=salt_hex,
             eodhd_api_key=eodhd_key,
+            snaptrade_client_id=os.environ.get("SNAPTRADE_CLIENT_ID", "").strip(),
+            snaptrade_consumer_key=os.environ.get("SNAPTRADE_CONSUMER_KEY", "").strip(),
+            snaptrade_dev_key=os.environ.get("N170_SNAPTRADE_DEV_KEY", "").strip(),
         )
 
 

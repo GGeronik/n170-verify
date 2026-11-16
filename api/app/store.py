@@ -54,6 +54,13 @@ class ProviderApprovalPendingError(GovernanceBlockedError):
     http_status = 403
 
 
+class SigningOracleDisabledError(GovernanceBlockedError):
+    """Raised when hosted mode refuses client-supplied synthetic leaf/series signing payloads."""
+
+    error_code = "signing_oracle_disabled"
+    http_status = 403
+
+
 class PaperOrSandboxRejectedError(GovernanceBlockedError):
     """Raised when a paper or sandbox brokerage account is submitted for public proof."""
 

@@ -64,7 +64,7 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "credential_field",
         re.compile(
-            r'"(?:flex_token|client_secret|api_secret)"\s*:\s*"[^"]{8,}"',
+            r'"(?:flex_token|client_secret|api_secret|user_secret|userSecret|consumer_key|consumerKey)"\s*:\s*"[^"]{6,}"',
             re.IGNORECASE,
         ),
     ),
