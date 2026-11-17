@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import importlib
 import os
 import secrets
 import threading
@@ -24,6 +25,7 @@ from app.store import (
     ProofStore,
 )
 from app.worker_isolation import (
+    WorkerBrokerUpstreamError,
     WorkerIsolationError,
     WorkerPipelineSpec,
     WorkerValidationError,
@@ -31,6 +33,7 @@ from app.worker_isolation import (
 )
 from n170_verify.connectors import (
     DisallowedCapabilityError,
+    MAX_SNAPTRADE_PERSONAL_SLOTS,
     MAX_SNAPTRADE_POC_SLOTS,
     PaperOrSandboxAccountRejectedError,
     SnapTradeAuthenticationError,
@@ -40,9 +43,14 @@ from n170_verify.connectors import (
     SnapTradeSlotCapExceededError,
     SnapTradeSlotManager,
     is_snaptrade_env_configured,
+    is_snaptrade_personal_key,
     redact_sensitive_text,
 )
-from n170_verify.contracts import ReadOnlyCapabilityViolationError
+from n170_verify.contracts import (
+    EnvironmentTier,
+    ProviderApprovalState,
+    ReadOnlyCapabilityViolationError,
+)
 
 
 SNAPTRADE_SESSION_TTL_SECONDS: float = 1800.0
@@ -65,6 +73,7 @@ class _EphemeralSnapTradeSession:
     created_at_utc: str
     expires_at_utc: str
     expires_monotonic: float
+    is_personal: bool = False
 
 
 def _utc_iso_from_dt(dt: datetime) -> str:
@@ -121,19 +130,35 @@ def _derive_blinded_snaptrade_user_id(slot_label: str, salt_hex: str) -> str:
     return f"n170-st-{digest[:24]}"
 
 
-def _resolve_snaptrade_runtime(config: ApiConfig) -> tuple[bool, str, str, str]:
+def _resolve_snaptrade_runtime(config: ApiConfig) -> tuple[bool, str, str, str, str]:
     client_id = (config.snaptrade_client_id or os.environ.get("SNAPTRADE_CLIENT_ID", "")).strip()
     consumer_key = (
         config.snaptrade_consumer_key or os.environ.get("SNAPTRADE_CONSUMER_KEY", "")
     ).strip()
     dev_key = (config.snaptrade_dev_key or os.environ.get("N170_SNAPTRADE_DEV_KEY", "")).strip()
+    auth_mode = (
+        getattr(config, "snaptrade_auth_mode", "")
+        or os.environ.get("SNAPTRADE_AUTH_MODE", "auto")
+    ).strip() or "auto"
     configured = is_snaptrade_env_configured(
         {
             "SNAPTRADE_CLIENT_ID": client_id,
             "SNAPTRADE_CONSUMER_KEY": consumer_key,
         }
     )
-    return configured, client_id, consumer_key, dev_key
+    return configured, client_id, consumer_key, dev_key, auth_mode
+
+
+def _resolve_snaptrade_mode(
+    configured: bool,
+    client_id: str,
+    *,
+    auth_mode: str = "auto",
+) -> tuple[bool, str, int]:
+    """Resolve ``(is_personal, mode_label, max_slots)`` for SnapTrade Personal vs Build keys."""
+    if configured and is_snaptrade_personal_key(client_id, auth_mode=auth_mode):
+        return True, "personal_1_slot", MAX_SNAPTRADE_PERSONAL_SLOTS
+    return False, "developer_5_slot", MAX_SNAPTRADE_POC_SLOTS
 
 
 def _verify_dev_key_if_required(
@@ -185,6 +210,7 @@ class SnapTradeRelayCoordinator:
         monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.slot_manager = slot_manager or SnapTradeSlotManager(max_slots=MAX_SNAPTRADE_POC_SLOTS)
+        self.personal_slot_manager = SnapTradeSlotManager(max_slots=MAX_SNAPTRADE_PERSONAL_SLOTS)
         self.http_transport = http_transport
         self.session_ttl_seconds = float(session_ttl_seconds)
         self.max_sessions = int(max_sessions)
@@ -192,25 +218,68 @@ class SnapTradeRelayCoordinator:
         self._lock = threading.RLock()
         self._sessions: dict[str, _EphemeralSnapTradeSession] = {}
         self._labels_by_user: dict[str, str] = {}
+        self._pending_upstream_deletes: set[str] = set()
+
+    def _manager_for(self, *, is_personal: bool) -> SnapTradeSlotManager:
+        return self.personal_slot_manager if is_personal else self.slot_manager
 
     def purge_expired_sessions(self) -> int:
-        """Purge expired ephemeral session tokens and in-memory userSecrets."""
+        """Purge expired session tokens, release orphaned local slots, and queue upstream cleanup."""
         now_mono = self._clock()
         with self._lock:
-            expired_tokens = [
-                tok for tok, sess in self._sessions.items() if now_mono >= sess.expires_monotonic
+            expired_items = [
+                (tok, sess)
+                for tok, sess in self._sessions.items()
+                if now_mono >= sess.expires_monotonic
             ]
-            for tok in expired_tokens:
+            for tok, _ in expired_items:
                 self._sessions.pop(tok, None)
-            return len(expired_tokens)
+            if expired_items:
+                active_users = {s.user_id for s in self._sessions.values()}
+                for _, exp_sess in expired_items:
+                    if exp_sess.user_id not in active_users:
+                        self._labels_by_user.pop(exp_sess.user_id, None)
+                        self._manager_for(is_personal=exp_sess.is_personal).release_slot(
+                            exp_sess.user_id
+                        )
+                        if not exp_sess.is_personal:
+                            self._pending_upstream_deletes.add(exp_sess.user_id)
+            return len(expired_items)
 
-    def slot_status_dict(self, *, include_slots: bool = False) -> dict[str, Any]:
-        """Return current 5-slot cap utilization summary (zero secrets or raw account IDs)."""
+    def reap_expired_upstream_users(self, adapter: SnapTradeReadOnlyAdapter) -> int:
+        """Delete any TTL-expired abandoned commercial/build slot users upstream at SnapTrade."""
         self.purge_expired_sessions()
+        if adapter.is_personal_key:
+            return 0
         with self._lock:
-            active_slots = self.slot_manager.list_active_slots()
+            active_users = {s.user_id for s in self._sessions.values()}
+            candidates = [
+                uid for uid in list(self._pending_upstream_deletes) if uid not in active_users
+            ]
+            for uid in candidates:
+                self._pending_upstream_deletes.discard(uid)
+        reaped = 0
+        for uid in candidates:
+            try:
+                adapter.delete_user_and_release_slot(uid)
+                reaped += 1
+            except SnapTradeError:
+                pass
+        return reaped
+
+    def slot_status_dict(
+        self,
+        *,
+        include_slots: bool = False,
+        is_personal: bool = False,
+    ) -> dict[str, Any]:
+        """Return current slot cap utilization summary (zero secrets or raw account IDs)."""
+        self.purge_expired_sessions()
+        manager = self._manager_for(is_personal=is_personal)
+        with self._lock:
+            active_slots = manager.list_active_slots()
             active_count = len(active_slots)
-            max_slots = self.slot_manager.max_slots
+            max_slots = manager.max_slots
             out: dict[str, Any] = {
                 "max_slots": max_slots,
                 "active_slots": active_count,
@@ -227,12 +296,24 @@ class SnapTradeRelayCoordinator:
                 ]
             return out
 
-    def build_adapter(self, client_id: str, consumer_key: str) -> SnapTradeReadOnlyAdapter:
+    def build_adapter(
+        self,
+        client_id: str,
+        consumer_key: str,
+        *,
+        auth_mode: str = "auto",
+    ) -> SnapTradeReadOnlyAdapter:
+        is_personal = is_snaptrade_personal_key(client_id, auth_mode=auth_mode)
+        resolved_transport = self.http_transport
+        if isinstance(resolved_transport, str) and ":" in resolved_transport:
+            mod_name, attr_name = resolved_transport.split(":", 1)
+            resolved_transport = getattr(importlib.import_module(mod_name), attr_name)
         return SnapTradeReadOnlyAdapter(
             client_id=client_id,
             consumer_key=consumer_key,
-            slot_manager=self.slot_manager,
-            http_transport=self.http_transport,
+            auth_mode=auth_mode,
+            slot_manager=self._manager_for(is_personal=is_personal),
+            http_transport=resolved_transport,
             require_live=True,
             auto_register_slot=False,
         )
@@ -252,6 +333,7 @@ class SnapTradeRelayCoordinator:
         slot_label: str,
         user_id: str,
         user_secret: str,
+        is_personal: bool = False,
     ) -> _EphemeralSnapTradeSession:
         self.purge_expired_sessions()
         now_utc = datetime.now(timezone.utc)
@@ -266,15 +348,28 @@ class SnapTradeRelayCoordinator:
             created_at_utc=_utc_iso_from_dt(now_utc),
             expires_at_utc=_utc_iso_from_dt(exp_utc),
             expires_monotonic=self._clock() + self.session_ttl_seconds,
+            is_personal=is_personal,
         )
         with self._lock:
             self._labels_by_user[user_id] = slot_label
+            self._pending_upstream_deletes.discard(user_id)
             while len(self._sessions) >= self.max_sessions:
                 oldest_tok = min(
                     self._sessions.keys(),
                     key=lambda t: self._sessions[t].expires_monotonic,
                 )
-                self._sessions.pop(oldest_tok, None)
+                evicted = self._sessions.pop(oldest_tok, None)
+                if evicted is not None and evicted.user_id != user_id:
+                    still_active = any(
+                        s.user_id == evicted.user_id for s in self._sessions.values()
+                    )
+                    if not still_active:
+                        self._labels_by_user.pop(evicted.user_id, None)
+                        self._manager_for(is_personal=evicted.is_personal).release_slot(
+                            evicted.user_id
+                        )
+                        if not evicted.is_personal:
+                            self._pending_upstream_deletes.add(evicted.user_id)
             self._sessions[token] = sess
         return sess
 
@@ -283,7 +378,13 @@ class SnapTradeRelayCoordinator:
         with self._lock:
             return self._sessions.get(session_token)
 
-    def purge_user_sessions_and_release_local(self, user_id: str) -> bool:
+    def purge_user_sessions_and_release_local(
+        self,
+        user_id: str,
+        *,
+        is_personal: bool = False,
+    ) -> bool:
+        manager = self._manager_for(is_personal=is_personal)
         with self._lock:
             dead_tokens = [
                 tok for tok, sess in self._sessions.items() if sess.user_id == user_id
@@ -291,7 +392,8 @@ class SnapTradeRelayCoordinator:
             for tok in dead_tokens:
                 self._sessions.pop(tok, None)
             self._labels_by_user.pop(user_id, None)
-            return self.slot_manager.release_slot(user_id)
+            self._pending_upstream_deletes.discard(user_id)
+            return manager.release_slot(user_id)
 
     def resolve_users_for_release(
         self,
@@ -299,9 +401,11 @@ class SnapTradeRelayCoordinator:
         slot_id: int | None = None,
         slot_label: str | None = None,
         release_all: bool = False,
+        is_personal: bool = False,
     ) -> list[tuple[int, str]]:
+        manager = self._manager_for(is_personal=is_personal)
         with self._lock:
-            active = self.slot_manager.list_active_slots()
+            active = manager.list_active_slots()
             if release_all:
                 return [(s.slot_id, s.user_id) for s in active]
             if slot_id is not None:
@@ -322,11 +426,21 @@ def handle_get_snaptrade_status(
     relay: SnapTradeRelayCoordinator,
 ) -> tuple[int, dict[str, Any]]:
     """Serve ``GET /api/v1/connect/snaptrade/status``."""
-    configured, _, _, dev_key = _resolve_snaptrade_runtime(config)
-    status_summary = relay.slot_status_dict(include_slots=True)
+    configured, client_id, consumer_key, dev_key, auth_mode = _resolve_snaptrade_runtime(config)
+    try:
+        is_personal, mode_label, _ = _resolve_snaptrade_mode(
+            configured, client_id, auth_mode=auth_mode
+        )
+    except SnapTradeAuthenticationError as exc:
+        return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
+    if configured and not is_personal:
+        relay.reap_expired_upstream_users(
+            relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
+        )
+    status_summary = relay.slot_status_dict(include_slots=True, is_personal=is_personal)
     return 200, {
         "configured": configured,
-        "mode": "developer_5_slot",
+        "mode": mode_label,
         "requires_dev_key": bool(dev_key),
         "max_slots": status_summary["max_slots"],
         "active_slots": status_summary["active_slots"],
@@ -346,7 +460,7 @@ def handle_post_snaptrade_portal(
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
 
-    configured, client_id, consumer_key, dev_key = _resolve_snaptrade_runtime(config)
+    configured, client_id, consumer_key, dev_key, auth_mode = _resolve_snaptrade_runtime(config)
     if not configured:
         return 503, {"error": "snaptrade_unconfigured", "detail": SNAPTRADE_UNCONFIGURED_DETAIL}
 
@@ -385,25 +499,39 @@ def handle_post_snaptrade_portal(
             "detail": "SnapTrade relay strictly enforces connectionType='read'; trading scope is prohibited.",
         }
 
-    user_id = _derive_blinded_snaptrade_user_id(clean_label, config.account_blinding_salt_hex)
-    adapter = relay.build_adapter(client_id, consumer_key)
+    try:
+        is_personal, mode_label, _ = _resolve_snaptrade_mode(
+            configured, client_id, auth_mode=auth_mode
+        )
+    except SnapTradeAuthenticationError as exc:
+        return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
+    manager = relay._manager_for(is_personal=is_personal)
+    user_seed_label = "personal-owner" if is_personal else clean_label
+    user_id = _derive_blinded_snaptrade_user_id(user_seed_label, config.account_blinding_salt_hex)
+    adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
     secrets_to_redact = [consumer_key, client_id, user_id]
 
     try:
+        relay.reap_expired_upstream_users(adapter)
         with relay._lock:
-            existing_secret = relay.find_active_secret_for_user(user_id)
-            if existing_secret and relay.slot_manager.is_user_registered(user_id):
-                user_secret = existing_secret
+            if is_personal:
+                user_secret = ""
+                adapter.register_user(user_id)
             else:
-                if relay.slot_manager.is_user_registered(user_id) and not existing_secret:
-                    try:
-                        adapter.delete_user_and_release_slot(user_id)
-                    except SnapTradeError:
-                        relay.slot_manager.release_slot(user_id)
-                reg = adapter.register_user(user_id)
-                user_secret = reg["userSecret"]
+                existing_secret = relay.find_active_secret_for_user(user_id)
+                if existing_secret and manager.is_user_registered(user_id):
+                    user_secret = existing_secret
+                else:
+                    if manager.is_user_registered(user_id) and not existing_secret:
+                        try:
+                            adapter.delete_user_and_release_slot(user_id)
+                        except SnapTradeError:
+                            manager.release_slot(user_id)
+                    reg = adapter.register_user(user_id)
+                    user_secret = reg["userSecret"]
 
-            secrets_to_redact.append(user_secret)
+            if user_secret:
+                secrets_to_redact.append(user_secret)
             portal = adapter.generate_connection_portal_url(
                 user_id,
                 user_secret,
@@ -412,19 +540,21 @@ def handle_post_snaptrade_portal(
                 reconnect=clean_reconnect or None,
                 connection_type="read",
             )
-            slot_obj = relay.slot_manager.get_slot(user_id)
+            slot_obj = manager.get_slot(user_id)
             if slot_obj is None or not slot_obj.active:
-                slot_obj = relay.slot_manager.register_slot(user_id)
+                slot_obj = manager.register_slot(user_id)
 
             sess = relay.store_session(
                 slot_id=slot_obj.slot_id,
                 slot_label=clean_label,
                 user_id=user_id,
                 user_secret=user_secret,
+                is_personal=is_personal,
             )
-            counts = relay.slot_status_dict(include_slots=False)
+            counts = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
 
         return 200, {
+            "mode": mode_label,
             "slot_id": sess.slot_id,
             "slot_label": sess.slot_label,
             "session_token": sess.session_token,
@@ -435,7 +565,7 @@ def handle_post_snaptrade_portal(
             "available_slots": counts["available_slots"],
         }
     except SnapTradeSlotCapExceededError as exc:
-        counts = relay.slot_status_dict(include_slots=False)
+        counts = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
         safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
         return 409, {
             "error": "slot_cap_exceeded",
@@ -465,7 +595,7 @@ def handle_post_snaptrade_verify(
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
 
-    configured, client_id, consumer_key, dev_key = _resolve_snaptrade_runtime(config)
+    configured, client_id, consumer_key, dev_key, auth_mode = _resolve_snaptrade_runtime(config)
     if not configured:
         return 503, {"error": "snaptrade_unconfigured", "detail": SNAPTRADE_UNCONFIGURED_DETAIL}
 
@@ -476,6 +606,15 @@ def handle_post_snaptrade_verify(
     raw_token = payload.get("session_token")
     if not isinstance(raw_token, str) or not raw_token.strip():
         return 422, {"error": "validation_error", "detail": "session_token is required"}
+
+    try:
+        is_personal, mode_label, _ = _resolve_snaptrade_mode(
+            configured, client_id, auth_mode=auth_mode
+        )
+        adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
+    except SnapTradeAuthenticationError as exc:
+        return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
+    relay.reap_expired_upstream_users(adapter)
 
     sess = relay.get_session(raw_token.strip())
     if sess is None:
@@ -488,6 +627,17 @@ def handle_post_snaptrade_verify(
         str(payload["start_date"]).strip() if payload.get("start_date") is not None else None
     )
     end_date = str(payload["end_date"]).strip() if payload.get("end_date") is not None else None
+    for date_label, date_val in (("start_date", start_date), ("end_date", end_date)):
+        if date_val:
+            try:
+                datetime.strptime(date_val[:10], "%Y-%m-%d")
+            except ValueError:
+                return 422, {
+                    "error": "validation_error",
+                    "detail": f"{date_label} must start with YYYY-MM-DD",
+                }
+    norm_start = start_date[:10] if start_date else None
+    norm_end = end_date[:10] if end_date else None
     disclose_leaf_names = payload.get("disclose_leaf_names")
     if disclose_leaf_names is not None and (
         not isinstance(disclose_leaf_names, list)
@@ -512,67 +662,141 @@ def handle_post_snaptrade_verify(
     publish_proof = bool(payload.get("publish_proof", False))
     opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
 
-    adapter = relay.build_adapter(client_id, consumer_key)
-    secrets_to_redact = [consumer_key, client_id, sess.user_secret, sess.user_id]
+    secrets_to_redact = [
+        tok for tok in (consumer_key, client_id, sess.user_secret, sess.user_id) if tok
+    ]
 
-    try:
-        live_ledger = adapter.fetch_live_ledger(
-            sess.user_id,
-            sess.user_secret,
-            blinding_salt_hex=config.account_blinding_salt_hex,
-            start_date=start_date,
-            end_date=end_date,
-            selected_account_ids=selected_account_ids,
-            require_live=True,
-        )
-    except PaperOrSandboxAccountRejectedError as exc:
-        safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-        return 422, {"error": "paper_or_sandbox_rejected", "detail": safe_msg}
-    except (DisallowedCapabilityError, ReadOnlyCapabilityViolationError) as exc:
-        safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-        return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
-    except ValueError as exc:
-        safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-        return 422, {"error": "validation_error", "detail": safe_msg}
-    except SnapTradeError as exc:
-        safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-        return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+    def _release_rejected_slot() -> None:
+        if not release_slot_after:
+            return
+        try:
+            adapter.delete_user_and_release_slot(sess.user_id)
+        except SnapTradeError:
+            pass
+        relay.purge_user_sessions_and_release_local(sess.user_id, is_personal=is_personal)
 
-    worker_payload: dict[str, Any] = {
-        "broker_id": live_ledger.broker_id,
-        "provider_approval_state": live_ledger.provider_approval_state.value,
-        "environment_tier": live_ledger.environment_tier.value,
-        "account_scope": live_ledger.account_scope.value,
-        "claimed_origin_assurance": live_ledger.claimed_origin_assurance.value,
-        "period_start_utc": live_ledger.period_start_utc,
-        "period_end_utc": live_ledger.period_end_utc,
-        "base_currency": live_ledger.base_currency,
-        "ledger": live_ledger.to_dict(),
-    }
-    if disclose_leaf_names is not None:
-        worker_payload["disclose_leaf_names"] = list(disclose_leaf_names)
-    if payload.get("issued_at_utc") is not None:
-        worker_payload["issued_at_utc"] = str(payload["issued_at_utc"])
+    execute_fetch_in_worker = pipeline_spec is None and (
+        relay.http_transport is None
+        or (isinstance(relay.http_transport, str) and ":" in relay.http_transport)
+    )
 
-    try:
-        bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
-            worker_payload,
-            config=config,
-            pipeline_spec=pipeline_spec,
-            retention_mode="no_persistent_storage",
-            persistent_rows_written=0,
-            _trusted_internal_input=True,
-        )
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
-    except GovernanceBlockedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
-    except ReadOnlyCapabilityViolationError as exc:
-        return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
-    except WorkerValidationError as exc:
-        return 422, {"error": "validation_error", "detail": str(exc)}
-    except WorkerIsolationError as exc:
-        return 500, {"error": "worker_isolation_error", "detail": str(exc)}
+    if execute_fetch_in_worker:
+        fetch_kwargs: dict[str, Any] = {}
+        if norm_start is not None:
+            fetch_kwargs["start_date"] = norm_start
+        if norm_end is not None:
+            fetch_kwargs["end_date"] = norm_end
+        if selected_account_ids is not None:
+            fetch_kwargs["selected_account_ids"] = list(selected_account_ids)
+
+        worker_payload: dict[str, Any] = {
+            "broker_id": "snaptrade",
+            "provider_approval_state": ProviderApprovalState.AGGREGATOR_RELAYED.value,
+            "environment_tier": EnvironmentTier.LIVE_PRODUCTION.value,
+            "connector_kwargs": {
+                "client_id": client_id,
+                "consumer_key": consumer_key,
+                "auth_mode": auth_mode,
+                "user_id": sess.user_id,
+                "user_secret": sess.user_secret,
+                "auto_register_slot": False,
+            },
+            "connector_fetch_kwargs": fetch_kwargs,
+        }
+        if disclose_leaf_names is not None:
+            worker_payload["disclose_leaf_names"] = list(disclose_leaf_names)
+        if payload.get("issued_at_utc") is not None:
+            worker_payload["issued_at_utc"] = str(payload["issued_at_utc"])
+
+        try:
+            bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
+                worker_payload,
+                config=config,
+                pipeline_spec=None,
+                retention_mode="no_persistent_storage",
+                persistent_rows_written=0,
+                _snaptrade_http_transport=relay.http_transport,
+            )
+        except PaperOrSandboxRejectedError as exc:
+            _release_rejected_slot()
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return exc.http_status, {"error": exc.error_code, "detail": safe_msg}
+        except GovernanceBlockedError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return exc.http_status, {"error": exc.error_code, "detail": safe_msg}
+        except ReadOnlyCapabilityViolationError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+        except WorkerValidationError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 422, {"error": "validation_error", "detail": safe_msg}
+        except WorkerBrokerUpstreamError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+        except WorkerIsolationError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 500, {"error": "worker_isolation_error", "detail": safe_msg}
+    else:
+        try:
+            live_ledger = adapter.fetch_live_ledger(
+                sess.user_id,
+                sess.user_secret,
+                blinding_salt_hex=config.account_blinding_salt_hex,
+                start_date=norm_start,
+                end_date=norm_end,
+                selected_account_ids=selected_account_ids,
+                require_live=True,
+            )
+        except PaperOrSandboxAccountRejectedError as exc:
+            _release_rejected_slot()
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 422, {"error": "paper_or_sandbox_rejected", "detail": safe_msg}
+        except (DisallowedCapabilityError, ReadOnlyCapabilityViolationError) as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+        except SnapTradeError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+        except ValueError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+            return 422, {"error": "validation_error", "detail": safe_msg}
+
+        worker_payload = {
+            "broker_id": live_ledger.broker_id,
+            "provider_approval_state": live_ledger.provider_approval_state.value,
+            "environment_tier": live_ledger.environment_tier.value,
+            "account_scope": live_ledger.account_scope.value,
+            "claimed_origin_assurance": live_ledger.claimed_origin_assurance.value,
+            "period_start_utc": live_ledger.period_start_utc,
+            "period_end_utc": live_ledger.period_end_utc,
+            "base_currency": live_ledger.base_currency,
+            "ledger": live_ledger.to_dict(),
+        }
+        if disclose_leaf_names is not None:
+            worker_payload["disclose_leaf_names"] = list(disclose_leaf_names)
+        if payload.get("issued_at_utc") is not None:
+            worker_payload["issued_at_utc"] = str(payload["issued_at_utc"])
+
+        try:
+            bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
+                worker_payload,
+                config=config,
+                pipeline_spec=pipeline_spec,
+                retention_mode="no_persistent_storage",
+                persistent_rows_written=0,
+                _trusted_internal_input=True,
+            )
+        except PaperOrSandboxRejectedError as exc:
+            _release_rejected_slot()
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+        except GovernanceBlockedError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+        except ReadOnlyCapabilityViolationError as exc:
+            return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
+        except WorkerValidationError as exc:
+            return 422, {"error": "validation_error", "detail": str(exc)}
+        except WorkerIsolationError as exc:
+            return 500, {"error": "worker_isolation_error", "detail": str(exc)}
 
     rows_written = 0
     if publish_proof:
@@ -596,16 +820,21 @@ def handle_post_snaptrade_verify(
             adapter.delete_user_and_release_slot(sess.user_id)
         except SnapTradeError:
             pass
-        relay.purge_user_sessions_and_release_local(sess.user_id)
+        relay.purge_user_sessions_and_release_local(sess.user_id, is_personal=is_personal)
         slot_released = True
-        token_disposal = "deleted_at_snaptrade_and_purged_from_memory"
+        token_disposal = (
+            "personal_session_purged_from_memory"
+            if is_personal
+            else "deleted_at_snaptrade_and_purged_from_memory"
+        )
     else:
         token_disposal = "ephemeral_in_memory_30m_ttl_slot_retained"
 
-    slot_status = relay.slot_status_dict(include_slots=False)
+    slot_status = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
     bundle_dict = bundle.to_dict()
 
     return 200, {
+        "mode": mode_label,
         "bundle": bundle_dict,
         "proof_bundle": bundle_dict,
         "verification": verification.to_dict(),
@@ -640,7 +869,7 @@ def handle_post_snaptrade_release(
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
 
-    configured, client_id, consumer_key, dev_key = _resolve_snaptrade_runtime(config)
+    configured, client_id, consumer_key, dev_key, auth_mode = _resolve_snaptrade_runtime(config)
     if not configured:
         return 503, {"error": "snaptrade_unconfigured", "detail": SNAPTRADE_UNCONFIGURED_DETAIL}
 
@@ -648,13 +877,26 @@ def handle_post_snaptrade_release(
     if not dev_ok and dev_err is not None:
         return dev_err
 
+    try:
+        is_personal, mode_label, _ = _resolve_snaptrade_mode(
+            configured, client_id, auth_mode=auth_mode
+        )
+        adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
+    except SnapTradeAuthenticationError as exc:
+        return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
+    relay.reap_expired_upstream_users(adapter)
     release_all = bool(payload.get("release_all", False))
     raw_slot_id = payload.get("slot_id")
     slot_id: int | None = None
     if raw_slot_id is not None:
-        if isinstance(raw_slot_id, bool) or not isinstance(raw_slot_id, int):
+        if isinstance(raw_slot_id, bool):
             return 422, {"error": "validation_error", "detail": "slot_id must be an integer"}
-        slot_id = int(raw_slot_id)
+        if isinstance(raw_slot_id, int):
+            slot_id = int(raw_slot_id)
+        elif isinstance(raw_slot_id, str) and raw_slot_id.strip().isdigit():
+            slot_id = int(raw_slot_id.strip())
+        else:
+            return 422, {"error": "validation_error", "detail": "slot_id must be an integer"}
 
     raw_slot_label = payload.get("slot_label")
     if raw_slot_label is not None and not isinstance(raw_slot_label, str):
@@ -671,28 +913,29 @@ def handle_post_snaptrade_release(
         slot_id=slot_id,
         slot_label=slot_label,
         release_all=release_all,
+        is_personal=is_personal,
     )
     if not targets and not release_all:
         return 404, {
             "error": "slot_not_found",
             "detail": "No active SnapTrade slot matched the requested slot_id or slot_label.",
-            "slot_status": relay.slot_status_dict(include_slots=True),
+            "slot_status": relay.slot_status_dict(include_slots=True, is_personal=is_personal),
         }
 
-    adapter = relay.build_adapter(client_id, consumer_key)
     released_ids: list[int] = []
-    upstream_deleted_all = True
+    upstream_deleted_all = not is_personal
 
     for sid, uid in targets:
         try:
             adapter.delete_user_and_release_slot(uid)
         except SnapTradeError:
             upstream_deleted_all = False
-        relay.purge_user_sessions_and_release_local(uid)
+        relay.purge_user_sessions_and_release_local(uid, is_personal=is_personal)
         released_ids.append(sid)
 
-    updated_status = relay.slot_status_dict(include_slots=True)
+    updated_status = relay.slot_status_dict(include_slots=True, is_personal=is_personal)
     return 200, {
+        "mode": mode_label,
         "released": True,
         "released_slot_ids": sorted(released_ids),
         "upstream_deleted": upstream_deleted_all,

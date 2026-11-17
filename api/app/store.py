@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
+import os
 import sqlite3
 import threading
 from typing import Any
@@ -174,6 +175,10 @@ class ProofStore:
     def __init__(self, config: ApiConfig) -> None:
         self._config = config
         self._lock = threading.RLock()
+        if config.db_path != ":memory:" and not config.db_path.startswith("file:"):
+            parent = os.path.dirname(os.path.abspath(config.db_path))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self._conn = sqlite3.connect(
             config.db_path,
             check_same_thread=False,
@@ -434,6 +439,12 @@ class ProofStore:
         now_utc: str | datetime | None = None,
     ) -> tuple[VerifyProofBundle, BundleVerificationResult]:
         """Validate governance & cryptography, enforce 7-day trade guard, and persist redacted proof."""
+        if self._config.hosted_multi_user_mode and bundle.proof_id.strip().lower().startswith(
+            "specimen-"
+        ):
+            raise PaperOrSandboxRejectedError(
+                "Synthetic sample specimens are for local preview only and cannot be published as live records"
+            )
         enforce_bundle_governance(
             provider_approval_state=bundle.provider_approval_state,
             environment_tier=bundle.environment_tier,
@@ -468,7 +479,7 @@ class ProofStore:
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
                 existing_row = self._conn.execute(
-                    "SELECT proof_hash FROM proofs WHERE proof_id = ?",
+                    "SELECT proof_hash, bundle_json, opt_in_leaderboard FROM proofs WHERE proof_id = ?",
                     (sanitized_bundle.proof_id,),
                 ).fetchone()
                 if existing_row is not None:
@@ -476,8 +487,24 @@ class ProofStore:
                         raise ProofConflictError(
                             f"Proof {sanitized_bundle.proof_id!r} already exists with a different proof_hash"
                         )
+                    updated_opt_in = 1 if (opt_in_leaderboard or bool(existing_row["opt_in_leaderboard"])) else 0
+                    updated_json = (
+                        bundle_json
+                        if sanitized_bundle.holder_identity is not None
+                        else str(existing_row["bundle_json"])
+                    )
+                    self._conn.execute(
+                        """
+                        UPDATE proofs
+                        SET bundle_json = ?, opt_in_leaderboard = ?
+                        WHERE proof_id = ?
+                        """,
+                        (updated_json, updated_opt_in, sanitized_bundle.proof_id),
+                    )
+                    self._last_updated_utc = now_str
                     self._conn.execute("COMMIT;")
-                    return sanitized_bundle, verification
+                    final_bundle = VerifyProofBundle.from_dict(json.loads(updated_json))
+                    return final_bundle, verification
 
                 self._conn.execute(
                     """

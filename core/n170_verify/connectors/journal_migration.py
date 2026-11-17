@@ -50,7 +50,7 @@ from n170_verify.contracts import (
 )
 
 
-_TAG_SPLIT_RE = re.compile(r"[;,]+|\s+\|\s+")
+_TAG_SPLIT_RE = re.compile(r"[;,|]+")
 
 
 @dataclass(slots=True)
@@ -222,7 +222,8 @@ def parse_journal_migration_csv(
     c_exit_px = _find_col(hdrs, ("exit price", "avg sell", "avg exit", "close price"))
     c_comm = _find_col(hdrs, ("commission", "commissions", "fees", "fee"))
     c_asset = _find_col(hdrs, ("asset type", "instrument type", "asset class", "market"))
-    c_setup = _find_col(hdrs, ("setups", "playbook", "setup", "strategy"))
+    c_playbook = _find_col(hdrs, ("playbook", "strategy"))
+    c_setup = _find_col(hdrs, ("setups", "setup"))
     c_mistake = _find_col(hdrs, ("mistakes", "mistake tags", "mistake", "error tags"))
     c_tags = _find_col(hdrs, ("custom tags", "tags"))
     c_notes = _find_col(hdrs, ("notes", "trade notes", "journal notes", "note", "comment"))
@@ -258,6 +259,8 @@ def parse_journal_migration_csv(
             _cell(row, c_close_date), _cell(row, c_close_time)
         )
         qty = _parse_localized_float(_cell(row, c_qty))
+        if c_qty is None and qty is None:
+            qty = 1.0
         entry_px = _parse_localized_float(_cell(row, c_entry_px))
         exit_px = _parse_localized_float(_cell(row, c_exit_px))
         if qty is None or abs(qty) == 0.0 or entry_px is None or entry_px < 0.0:
@@ -275,7 +278,14 @@ def parse_journal_migration_csv(
         comm_total = abs(_parse_localized_float(_cell(row, c_comm), default=0.0) or 0.0)
         trade_key = f"{broker_id}-{r_idx}"
 
-        setup_tags = _extract_sanitized_tags(_cell(row, c_setup))
+        playbook_tags = _extract_sanitized_tags(_cell(row, c_playbook))
+        raw_setup_tags = (
+            _extract_sanitized_tags(_cell(row, c_setup)) if c_setup != c_playbook else []
+        )
+        setup_tags: list[str] = []
+        for st_item in [*playbook_tags, *raw_setup_tags]:
+            if st_item.lower() not in {x.lower() for x in setup_tags}:
+                setup_tags.append(st_item)
         mistake_tags = _extract_sanitized_tags(_cell(row, c_mistake))
         custom_tags = _extract_sanitized_tags(_cell(row, c_tags))
         _register_tags(setup_tags)

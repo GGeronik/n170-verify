@@ -112,10 +112,16 @@ def handle_get_leaderboard(
         ):
             continue
 
+        include_private = query_params.get("include_private_bracket", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         proven_bracket = extract_verified_capital_bracket(bundle)
         if proven_bracket is None:
-            continue
-        if CAPITAL_BRACKET_RANK[proven_bracket] < CAPITAL_BRACKET_RANK[min_bracket]:
+            if not include_private:
+                continue
+        elif CAPITAL_BRACKET_RANK[proven_bracket] < CAPITAL_BRACKET_RANK[min_bracket]:
             continue
 
         recon_str = extract_verified_reconciliation_status(bundle)
@@ -167,7 +173,7 @@ def handle_get_leaderboard(
                 ),
                 "signer_trust_status": verification.signer_trust_status.value,
                 "reconciliation_status": recon_status.value if recon_status is not None else None,
-                "capital_bracket": proven_bracket.value,
+                "capital_bracket": proven_bracket.value if proven_bracket is not None else "undisclosed",
                 "twr_decimal": twr_dec,
                 "twr_pct": twr_pct,
                 "probabilistic_sharpe_ratio": psr_val,

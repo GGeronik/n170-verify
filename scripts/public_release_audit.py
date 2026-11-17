@@ -76,6 +76,7 @@ SECRET_PATTERNS = (
     ("github-token", re.compile(r"(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}")),
     ("google-api-key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
+    ("snaptrade-personal-client-id", re.compile(r"\bPERS-[A-Z0-9]{16,}\b")),
     ("hard-coded-home-path", re.compile(r"/(?:Users|home)/[^/\s'\"]+/")),
     ("known-development-password", re.compile("neo4j/" + "n170")),
 )

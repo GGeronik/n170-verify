@@ -44,7 +44,20 @@ DEFAULT_CONNECTOR_APPROVAL_STATES: dict[str, ProviderApprovalState] = {
     "trading212": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     "degiro": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     "degiro_csv": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "robinhood": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     "robinhood_csv": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "mt4": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "mt4_statement": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "mt5": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "mt5_statement": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradovate": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradovate_csv": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradersync": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradersync_journal": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradezella": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "tradezella_journal": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "journal_migration": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
+    "auto_detect": ProviderApprovalState.OFFLINE_EXPORT_ONLY,
     "coinbase": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     "binance": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
     "kraken": ProviderApprovalState.USER_KEY_SELF_ATTESTED,
@@ -54,6 +67,7 @@ DEFAULT_CONNECTOR_APPROVAL_STATES: dict[str, ProviderApprovalState] = {
     "snaptrade": ProviderApprovalState.AGGREGATOR_RELAYED,
     "snaptrade_relay": ProviderApprovalState.AGGREGATOR_RELAYED,
     "snaptrade_poc": ProviderApprovalState.AGGREGATOR_RELAYED,
+    "hyperliquid": ProviderApprovalState.PUBLIC_API_PERMISSIONLESS,
     "fidelity_pending": ProviderApprovalState.PENDING_PROVIDER_APPROVAL,
     "robinhood_unapproved": ProviderApprovalState.PENDING_PROVIDER_APPROVAL,
 }
@@ -91,6 +105,7 @@ class ApiConfig:
     snaptrade_client_id: str = ""
     snaptrade_consumer_key: str = ""
     snaptrade_dev_key: str = ""
+    snaptrade_auth_mode: str = "auto"
 
     worker_timeout_seconds: float = 30.0
     delayed_trade_guard_days: int = 7
@@ -121,9 +136,25 @@ class ApiConfig:
         seed_hex = os.environ.get("N170_VERIFY_SIGNING_SEED_HEX", "").strip()
         if not seed_hex:
             seed_file = os.environ.get("N170_VERIFY_SIGNING_SEED_FILE", "").strip()
-            if seed_file and os.path.isfile(seed_file):
-                with open(seed_file, encoding="utf-8") as fh:
-                    seed_hex = fh.read().strip()
+            if seed_file:
+                try:
+                    st_info = os.stat(seed_file)
+                except FileNotFoundError:
+                    st_info = None
+                except PermissionError as exc:
+                    raise PermissionError(
+                        f"Cannot access N170_VERIFY_SIGNING_SEED_FILE {seed_file!r} (UID={os.getuid()}): "
+                        "fix the key directory and file ownership so this user can read it"
+                    ) from exc
+                if st_info is not None:
+                    try:
+                        with open(seed_file, encoding="utf-8") as fh:
+                            seed_hex = fh.read().strip()
+                    except PermissionError as exc:
+                        raise PermissionError(
+                            f"Cannot read N170_VERIFY_SIGNING_SEED_FILE {seed_file!r} (UID={os.getuid()}): "
+                            "fix the file ownership so this user can read it"
+                        ) from exc
         if seed_hex:
             norm_seed = validate_hex_digest(
                 seed_hex, field_name="N170_VERIFY_SIGNING_SEED_HEX", num_bytes=32
@@ -180,6 +211,9 @@ class ApiConfig:
             snaptrade_client_id=os.environ.get("SNAPTRADE_CLIENT_ID", "").strip(),
             snaptrade_consumer_key=os.environ.get("SNAPTRADE_CONSUMER_KEY", "").strip(),
             snaptrade_dev_key=os.environ.get("N170_SNAPTRADE_DEV_KEY", "").strip(),
+            snaptrade_auth_mode=(
+                os.environ.get("SNAPTRADE_AUTH_MODE", "auto").strip().lower() or "auto"
+            ),
         )
 
 

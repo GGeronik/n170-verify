@@ -198,6 +198,7 @@ class VerifyApiApplication:
         oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
         snaptrade_relay: SnapTradeRelayCoordinator | None = None,
         snaptrade_http_transport: Any = None,
+        hyperliquid_http_transport: Any = None,
     ) -> None:
         self.config = config or ApiConfig()
         self.store = store or ProofStore(self.config)
@@ -214,6 +215,7 @@ class VerifyApiApplication:
         self.snaptrade_relay = snaptrade_relay or SnapTradeRelayCoordinator(
             http_transport=snaptrade_http_transport
         )
+        self.hyperliquid_http_transport = hyperliquid_http_transport
 
     @property
     def verify_app(self) -> VerifyApiApplication:
@@ -356,6 +358,7 @@ class VerifyApiApplication:
                 sync_vault=self.sync_vault,
                 pipeline_spec=self.pipeline_spec,
                 headers=req_headers,
+                hyperliquid_http_transport=self.hyperliquid_http_transport,
             )
             if isinstance(parsed, Mapping) and bool(parsed.get("persist_sync", False)):
                 return _sync_json_response(st, resp)
@@ -825,6 +828,7 @@ def create_app(
     oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
     snaptrade_relay: SnapTradeRelayCoordinator | None = None,
     snaptrade_http_transport: Any = None,
+    hyperliquid_http_transport: Any = None,
     prefer_fastapi: bool = True,
 ) -> Any:
     """Create the N170 Verify application (FastAPI when installed, zero-dep ASGI otherwise)."""
@@ -836,6 +840,7 @@ def create_app(
         oauth_revocation_callbacks=oauth_revocation_callbacks,
         snaptrade_relay=snaptrade_relay,
         snaptrade_http_transport=snaptrade_http_transport,
+        hyperliquid_http_transport=hyperliquid_http_transport,
     )
     if prefer_fastapi and _HAS_FASTAPI:
         return mount_onto_fastapi(core_app)

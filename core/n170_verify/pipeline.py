@@ -56,6 +56,7 @@ from n170_verify.connectors import (
     parse_robinhood_csv,
     parse_schwab_csv,
 )
+from n170_verify.connectors.statement_csv import detect_and_parse_statement
 from n170_verify.contracts import (
     ALLOWED_RETENTION_MODES,
     BundleVerificationResult,
@@ -181,12 +182,27 @@ def _call_adapter_fetch(
     if "blinding_salt_hex" in params or accepts_var_kw:
         call_kwargs["blinding_salt_hex"] = blinding_salt_hex
 
-    default_start = period_start_utc or "2026-01-01T00:00:00Z"
-    default_end = period_end_utc or _utc_now_iso()
-    if "period_start_utc" in params:
-        call_kwargs["period_start_utc"] = default_start
-    if "period_end_utc" in params:
-        call_kwargs["period_end_utc"] = default_end
+    if period_start_utc is not None:
+        if "period_start_utc" in params:
+            call_kwargs["period_start_utc"] = period_start_utc
+        elif "start_date" in params:
+            call_kwargs["start_date"] = period_start_utc
+    elif (
+        "period_start_utc" in params
+        and params["period_start_utc"].default is inspect.Parameter.empty
+    ):
+        call_kwargs["period_start_utc"] = "2026-01-01T00:00:00Z"
+
+    if period_end_utc is not None:
+        if "period_end_utc" in params:
+            call_kwargs["period_end_utc"] = period_end_utc
+        elif "end_date" in params:
+            call_kwargs["end_date"] = period_end_utc
+    elif (
+        "period_end_utc" in params
+        and params["period_end_utc"].default is inspect.Parameter.empty
+    ):
+        call_kwargs["period_end_utc"] = _utc_now_iso()
     if base_currency is not None and "base_currency" in params:
         call_kwargs["base_currency"] = base_currency
     if "require_live" in params:
@@ -297,17 +313,56 @@ def ingest_portfolio_ledger(
             raw_csv = _coerce_source_bytes(
                 csv_source, allow_filesystem_paths=allow_filesystem_paths
             )
-            detected = _detect_csv_format(raw_csv, broker_id, csv_format)
-            if detected == "degiro":
-                resolved_ledger = parse_degiro_csv_bundle(
-                    account_csv=raw_csv,
+            norm_cf = (csv_format or "").strip().lower()
+            norm_bid_hint = (broker_id or "").strip().lower()
+            extended_offline_hints = {
+                "mt4",
+                "mt4_statement",
+                "mt5",
+                "mt5_statement",
+                "tradovate",
+                "tradovate_csv",
+                "tradersync",
+                "tradersync_journal",
+                "tradezella",
+                "tradezella_journal",
+                "journal_migration",
+                "auto_detect",
+            }
+            if norm_cf in extended_offline_hints or (
+                not norm_cf and norm_bid_hint in extended_offline_hints
+            ):
+                resolved_ledger = detect_and_parse_statement(
+                    raw_csv,
                     blinding_salt_hex=salt_hex,
-                    base_currency=base_currency or "EUR",
-                )
-            elif detected == "robinhood":
-                resolved_ledger = parse_robinhood_csv(raw_csv, blinding_salt_hex=salt_hex)
+                    base_currency=base_currency or "USD",
+                    reject_demo=require_live,
+                    require_live=require_live,
+                ).ledger
             else:
-                resolved_ledger = parse_schwab_csv(raw_csv, blinding_salt_hex=salt_hex)
+                try:
+                    detected = _detect_csv_format(raw_csv, broker_id, csv_format)
+                except ValueError:
+                    if norm_cf:
+                        raise
+                    resolved_ledger = detect_and_parse_statement(
+                        raw_csv,
+                        blinding_salt_hex=salt_hex,
+                        base_currency=base_currency or "USD",
+                        reject_demo=require_live,
+                        require_live=require_live,
+                    ).ledger
+                else:
+                    if detected == "degiro":
+                        resolved_ledger = parse_degiro_csv_bundle(
+                            account_csv=raw_csv,
+                            blinding_salt_hex=salt_hex,
+                            base_currency=base_currency or "EUR",
+                        )
+                    elif detected == "robinhood":
+                        resolved_ledger = parse_robinhood_csv(raw_csv, blinding_salt_hex=salt_hex)
+                    else:
+                        resolved_ledger = parse_schwab_csv(raw_csv, blinding_salt_hex=salt_hex)
     elif broker_id is not None:
         init_kw = dict(connector_kwargs or {})
         norm_bid = broker_id.strip().lower()
@@ -564,7 +619,7 @@ def verify_portfolio(
     benchmark_symbol: str | None = None,
     annual_risk_free_rate: float = 0.0,
     periods_per_year: int = 252,
-    cash_flow_timing: str = "end_of_day",
+    cash_flow_timing: str | None = None,
     psr_benchmark_sr: float = 0.0,
     embargo_days: int = 7,
     catalyst_intervals: Sequence[CatalystAvailabilityInterval] | None = None,
@@ -633,13 +688,18 @@ def verify_portfolio(
     )
 
     # 3. Compute flow-adjusted performance, GLM AR(1) unsmoothing, and sample-gated PSR (T >= 30)
+    resolved_cash_flow_timing = (
+        cash_flow_timing
+        if cash_flow_timing is not None
+        else ("modified_dietz" if canonical_ledger.broker_id == "hyperliquid" else "end_of_day")
+    )
     perf_calc = calculate_portfolio_performance_detailed(
         canonical_ledger,
         reference_provider=ref_provider,
         benchmark_symbol=benchmark_symbol,
         annual_risk_free_rate=annual_risk_free_rate,
         periods_per_year=periods_per_year,
-        cash_flow_timing=cash_flow_timing,
+        cash_flow_timing=resolved_cash_flow_timing,
         psr_benchmark_sr=psr_benchmark_sr,
     )
     performance_summary = perf_calc.summary
@@ -753,6 +813,32 @@ def verify_portfolio(
     )
 
 
+_OFFLINE_STATEMENT_BROKER_IDS: frozenset[str] = frozenset(
+    {
+        "ibkr_flex",
+        "ibkr_flex_offline",
+        "degiro",
+        "degiro_csv",
+        "robinhood",
+        "robinhood_csv",
+        "schwab",
+        "schwab_csv",
+        "mt4",
+        "mt4_statement",
+        "mt5",
+        "mt5_statement",
+        "tradovate",
+        "tradovate_csv",
+        "tradersync",
+        "tradersync_journal",
+        "tradezella",
+        "tradezella_journal",
+        "journal_migration",
+        "auto_detect",
+    }
+)
+
+
 def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
     """Return True when an API worker job carries real statement, ledger, or connector inputs."""
     if any(
@@ -776,6 +862,13 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
     if job_payload.get("leaf_payloads") is not None or job_payload.get("nav_points") is not None:
         return False
 
+    norm_broker = str(job_payload.get("broker_id") or "").strip().lower()
+    if norm_broker == "hyperliquid":
+        for addr_key in ("wallet_address", "address", "user"):
+            raw_addr = job_payload.get(addr_key)
+            if isinstance(raw_addr, str) and raw_addr.strip():
+                return True
+
     raw_text = (
         job_payload.get("raw_statement_text")
         if job_payload.get("raw_statement_text") is not None
@@ -785,13 +878,7 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
         stripped = raw_text.lstrip()
         if stripped.startswith("<"):
             return True
-        if job_payload.get("csv_format") or str(job_payload.get("broker_id", "")).lower() in {
-            "degiro",
-            "degiro_csv",
-            "robinhood",
-            "robinhood_csv",
-            "schwab_csv",
-        }:
+        if job_payload.get("csv_format") or norm_broker in _OFFLINE_STATEMENT_BROKER_IDS:
             return True
 
     raw_b64 = job_payload.get("raw_statement_b64")
@@ -801,9 +888,11 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
         except Exception:
             return False
         probe = decoded[:256].lstrip()
-        if probe.startswith(b"<") or job_payload.get("csv_format") or str(
-            job_payload.get("broker_id", "")
-        ).lower() in {"degiro", "degiro_csv", "robinhood", "robinhood_csv", "schwab_csv"}:
+        if (
+            probe.startswith(b"<")
+            or job_payload.get("csv_format")
+            or norm_broker in _OFFLINE_STATEMENT_BROKER_IDS
+        ):
             return True
 
     return False
@@ -914,8 +1003,11 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         job_payload.get("degiro_portfolio_csv"), "degiro_portfolio_csv"
     )
 
-    # Support raw_statement / raw_statement_text / raw_statement_b64 when real XML or CSV is submitted
-    if flex_xml is None and csv_source is None:
+    # Support raw_statement / raw_statement_text / raw_statement_b64 across XML, HTML, and CSV formats
+    detected_offline_ledger: CanonicalPortfolioLedger | None = None
+    detected_offline_broker_id: str | None = None
+    detected_journal_tags: list[str] | None = None
+    if flex_xml is None and csv_source is None and job_payload.get("ledger") is None:
         raw_bytes: bytes | None = None
         if job_payload.get("raw_statement_b64"):
             raw_bytes = base64.b64decode(str(job_payload["raw_statement_b64"]))
@@ -924,14 +1016,48 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         elif isinstance(job_payload.get("raw_statement"), str):
             raw_bytes = job_payload["raw_statement"].encode("utf-8")
         if raw_bytes is not None:
-            if raw_bytes.lstrip().startswith(b"<"):
+            head_low = raw_bytes[:16384].decode("utf-8-sig", errors="replace").lstrip().lower()
+            explicit_cf = str(job_payload.get("csv_format") or "").strip().lower()
+            if head_low.startswith("<") and (
+                "<flexqueryresponse" in head_low
+                or "<flexstatement" in head_low
+                or broker_id in {"ibkr_flex", "ibkr_flex_offline"}
+            ):
                 flex_xml = raw_bytes
-            else:
+            elif not head_low.startswith("<") and explicit_cf in {
+                "degiro",
+                "degiro_csv",
+                "robinhood",
+                "robinhood_csv",
+            }:
                 csv_source = raw_bytes
+            else:
+                default_stmt_ccy = base_ccy or (
+                    "EUR" if broker_id in {"degiro", "degiro_csv"} else "USD"
+                )
+                det = detect_and_parse_statement(
+                    raw_bytes,
+                    blinding_salt_hex=salt_hex,
+                    base_currency=default_stmt_ccy,
+                    reject_demo=True,
+                    require_live=True,
+                )
+                detected_offline_ledger = det.ledger
+                detected_offline_broker_id = det.broker_id
+                if det.imported_journal_tags:
+                    detected_journal_tags = list(det.imported_journal_tags)
 
     raw_conn_kw = job_payload.get("connector_kwargs") or job_payload.get("connector_credentials")
     has_connector_input = raw_conn_kw is not None
     connector_kw = dict(raw_conn_kw or {})
+
+    if broker_id == "hyperliquid":
+        for addr_key in ("wallet_address", "address", "user"):
+            top_addr = job_payload.get(addr_key)
+            if top_addr is not None and str(top_addr).strip():
+                connector_kw.setdefault("wallet_address", str(top_addr).strip())
+                has_connector_input = True
+                break
 
     # Inspect custom URL fields for paper/sandbox/demo/testnet tokens before stripping overrides
     for scope_map in (job_payload, connector_kw):
@@ -958,6 +1084,7 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         item is not None
         for item in (
             job_payload.get("ledger"),
+            detected_offline_ledger,
             flex_xml,
             csv_source,
             degiro_account_bytes,
@@ -967,6 +1094,27 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
     )
     if has_connector_input or (broker_id is not None and not has_offline_or_ledger):
         connector_kw["require_live"] = True
+
+    if broker_id == "hyperliquid" and job_payload.get("_internal_hyperliquid_transport") is not None:
+        internal_transport = job_payload["_internal_hyperliquid_transport"]
+        if isinstance(internal_transport, str) and ":" in internal_transport:
+            import importlib
+
+            mod_name, attr_name = internal_transport.split(":", 1)
+            internal_transport = getattr(importlib.import_module(mod_name), attr_name)
+        connector_kw["http_transport"] = internal_transport
+
+    if (
+        broker_id in {"snaptrade", "snaptrade_relay", "snaptrade_poc"}
+        and job_payload.get("_internal_snaptrade_transport") is not None
+    ):
+        internal_st_transport = job_payload["_internal_snaptrade_transport"]
+        if isinstance(internal_st_transport, str) and ":" in internal_st_transport:
+            import importlib
+
+            mod_name, attr_name = internal_st_transport.split(":", 1)
+            internal_st_transport = getattr(importlib.import_module(mod_name), attr_name)
+        connector_kw["http_transport"] = internal_st_transport
 
     raw_fetch_kw = dict(job_payload.get("connector_fetch_kwargs") or {})
     connector_fetch_kw: dict[str, Any] = {}
@@ -978,16 +1126,34 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             )
         if k_str.strip().lower() == "require_live":
             continue
+        if isinstance(v, (list, tuple)):
+            if len(v) > 256 or any(not isinstance(item, (str, int, float, bool)) for item in v):
+                raise ValueError(
+                    f"Non-primitive sequence value rejected in connector_fetch_kwargs.{k_str}"
+                )
+            connector_fetch_kw[k_str] = list(v)
+            continue
         if v is not None and not isinstance(v, (str, int, float, bool)):
             raise ValueError(
                 f"Non-primitive value rejected in connector_fetch_kwargs.{k_str}: {type(v).__name__}"
             )
         connector_fetch_kw[k_str] = v
 
-    if period_start is None and job_payload.get("period_start_utc"):
-        connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
-    if period_end is None and job_payload.get("period_end_utc"):
-        connector_fetch_kw.setdefault("period_end_utc", str(job_payload["period_end_utc"]))
+    if broker_id not in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+        if period_start is None and job_payload.get("period_start_utc"):
+            connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
+        if period_end is None and job_payload.get("period_end_utc"):
+            connector_fetch_kw.setdefault("period_end_utc", str(job_payload["period_end_utc"]))
+
+    if broker_id in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+        if job_payload.get("start_date") is not None and str(job_payload["start_date"]).strip():
+            connector_fetch_kw.setdefault("start_date", str(job_payload["start_date"]).strip())
+        elif period_start is not None:
+            connector_fetch_kw.setdefault("start_date", period_start)
+        if job_payload.get("end_date") is not None and str(job_payload["end_date"]).strip():
+            connector_fetch_kw.setdefault("end_date", str(job_payload["end_date"]).strip())
+        elif period_end is not None:
+            connector_fetch_kw.setdefault("end_date", period_end)
 
     raw_acct_override = (
         str(job_payload["raw_account_id"]).strip()
@@ -995,8 +1161,18 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         else None
     )
 
+    explicit_tags = job_payload.get("imported_journal_tags")
+    merged_journal_tags: list[str] | None = None
+    if explicit_tags is not None or detected_journal_tags is not None:
+        merged_journal_tags = []
+        for tag_src in (detected_journal_tags or (), explicit_tags or ()):
+            for t_val in tag_src:
+                t_str = str(t_val).strip()
+                if t_str and t_str not in merged_journal_tags:
+                    merged_journal_tags.append(t_str)
+
     output = verify_portfolio(
-        ledger=job_payload.get("ledger"),
+        ledger=job_payload.get("ledger") if job_payload.get("ledger") is not None else detected_offline_ledger,
         flex_xml=flex_xml,
         csv_source=csv_source,
         csv_format=job_payload.get("csv_format"),
@@ -1017,17 +1193,40 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         benchmark_symbol=job_payload.get("benchmark_symbol"),
         annual_risk_free_rate=float(job_payload.get("annual_risk_free_rate", 0.0)),
         periods_per_year=int(job_payload.get("periods_per_year", 252)),
-        cash_flow_timing=str(job_payload.get("cash_flow_timing", "end_of_day")),
+        cash_flow_timing=(
+            str(job_payload["cash_flow_timing"])
+            if job_payload.get("cash_flow_timing")
+            else None
+        ),
         psr_benchmark_sr=float(job_payload.get("psr_benchmark_sr", 0.0)),
         embargo_days=embargo_days,
         issued_at_utc=issued_at_utc,
         disclose_leaf_names=job_payload.get("disclose_leaf_names"),
         enable_llm_narrative=False,
-        imported_journal_tags=job_payload.get("imported_journal_tags"),
+        imported_journal_tags=merged_journal_tags,
     )
 
     bundle = output.proof_bundle
-    resolved_broker_id = broker_id if broker_id else bundle.broker_id
+    alias_preserve_pairs = {
+        ("ibkr_flex", "ibkr_flex_offline"),
+        ("degiro", "degiro_csv"),
+        ("robinhood", "robinhood_csv"),
+        ("schwab", "schwab_csv"),
+        ("mt4", "mt4_statement"),
+        ("mt5", "mt5_statement"),
+        ("tradovate", "tradovate_csv"),
+        ("tradersync", "tradersync_journal"),
+        ("tradezella", "tradezella_journal"),
+    }
+    if detected_offline_broker_id is not None:
+        if (broker_id, detected_offline_broker_id) in alias_preserve_pairs and broker_id:
+            resolved_broker_id = broker_id
+        else:
+            resolved_broker_id = detected_offline_broker_id
+    elif broker_id in {None, "", "auto_detect", "journal_migration"}:
+        resolved_broker_id = bundle.broker_id
+    else:
+        resolved_broker_id = broker_id
     return {
         "broker_id": resolved_broker_id,
         "blinded_account_tag": bundle.blinded_account_tag,

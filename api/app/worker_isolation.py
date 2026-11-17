@@ -80,6 +80,10 @@ class WorkerIsolationError(RuntimeError):
     """Raised when an isolated verification worker fails, crashes, or violates isolation checks."""
 
 
+class WorkerBrokerUpstreamError(WorkerIsolationError):
+    """Raised when a live read-only upstream clearinghouse/broker endpoint fails inside the worker."""
+
+
 class WorkerValidationError(ValueError):
     """Raised when verification input fails domain validation inside the isolated worker."""
 
@@ -164,8 +168,13 @@ def _build_child_pythonpath() -> str:
         entries.extend(p for p in existing.split(os.pathsep) if p)
 
     core_parent = str(Path(_core_pkg.__file__).resolve().parent.parent)
-    api_parent = str(Path(_app_pkg.__file__).resolve().parent.parent)
-    for candidate in (core_parent, api_parent):
+    api_parent_path = Path(_app_pkg.__file__).resolve().parent.parent
+    api_parent = str(api_parent_path)
+    candidates = [core_parent, api_parent]
+    api_tests = api_parent_path / "tests"
+    if api_tests.is_dir():
+        candidates.append(str(api_tests))
+    for candidate in candidates:
         if candidate not in entries:
             entries.append(candidate)
     return os.pathsep.join(entries)
@@ -189,6 +198,9 @@ def _sanitize_current_process_env() -> list[str]:
     allowed = _build_sanitized_env_map()
     os.environ.clear()
     os.environ.update(allowed)
+    for entry in allowed.get("PYTHONPATH", "").split(os.pathsep):
+        if entry and entry not in sys.path:
+            sys.path.append(entry)
     return sorted(os.environ.keys())
 
 
@@ -656,9 +668,11 @@ def _ephemeral_worker_entrypoint(
     from app.store import SigningOracleDisabledError
     from n170_verify.connectors import (
         DisallowedCapabilityError,
+        HyperliquidServiceError,
         MutatingCredentialRejectedError,
         PaperOrSandboxAccountRejectedError,
         ProviderApprovalRequiredError,
+        SnapTradeError,
     )
     from n170_verify.contracts import ReadOnlyCapabilityViolationError
 
@@ -725,6 +739,15 @@ def _ephemeral_worker_entrypoint(
                 "worker_pid": os.getpid(),
             }
         )
+    except (HyperliquidServiceError, SnapTradeError) as exc:
+        send_conn.send(
+            {
+                "ok": False,
+                "error_kind": "broker_upstream",
+                "message": _redact_worker_error_message(str(exc), job_payload),
+                "worker_pid": os.getpid(),
+            }
+        )
     except (WorkerValidationError, ValueError, KeyError, TypeError) as exc:
         send_conn.send(
             {
@@ -772,9 +795,13 @@ def _collect_job_secrets(value: Any, *, key_hint: str = "", out: list[str] | Non
         "key",
         "password",
         "passphrase",
+        "client_id",
+        "user_id",
         "account_id",
         "account_number",
         "acct",
+        "wallet_address",
+        "address",
         "assertion",
         "cookie",
         "credential",
@@ -814,6 +841,8 @@ def run_isolated_one_shot_verification(
     retention_mode: str = "no_persistent_storage",
     persistent_rows_written: int = 0,
     _trusted_internal_input: bool = False,
+    _hyperliquid_http_transport: Any = None,
+    _snaptrade_http_transport: Any = None,
 ) -> tuple[VerifyProofBundle, WorkerIsolationReceipt, int]:
     """Execute portfolio parsing & Merkle commitment in a single-use ``spawn`` worker subprocess.
 
@@ -905,8 +934,18 @@ def run_isolated_one_shot_verification(
     )
 
     # Assemble worker job WITHOUT publisher private signing key or vault master KEK
-    worker_job: dict[str, Any] = dict(request_payload)
+    worker_job: dict[str, Any] = {
+        k: v for k, v in request_payload.items() if not str(k).startswith("_internal_")
+    }
     worker_job["broker_id"] = broker_id
+    if _hyperliquid_http_transport is not None and broker_id == "hyperliquid":
+        worker_job["_internal_hyperliquid_transport"] = _hyperliquid_http_transport
+    if _snaptrade_http_transport is not None and broker_id in {
+        "snaptrade",
+        "snaptrade_relay",
+        "snaptrade_poc",
+    }:
+        worker_job["_internal_snaptrade_transport"] = _snaptrade_http_transport
     worker_job["issued_at_utc"] = issued_at_utc
     worker_job["period_start_utc"] = period_start_utc
     worker_job["period_end_utc"] = period_end_utc
@@ -992,6 +1031,8 @@ def run_isolated_one_shot_verification(
             raise ReadOnlyCapabilityViolationError(msg)
         if err_kind == "validation":
             raise WorkerValidationError(msg)
+        if err_kind == "broker_upstream":
+            raise WorkerBrokerUpstreamError(msg)
         raise WorkerIsolationError(msg)
 
     if exitcode != 0:
@@ -1087,6 +1128,7 @@ def run_isolated_one_shot_verification(
 
 
 __all__ = [
+    "WorkerBrokerUpstreamError",
     "WorkerIsolationError",
     "WorkerIsolationReceipt",
     "WorkerPipelineSpec",

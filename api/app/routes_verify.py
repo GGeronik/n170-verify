@@ -22,6 +22,7 @@ from app.store import (
 )
 from app.sync_vault import SyncVault, SyncVaultConflictError
 from app.worker_isolation import (
+    WorkerBrokerUpstreamError,
     WorkerIsolationError,
     WorkerPipelineSpec,
     WorkerValidationError,
@@ -42,6 +43,7 @@ _PAPER_HOSTS = frozenset(
         "paper-api.alpaca.markets",
         "sandbox.tradier.com",
         "demo.trading212.com",
+        "api.hyperliquid-testnet.xyz",
     }
 )
 
@@ -54,12 +56,21 @@ def _resolve_environment_tier(payload: Mapping[str, Any]) -> EnvironmentTier:
         return EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
 
     broker_id = str(payload.get("broker_id", "")).strip().lower()
-    for url_key in ("base_url", "api_url", "endpoint"):
-        raw_url = str(payload.get(url_key) or "").strip()
-        if raw_url:
-            host = (urlparse(raw_url).hostname or raw_url).strip().lower()
-            if host in _PAPER_HOSTS or any(ph in raw_url.lower() for ph in _PAPER_HOSTS):
-                return EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
+    nested_kw = payload.get("connector_kwargs")
+    scopes: list[Mapping[str, Any]] = [payload]
+    if isinstance(nested_kw, Mapping):
+        scopes.append(nested_kw)
+    for scope in scopes:
+        for url_key in ("base_url", "api_url", "endpoint"):
+            raw_url = str(scope.get(url_key) or "").strip()
+            if raw_url:
+                host = (urlparse(raw_url).hostname or raw_url).strip().lower()
+                if (
+                    host in _PAPER_HOSTS
+                    or any(ph in raw_url.lower() for ph in _PAPER_HOSTS)
+                    or "testnet" in host
+                ):
+                    return EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
 
     raw_acct = str(payload.get("raw_account_id") or payload.get("account_number") or "").strip()
     if raw_acct:
@@ -94,6 +105,7 @@ def handle_post_verify(
     sync_vault: SyncVault,
     pipeline_spec: WorkerPipelineSpec = None,
     headers: Mapping[str, str] | None = None,
+    hyperliquid_http_transport: Any = None,
 ) -> tuple[int, dict[str, Any]]:
     """Execute ``POST /api/v1/verify`` inside a single-use ``spawn`` worker subprocess."""
     if not isinstance(payload, Mapping):
@@ -142,6 +154,7 @@ def handle_post_verify(
             pipeline_spec=pipeline_spec,
             retention_mode=retention_mode,
             persistent_rows_written=0,
+            _hyperliquid_http_transport=hyperliquid_http_transport,
         )
     except PaperOrSandboxRejectedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
@@ -151,6 +164,8 @@ def handle_post_verify(
         return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
     except WorkerValidationError as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
+    except WorkerBrokerUpstreamError as exc:
+        return 502, {"error": "broker_upstream_error", "detail": str(exc)}
     except WorkerIsolationError as exc:
         return 500, {"error": "worker_isolation_error", "detail": str(exc)}
 

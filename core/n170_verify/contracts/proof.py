@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+import re
 from typing import Any
 
 from n170_verify.contracts.assurance import (
@@ -53,12 +54,117 @@ from n170_verify.crypto.witness_quorum import (
 
 
 VERIFY_SCHEMA_VERSION = "n170-verify-v3"
+HOLDER_SCHEMA_VERSION = "n170-holder-v1"
+SIGNING_DOMAIN_HOLDER = b"n170.verify.holder.v3"
 ALLOWED_RETENTION_MODES: frozenset[str] = frozenset(
     {
         "no_persistent_storage",
         "opt_in_encrypted_sync",
     }
 )
+_HOLDER_HANDLE_RE = re.compile(r"^@[A-Za-z0-9_.\-]{1,32}$")
+_FORBIDDEN_HOLDER_CHARS_RE = re.compile(r'[<>"\'`\x00-\x1f\x7f]')
+
+
+@dataclass(slots=True)
+class HolderIdentityAttestation(ContractModelMixin):
+    """Optional browser-signed Ed25519 owner attribution for CVs, GitHub, and LinkedIn."""
+
+    display_name: str
+    proof_id: str
+    proof_hash: str
+    merkle_root: str
+    claimed_at_utc: str
+    holder_public_key_hex: str
+    signature_hex: str
+    schema_version: str = HOLDER_SCHEMA_VERSION
+    handle: str | None = None
+    profile_url: str | None = None
+
+    def _validate(self) -> None:
+        if self.schema_version != HOLDER_SCHEMA_VERSION:
+            raise ValueError(
+                f"HolderIdentityAttestation.schema_version must be {HOLDER_SCHEMA_VERSION!r}"
+            )
+        clean_name = self.display_name.strip()
+        if (
+            not clean_name
+            or len(clean_name) > 64
+            or _FORBIDDEN_HOLDER_CHARS_RE.search(clean_name)
+        ):
+            raise ValueError("HolderIdentityAttestation.display_name is invalid")
+        object.__setattr__(self, "display_name", clean_name)
+
+        if self.handle is not None:
+            if not _HOLDER_HANDLE_RE.match(self.handle):
+                raise ValueError("HolderIdentityAttestation.handle is invalid")
+
+        if self.profile_url is not None:
+            if (
+                not self.profile_url.startswith("https://")
+                or len(self.profile_url) > 180
+                or _FORBIDDEN_HOLDER_CHARS_RE.search(self.profile_url)
+            ):
+                raise ValueError("HolderIdentityAttestation.profile_url must be a clean https URL")
+
+        if not self.proof_id.strip():
+            raise ValueError("HolderIdentityAttestation.proof_id must not be empty")
+        parse_utc_timestamp(
+            self.claimed_at_utc, field_name="HolderIdentityAttestation.claimed_at_utc"
+        )
+        object.__setattr__(
+            self,
+            "proof_hash",
+            validate_hex_digest(
+                self.proof_hash, field_name="HolderIdentityAttestation.proof_hash", num_bytes=32
+            ),
+        )
+        object.__setattr__(
+            self,
+            "merkle_root",
+            validate_hex_digest(
+                self.merkle_root, field_name="HolderIdentityAttestation.merkle_root", num_bytes=32
+            ),
+        )
+        object.__setattr__(
+            self,
+            "holder_public_key_hex",
+            validate_hex_digest(
+                self.holder_public_key_hex,
+                field_name="HolderIdentityAttestation.holder_public_key_hex",
+                num_bytes=32,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "signature_hex",
+            validate_hex_digest(
+                self.signature_hex,
+                field_name="HolderIdentityAttestation.signature_hex",
+                num_bytes=64,
+            ),
+        )
+
+    def signable_claim(self) -> dict[str, Any]:
+        return {
+            "claimed_at_utc": self.claimed_at_utc,
+            "display_name": self.display_name,
+            "handle": self.handle,
+            "holder_public_key_hex": self.holder_public_key_hex,
+            "merkle_root": self.merkle_root,
+            "profile_url": self.profile_url,
+            "proof_hash": self.proof_hash,
+            "proof_id": self.proof_id,
+            "schema_version": self.schema_version,
+        }
+
+    def verify_signature(self) -> bool:
+        return ed25519_verify_domain(
+            self.holder_public_key_hex,
+            SIGNING_DOMAIN_HOLDER,
+            jcs_canonicalize(self.signable_claim()),
+            self.signature_hex,
+        )
 
 
 @dataclass(slots=True)
@@ -88,6 +194,13 @@ class VerifyProofBundle(ContractModelMixin):
     broker_native_signature: BrokerNativeSignature | None = None
     prospective_chain_link: ProspectiveChainLink | None = None
     retention_mode: str = "no_persistent_storage"
+    holder_identity: HolderIdentityAttestation | None = None
+
+    def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
+        serialized = ContractModelMixin.to_dict(self, exclude_none=exclude_none)
+        if self.holder_identity is None:
+            serialized.pop("holder_identity", None)
+        return serialized
 
     def _validate(self) -> None:
         if not self.proof_id.strip():
@@ -260,6 +373,7 @@ class VerifyProofBundle(ContractModelMixin):
             prospective_chain_link=self.prospective_chain_link,
             retention_mode=self.retention_mode,
             signature_hex=self.signature_hex,
+            holder_identity=self.holder_identity,
         )
 
     def get_disclosed_payload(self, leaf_name: str) -> Any:
@@ -392,6 +506,18 @@ def verify_proof_bundle(
     if not signature_valid:
         errors.append("Publisher Ed25519 signature verification failed")
 
+    holder_valid = True
+    if proof_bundle.holder_identity is not None:
+        att = proof_bundle.holder_identity
+        if (
+            att.proof_id != proof_bundle.proof_id
+            or att.merkle_root != proof_bundle.merkle_root
+            or att.proof_hash != proof_bundle.proof_hash()
+            or not att.verify_signature()
+        ):
+            holder_valid = False
+            errors.append("Holder Ed25519 attribution signature failed verification")
+
     merkle_valid, merkle_errors = verify_selective_disclosure(
         proof_bundle.merkle_root,
         proof_bundle.disclosed_leaves,
@@ -479,6 +605,7 @@ def verify_proof_bundle(
         schema_ok
         and env_ok
         and signature_valid
+        and holder_valid
         and merkle_valid
         and transcript_safety_ok
         and signer_trust != SignerTrustStatus.REVOKED_KEY
@@ -517,6 +644,9 @@ def verify_proof_bundle(
 __all__ = [
     "ALLOWED_RETENTION_MODES",
     "BundleVerificationResult",
+    "HOLDER_SCHEMA_VERSION",
+    "HolderIdentityAttestation",
+    "SIGNING_DOMAIN_HOLDER",
     "VERIFY_SCHEMA_VERSION",
     "VerifyProofBundle",
     "create_signed_proof_bundle",

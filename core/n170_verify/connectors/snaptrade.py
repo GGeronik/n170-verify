@@ -46,6 +46,7 @@ from n170_verify.contracts import (
 SNAPTRADE_LIVE_BASE_URL: str = "https://api.snaptrade.com"
 DEFAULT_SNAPTRADE_USER_AGENT: str = "N170-Verify-SnapTrade-POC/1.0"
 MAX_SNAPTRADE_POC_SLOTS: int = 5
+MAX_SNAPTRADE_PERSONAL_SLOTS: int = 1
 MAX_ACTIVITIES_PAGE_SIZE: int = 1000
 MAX_ACTIVITIES_PAGES: int = 10
 
@@ -132,6 +133,27 @@ def is_snaptrade_env_configured(env: Mapping[str, str] | None = None) -> bool:
     return _is_non_placeholder_credential(client_id) and _is_non_placeholder_credential(
         consumer_key
     )
+
+
+def is_snaptrade_personal_key(
+    client_id: str | None,
+    *,
+    auth_mode: str | None = None,
+) -> bool:
+    """Return True when ``client_id`` or ``SNAPTRADE_AUTH_MODE`` selects SnapTrade Personal mode."""
+    if auth_mode is not None and str(auth_mode).strip():
+        norm_mode = str(auth_mode).strip().lower()
+        if norm_mode in {"personal", "personal_key", "personal_1_slot"}:
+            return True
+        if norm_mode in {"commercial", "build", "developer_5_slot"}:
+            return False
+        if norm_mode != "auto":
+            raise SnapTradeAuthenticationError(
+                "SNAPTRADE_AUTH_MODE must be 'auto', 'personal', or 'commercial'"
+            )
+    if not isinstance(client_id, str):
+        return False
+    return client_id.strip().upper().startswith("PERS-")
 
 
 def _normalize_snaptrade_api_path(api_path: str) -> str:
@@ -245,6 +267,7 @@ def build_signed_request(
     extra_query_params: Mapping[str, Any] | None = None,
     json_body: Any = None,
     timestamp: int | str | None = None,
+    auth_mode: str | None = None,
 ) -> SignedSnapTradeRequest:
     """Construct a signed SnapTrade V1 HTTP request with deterministic query params and HMAC header."""
     clean_client = (client_id or "").strip()
@@ -264,14 +287,19 @@ def build_signed_request(
         "clientId": clean_client,
         "timestamp": ts_str,
     }
-    if user_id is not None and str(user_id).strip():
-        params["userId"] = str(user_id).strip()
-    if user_secret is not None and str(user_secret).strip():
-        params["userSecret"] = str(user_secret).strip()
+    personal_mode = is_snaptrade_personal_key(clean_client, auth_mode=auth_mode)
+    if not personal_mode:
+        if user_id is not None and str(user_id).strip():
+            params["userId"] = str(user_id).strip()
+        if user_secret is not None and str(user_secret).strip():
+            params["userSecret"] = str(user_secret).strip()
     if extra_query_params:
         for k, v in extra_query_params.items():
+            k_str = str(k)
+            if personal_mode and k_str in {"userId", "userSecret"}:
+                continue
             if v is not None and str(v).strip() != "":
-                params[str(k)] = str(v)
+                params[k_str] = str(v)
 
     ordered_pairs = [(k, params[k]) for k in sorted(params.keys())]
     query_string = urllib.parse.urlencode(ordered_pairs, quote_via=urllib.parse.quote)
@@ -442,15 +470,17 @@ def get_global_snaptrade_slot_manager() -> SnapTradeSlotManager:
     return _GLOBAL_POC_SLOT_MANAGER
 
 
-def _parse_iso_ts(value: str | None) -> str:
+def _parse_iso_ts(value: str | None, *, end_of_day: bool = False) -> str:
     if not value or not str(value).strip():
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw = str(value).strip()
     if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
-        raw = f"{raw}T00:00:00Z"
+        raw = f"{raw}T23:59:59Z" if end_of_day else f"{raw}T00:00:00Z"
     try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
+        if end_of_day and dt.hour == 0 and dt.minute == 0 and dt.second == 0 and "00:00:00.000" in raw:
+            dt = dt.replace(hour=23, minute=59, second=59)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         return raw
 
@@ -487,19 +517,49 @@ def _extract_symbol_and_currency(raw_symbol: Any, default_ccy: str = "USD") -> t
     if isinstance(raw_symbol, str):
         return raw_symbol.strip().upper(), default_ccy, ""
     if isinstance(raw_symbol, Mapping):
-        inner = raw_symbol.get("symbol")
-        if isinstance(inner, Mapping):
-            sym_val = inner.get("raw_symbol") or inner.get("symbol") or inner.get("ticker") or ""
-            ccy_val = _extract_currency_code(inner.get("currency") or raw_symbol.get("currency"), default_ccy)
-            t_obj = inner.get("type")
-            t_code = str(t_obj.get("code") if isinstance(t_obj, Mapping) else (t_obj or "")).strip().lower()
-            return str(sym_val).strip().upper(), ccy_val, t_code
-        sym_val = raw_symbol.get("raw_symbol") or inner or raw_symbol.get("ticker") or ""
-        ccy_val = _extract_currency_code(raw_symbol.get("currency"), default_ccy)
-        t_obj = raw_symbol.get("type")
-        t_code = str(t_obj.get("code") if isinstance(t_obj, Mapping) else (t_obj or "")).strip().lower()
-        return str(sym_val).strip().upper(), ccy_val, t_code
+        node: Any = raw_symbol
+        resolved_ccy = default_ccy
+        for _ in range(3):
+            if isinstance(node, Mapping):
+                if node.get("currency") is not None:
+                    resolved_ccy = _extract_currency_code(node.get("currency"), resolved_ccy)
+                if isinstance(node.get("symbol"), Mapping):
+                    node = node["symbol"]
+                else:
+                    break
+            else:
+                break
+        if isinstance(node, str):
+            return node.strip().upper(), resolved_ccy, ""
+        if isinstance(node, Mapping):
+            sym_val = node.get("raw_symbol") or node.get("symbol") or node.get("ticker") or ""
+            if node.get("currency") is not None:
+                resolved_ccy = _extract_currency_code(node.get("currency"), resolved_ccy)
+            t_obj = node.get("type") or node.get("asset_type") or node.get("kind")
+            if isinstance(t_obj, Mapping):
+                t_code = str(
+                    t_obj.get("code") or t_obj.get("id") or t_obj.get("description") or ""
+                ).strip().lower()
+            else:
+                t_code = str(t_obj or "").strip().lower()
+            return str(sym_val).strip().upper(), resolved_ccy, t_code
     return "", default_ccy, ""
+
+
+def _extract_units(item: Mapping[str, Any]) -> float:
+    """Extract share/contract quantity supporting SnapTrade ``units`` and ``fractional_units``."""
+    raw_u = item.get("units")
+    if raw_u is not None and raw_u != "":
+        val = float(raw_u)
+        if val != 0.0 or item.get("fractional_units") in (None, ""):
+            return val
+    raw_frac = item.get("fractional_units")
+    if raw_frac is not None and raw_frac != "":
+        return float(raw_frac)
+    raw_qty = item.get("quantity")
+    if raw_qty is not None and raw_qty != "":
+        return float(raw_qty)
+    return 0.0
 
 
 def _extract_account_id(item: Mapping[str, Any], default_id: str = "") -> str:
@@ -518,15 +578,144 @@ def _extract_account_id(item: Mapping[str, Any], default_id: str = "") -> str:
 
 
 def _infer_asset_class(symbol: str, type_code: str, *, is_option: bool = False) -> AssetClass:
-    if is_option or type_code in {"option", "opt"}:
+    if is_option or type_code in {"op", "opt", "option"}:
         return AssetClass.OPTION
-    if type_code in {"etf", "etn"}:
+    if type_code in {"et", "etf", "etn", "cef", "exchange traded fund", "closed end fund"}:
         return AssetClass.ETF
     if type_code in {"crypto", "cryptocurrency"}:
         return AssetClass.CRYPTO_SPOT
     if len(symbol) > 14 and any(c.isdigit() for c in symbol):
         return AssetClass.OPTION
     return AssetClass.EQUITY
+
+
+def _position_asset_info(
+    pos_map: Mapping[str, Any],
+    default_ccy: str = "USD",
+) -> tuple[str, str, AssetClass, float]:
+    """Return ``(symbol, currency, asset_class, contract_multiplier)`` for a SnapTrade position."""
+    pos_sym_source = (
+        pos_map.get("symbol") if pos_map.get("symbol") is not None else pos_map.get("instrument")
+    )
+    sym_str, sym_ccy, sym_type = _extract_symbol_and_currency(pos_sym_source, default_ccy)
+    opt_obj = pos_map.get("option_symbol")
+    is_opt = isinstance(opt_obj, Mapping) and bool(opt_obj)
+    if is_opt and isinstance(opt_obj, Mapping):
+        opt_ticker = str(opt_obj.get("ticker") or sym_str or "").strip().upper()
+        if opt_ticker:
+            sym_str = opt_ticker
+    asset_cls = _infer_asset_class(sym_str, sym_type, is_option=is_opt)
+    mult = 100.0 if asset_cls == AssetClass.OPTION else 1.0
+    resolved_ccy = _extract_currency_code(pos_map.get("currency"), sym_ccy or default_ccy)
+    return sym_str, resolved_ccy, asset_cls, mult
+
+
+def _parse_currency_rate_pairs(
+    raw_currency_rates: Any,
+    raw_conversion_rates: Any,
+    base_currency: str,
+) -> tuple[dict[tuple[str, str], float], dict[str, float]]:
+    """Parse SnapTrade ``/currencies/rates`` rows and explicit FX maps into pair & ledger tables."""
+    pair_rates: dict[tuple[str, str], float] = {}
+
+    if isinstance(raw_currency_rates, list):
+        for row in raw_currency_rates:
+            if not isinstance(row, Mapping):
+                continue
+            src = _extract_currency_code(row.get("src"), default="")
+            dst = _extract_currency_code(row.get("dst"), default="")
+            raw_rate = row.get("exchange_rate")
+            if raw_rate is None:
+                raw_rate = row.get("rate")
+            if src and dst and raw_rate is not None:
+                try:
+                    rate_val = float(raw_rate)
+                except (TypeError, ValueError):
+                    continue
+                if rate_val > 0.0:
+                    pair_rates[(src, dst)] = rate_val
+    elif isinstance(raw_currency_rates, Mapping):
+        raw_conversion_rates = (
+            {**dict(raw_currency_rates), **dict(raw_conversion_rates)}
+            if isinstance(raw_conversion_rates, Mapping)
+            else raw_currency_rates
+        )
+
+    if isinstance(raw_conversion_rates, Mapping):
+        for raw_k, raw_v in raw_conversion_rates.items():
+            if raw_v is None:
+                continue
+            try:
+                rate_val = float(raw_v)
+            except (TypeError, ValueError):
+                continue
+            if rate_val <= 0.0:
+                continue
+            key_str = str(raw_k).strip().upper()
+            if "/" in key_str:
+                parts = key_str.split("/", 1)
+                src = _extract_currency_code(parts[0], default="")
+                dst = _extract_currency_code(parts[1], default="")
+                if src and dst:
+                    pair_rates[(src, dst)] = rate_val
+            elif len(key_str) == 6 and key_str.isalpha():
+                pair_rates[(key_str[:3], key_str[3:])] = rate_val
+            else:
+                src = _extract_currency_code(key_str, default="")
+                if src and base_currency:
+                    pair_rates[(src, base_currency)] = rate_val
+
+    conversion_rates_out: dict[str, float] = {}
+    for (src, dst), rate_val in list(pair_rates.items()):
+        if src == dst or rate_val <= 0.0:
+            continue
+        conversion_rates_out[f"{src}/{dst}"] = rate_val
+        conversion_rates_out.setdefault(f"{dst}/{src}", round(1.0 / rate_val, 10))
+
+    if base_currency != "USD":
+        base_to_usd = _lookup_fx_rate(base_currency, "USD", pair_rates)
+        if base_to_usd is not None and base_to_usd > 0.0:
+            conversion_rates_out.setdefault(f"{base_currency}/USD", base_to_usd)
+            conversion_rates_out.setdefault(f"USD/{base_currency}", round(1.0 / base_to_usd, 10))
+
+    return pair_rates, conversion_rates_out
+
+
+def _lookup_fx_rate(
+    src_currency: str,
+    dst_currency: str,
+    pair_rates: Mapping[tuple[str, str], float],
+) -> float | None:
+    """Resolve ``1 src_currency -> X dst_currency`` from direct, inverse, or USD-bridged pairs."""
+    src = (src_currency or "").strip().upper()
+    dst = (dst_currency or "").strip().upper()
+    if not src or not dst or src == dst:
+        return 1.0
+    direct = pair_rates.get((src, dst))
+    if direct is not None and direct > 0.0:
+        return direct
+    inverse = pair_rates.get((dst, src))
+    if inverse is not None and inverse > 0.0:
+        return round(1.0 / inverse, 10)
+    if src != "USD" and dst != "USD":
+        src_to_usd = pair_rates.get((src, "USD"))
+        if src_to_usd is None and pair_rates.get(("USD", src)):
+            src_to_usd = 1.0 / pair_rates[("USD", src)]
+        usd_to_dst = pair_rates.get(("USD", dst))
+        if usd_to_dst is None and pair_rates.get((dst, "USD")):
+            usd_to_dst = 1.0 / pair_rates[(dst, "USD")]
+        if src_to_usd and src_to_usd > 0.0 and usd_to_dst and usd_to_dst > 0.0:
+            return round(src_to_usd * usd_to_dst, 10)
+    return None
+
+
+def _scrub_account_identifiers(text: str, raw_identifiers: Sequence[str]) -> str:
+    cleaned = text or ""
+    for raw_ident in raw_identifiers:
+        tok = (raw_ident or "").strip()
+        if len(tok) >= 4 and tok in cleaned:
+            cleaned = cleaned.replace(tok, "[REDACTED]")
+    return cleaned
 
 
 class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
@@ -552,6 +741,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         *,
         client_id: str | None = None,
         consumer_key: str | None = None,
+        auth_mode: str | None = None,
         user_id: str | None = None,
         user_secret: str | None = None,
         base_url: str | None = None,
@@ -582,6 +772,10 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 env_map.get("SNAPTRADE_CONSUMER_KEY") or "snaptrade-poc-key"
             ).strip()
 
+        resolved_auth_mode = (
+            auth_mode if auth_mode is not None else env_map.get("SNAPTRADE_AUTH_MODE", "auto")
+        )
+
         if not resolved_client_id:
             raise SnapTradeAuthenticationError("SnapTrade client_id must not be empty")
         if not resolved_consumer_key:
@@ -589,6 +783,10 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         self.client_id = resolved_client_id
         self.consumer_key = resolved_consumer_key
+        self.auth_mode = str(resolved_auth_mode or "auto").strip().lower() or "auto"
+        self.is_personal_key = is_snaptrade_personal_key(
+            self.client_id, auth_mode=self.auth_mode
+        )
         self.user_id = (user_id or "").strip() or None
         self.user_secret = (user_secret or "").strip() or None
         self.require_live = require_live
@@ -604,7 +802,11 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             label="snaptrade",
         )
         self._transport = http_transport
-        self.slot_manager = slot_manager or _GLOBAL_POC_SLOT_MANAGER
+        self.slot_manager = slot_manager or (
+            SnapTradeSlotManager(MAX_SNAPTRADE_PERSONAL_SLOTS)
+            if self.is_personal_key
+            else _GLOBAL_POC_SLOT_MANAGER
+        )
 
         if self.user_id and auto_register_slot:
             self.slot_manager.register_slot(self.user_id)
@@ -675,6 +877,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             extra_query_params=extra_query_params,
             json_body=json_body,
             timestamp=resolved_ts,
+            auth_mode=self.auth_mode,
         )
 
     def _collect_secrets(self, *extra: str | None) -> list[str]:
@@ -800,8 +1003,17 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 f"SnapTrade {api_path} returned malformed JSON response"
             ) from exc
 
-    def register_user(self, user_id: str) -> dict[str, str]:
-        """Allocate/reuse a slot (max 5) and register a SnapTrade V1 user."""
+    def register_user(self, user_id: str = "") -> dict[str, str]:
+        """Allocate/reuse a slot and register a SnapTrade V1 user (skipped in PERS-* personal mode)."""
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            self.slot_manager.register_slot(clean_user)
+            return {
+                "userId": clean_user,
+                "userSecret": "",
+                "mode": "personal_1_slot",
+            }
+
         if not isinstance(user_id, str) or not user_id.strip():
             raise SnapTradeAuthenticationError("user_id must be a non-empty string")
         clean_user = user_id.strip()
@@ -840,8 +1052,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
     def generate_connection_portal_url(
         self,
-        user_id: str,
-        user_secret: str,
+        user_id: str = "",
+        user_secret: str = "",
         *,
         broker: str | None = None,
         custom_redirect: str | None = None,
@@ -856,12 +1068,16 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 "mutating/trading connection scopes are prohibited."
             )
 
-        clean_user = (user_id or "").strip()
-        clean_secret = (user_secret or "").strip()
-        if not clean_user:
-            raise SnapTradeAuthenticationError("user_id is required for Connection Portal login")
-        if not clean_secret:
-            raise SnapTradeAuthenticationError("user_secret is required for Connection Portal login")
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            clean_secret = ""
+        else:
+            clean_user = (user_id or "").strip()
+            clean_secret = (user_secret or "").strip()
+            if not clean_user:
+                raise SnapTradeAuthenticationError("user_id is required for Connection Portal login")
+            if not clean_secret:
+                raise SnapTradeAuthenticationError("user_secret is required for Connection Portal login")
 
         self.slot_manager.register_slot(clean_user)
 
@@ -879,8 +1095,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         resp = self._execute_signed(
             "POST",
             "/api/v1/snapTrade/login",
-            user_id=clean_user,
-            user_secret=clean_secret,
+            user_id=None if self.is_personal_key else clean_user,
+            user_secret=None if self.is_personal_key else clean_secret,
             json_body=login_body,
         )
         data = self._decode_json_or_raise(
@@ -906,8 +1122,17 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             "connectionType": "read",
         }
 
-    def delete_user_and_release_slot(self, user_id: str) -> dict[str, Any]:
-        """Delete a SnapTrade user upstream and release its local POC connection slot."""
+    def delete_user_and_release_slot(self, user_id: str = "") -> dict[str, Any]:
+        """Delete a SnapTrade user upstream (skipped in PERS-* mode) and release its local slot."""
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            slot_released = self.slot_manager.release_slot(clean_user)
+            return {
+                "userId": clean_user,
+                "status": "personal_key_retained_upstream",
+                "slot_released": slot_released,
+            }
+
         clean_user = (user_id or "").strip()
         if not clean_user:
             raise SnapTradeAuthenticationError("user_id is required to delete SnapTrade user")
@@ -934,6 +1159,37 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             "status": status_str,
             "slot_released": slot_released,
         }
+
+    def list_authorizations(
+        self,
+        user_id: str = "",
+        user_secret: str = "",
+    ) -> list[dict[str, Any]]:
+        """List read-only SnapTrade brokerage authorizations via ``GET /api/v1/authorizations``."""
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            clean_secret = ""
+        else:
+            clean_user = (user_id or self.user_id or "").strip()
+            clean_secret = (user_secret or self.user_secret or "").strip()
+            if not clean_user:
+                raise SnapTradeAuthenticationError("user_id is required to list SnapTrade authorizations")
+            if not clean_secret:
+                raise SnapTradeAuthenticationError("user_secret is required to list SnapTrade authorizations")
+
+        resp = self._execute_signed(
+            "GET",
+            "/api/v1/authorizations",
+            user_id=None if self.is_personal_key else clean_user,
+            user_secret=None if self.is_personal_key else clean_secret,
+        )
+        raw = self._decode_json_or_raise(
+            resp,
+            api_path="/api/v1/authorizations",
+            extra_secrets=(clean_secret, clean_user),
+        )
+        items = raw if isinstance(raw, list) else ([raw] if isinstance(raw, Mapping) else [])
+        return [dict(item) for item in items if isinstance(item, Mapping)]
 
     def parse_payload(
         self,
@@ -974,80 +1230,26 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         for h_entry in holdings_list:
             h_acct = h_entry.get("account")
-            h_aid = ""
             if isinstance(h_acct, Mapping):
                 h_aid = _extract_account_id(h_acct)
                 if h_aid and not any(_extract_account_id(a) == h_aid for a in raw_accounts_list):
                     raw_accounts_list.append(h_acct)
-            else:
-                h_aid = _extract_account_id(h_entry)
-
-            h_positions = h_entry.get("positions") or []
-            if isinstance(h_positions, list):
-                for p in h_positions:
-                    if isinstance(p, Mapping):
-                        p_copy = dict(p)
-                        if h_aid and not p_copy.get("account_id"):
-                            p_copy["account_id"] = h_aid
-                        flattened_positions.append(p_copy)
-
-            h_total_obj = h_entry.get("total_value")
-            h_balances = h_entry.get("balances") or []
-            cash_sum = 0.0
-            has_cash = False
-            bal_ccy = "USD"
-            if isinstance(h_balances, list):
-                for b_item in h_balances:
-                    if isinstance(b_item, Mapping):
-                        if b_item.get("cash") is not None:
-                            cash_sum += float(b_item["cash"])
-                            has_cash = True
-                        bal_ccy = _extract_currency_code(b_item.get("currency"), bal_ccy)
-
-            total_val: float | None = None
-            if isinstance(h_total_obj, Mapping) and h_total_obj.get("value") is not None:
-                total_val = float(h_total_obj["value"])
-                bal_ccy = _extract_currency_code(h_total_obj.get("currency"), bal_ccy)
-            elif isinstance(h_acct, Mapping):
-                acct_bal = h_acct.get("balance")
-                if isinstance(acct_bal, Mapping) and isinstance(acct_bal.get("total"), Mapping):
-                    tot_inner = acct_bal["total"]
-                    if tot_inner.get("amount") is not None:
-                        total_val = float(tot_inner["amount"])
-                        bal_ccy = _extract_currency_code(tot_inner.get("currency"), bal_ccy)
-
-            if total_val is not None or has_cash:
-                pos_mkt_sum = 0.0
-                if total_val is None:
-                    for p in h_positions if isinstance(h_positions, list) else []:
-                        if isinstance(p, Mapping):
-                            u = float(p.get("units") or p.get("quantity") or 0.0)
-                            pr = float(p.get("price") or p.get("current_price") or 0.0)
-                            pos_mkt_sum += u * pr
-                resolved_tot = total_val if total_val is not None else (cash_sum + pos_mkt_sum)
-                sync_ts = None
-                if isinstance(h_acct, Mapping) and isinstance(h_acct.get("sync_status"), Mapping):
-                    holdings_sync = h_acct["sync_status"].get("holdings")
-                    if isinstance(holdings_sync, Mapping):
-                        sync_ts = holdings_sync.get("last_successful_sync")
-                flattened_balances.append(
-                    {
-                        "account_id": h_aid,
-                        "total": resolved_tot,
-                        "cash": cash_sum if has_cash else None,
-                        "currency": bal_ccy,
-                        "updated_at": h_entry.get("updated_at") or sync_ts,
-                    }
-                )
 
         raw_acct_ids: list[str] = []
+        raw_identifiers_to_scrub: list[str] = []
         is_paper_detected = False
-        base_currency = "USD"
+        inferred_acct_ccy = ""
 
         for acct in raw_accounts_list:
             aid = _extract_account_id(acct)
             if aid and aid not in raw_acct_ids:
                 raw_acct_ids.append(aid)
+            for ident_key in ("id", "number", "account_number"):
+                ident_val = acct.get(ident_key)
+                if ident_val is not None and len(str(ident_val).strip()) >= 4:
+                    clean_ident = str(ident_val).strip()
+                    if clean_ident not in raw_identifiers_to_scrub:
+                        raw_identifiers_to_scrub.append(clean_ident)
             meta = acct.get("meta") if isinstance(acct.get("meta"), Mapping) else {}
             raw_type = " ".join(
                 str(x or "")
@@ -1077,21 +1279,141 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 acct.get("currency") or meta.get("currency") or bal_total_ccy,
                 default="",
             )
-            if ccy and len(ccy) == 3:
-                base_currency = ccy
+            if ccy and len(ccy) == 3 and not inferred_acct_ccy:
+                inferred_acct_ccy = ccy
 
-            if not flattened_balances and isinstance(acct_bal, Mapping):
-                tot_map = acct_bal.get("total")
-                if isinstance(tot_map, Mapping) and tot_map.get("amount") is not None:
-                    flattened_balances.append(
-                        {
-                            "account_id": aid,
-                            "total": float(tot_map["amount"]),
-                            "cash": None,
-                            "currency": _extract_currency_code(tot_map.get("currency"), base_currency),
-                            "updated_at": acct.get("updated_at") or acct.get("created_date"),
-                        }
-                    )
+        explicit_base = _extract_currency_code(data.get("base_currency"), default="")
+        inferred_holdings_ccy = ""
+        for h_entry in holdings_list:
+            h_tot = h_entry.get("total_value")
+            if isinstance(h_tot, Mapping):
+                cand = _extract_currency_code(h_tot.get("currency"), default="")
+                if cand and len(cand) == 3:
+                    inferred_holdings_ccy = cand
+                    break
+            h_bals = h_entry.get("balances")
+            if isinstance(h_bals, list):
+                for b_item in h_bals:
+                    if isinstance(b_item, Mapping):
+                        cand = _extract_currency_code(b_item.get("currency"), default="")
+                        if cand and len(cand) == 3:
+                            inferred_holdings_ccy = cand
+                            break
+                if inferred_holdings_ccy:
+                    break
+
+        inferred_bal_ccy = ""
+        raw_bals_top = data.get("balances")
+        if isinstance(raw_bals_top, Mapping):
+            inferred_bal_ccy = _extract_currency_code(raw_bals_top.get("currency"), default="")
+        elif isinstance(raw_bals_top, list):
+            for b_item in raw_bals_top:
+                if isinstance(b_item, Mapping):
+                    cand = _extract_currency_code(b_item.get("currency"), default="")
+                    if cand and len(cand) == 3:
+                        inferred_bal_ccy = cand
+                        break
+
+        base_currency = (
+            explicit_base
+            or inferred_acct_ccy
+            or inferred_holdings_ccy
+            or inferred_bal_ccy
+            or "USD"
+        )
+        pair_rates, conversion_rates_out = _parse_currency_rate_pairs(
+            data.get("currency_rates"),
+            data.get("conversion_rates"),
+            base_currency,
+        )
+
+        for h_entry in holdings_list:
+            h_acct = h_entry.get("account")
+            h_aid = (
+                _extract_account_id(h_acct)
+                if isinstance(h_acct, Mapping)
+                else _extract_account_id(h_entry)
+            )
+
+            h_positions = h_entry.get("positions") or []
+            if isinstance(h_positions, list):
+                for p in h_positions:
+                    if isinstance(p, Mapping):
+                        p_copy = dict(p)
+                        if h_aid and not p_copy.get("account_id"):
+                            p_copy["account_id"] = h_aid
+                        flattened_positions.append(p_copy)
+
+            h_total_obj = h_entry.get("total_value")
+            h_balances = h_entry.get("balances") or []
+            cash_sum = 0.0
+            has_cash = False
+            if isinstance(h_balances, list):
+                for b_item in h_balances:
+                    if isinstance(b_item, Mapping) and b_item.get("cash") is not None:
+                        b_ccy = _extract_currency_code(b_item.get("currency"), base_currency)
+                        b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                        cash_sum += float(b_item["cash"]) * b_fx
+                        has_cash = True
+
+            total_val: float | None = None
+            if isinstance(h_total_obj, Mapping) and h_total_obj.get("value") is not None:
+                tot_ccy = _extract_currency_code(h_total_obj.get("currency"), base_currency)
+                tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                total_val = float(h_total_obj["value"]) * tot_fx
+            elif isinstance(h_acct, Mapping):
+                acct_bal = h_acct.get("balance")
+                if isinstance(acct_bal, Mapping) and isinstance(acct_bal.get("total"), Mapping):
+                    tot_inner = acct_bal["total"]
+                    if tot_inner.get("amount") is not None:
+                        tot_ccy = _extract_currency_code(tot_inner.get("currency"), base_currency)
+                        tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                        total_val = float(tot_inner["amount"]) * tot_fx
+
+            if total_val is not None or has_cash:
+                pos_mkt_sum = 0.0
+                if total_val is None:
+                    for p in h_positions if isinstance(h_positions, list) else []:
+                        if isinstance(p, Mapping):
+                            u = _extract_units(p)
+                            pr = float(p.get("price") or p.get("current_price") or 0.0)
+                            _, p_ccy, _, p_mult = _position_asset_info(p, base_currency)
+                            p_fx = _lookup_fx_rate(p_ccy, base_currency, pair_rates) or 1.0
+                            pos_mkt_sum += u * pr * p_mult * p_fx
+                resolved_tot = total_val if total_val is not None else (cash_sum + pos_mkt_sum)
+                sync_ts = None
+                if isinstance(h_acct, Mapping) and isinstance(h_acct.get("sync_status"), Mapping):
+                    holdings_sync = h_acct["sync_status"].get("holdings")
+                    if isinstance(holdings_sync, Mapping):
+                        sync_ts = holdings_sync.get("last_successful_sync")
+                flattened_balances.append(
+                    {
+                        "account_id": h_aid,
+                        "total": resolved_tot,
+                        "cash": cash_sum if has_cash else None,
+                        "currency": base_currency,
+                        "updated_at": h_entry.get("updated_at") or sync_ts,
+                    }
+                )
+
+        if not flattened_balances:
+            for acct in raw_accounts_list:
+                aid = _extract_account_id(acct)
+                acct_bal = acct.get("balance")
+                if isinstance(acct_bal, Mapping):
+                    tot_map = acct_bal.get("total")
+                    if isinstance(tot_map, Mapping) and tot_map.get("amount") is not None:
+                        tot_ccy = _extract_currency_code(tot_map.get("currency"), base_currency)
+                        tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                        flattened_balances.append(
+                            {
+                                "account_id": aid,
+                                "total": float(tot_map["amount"]) * tot_fx,
+                                "cash": None,
+                                "currency": base_currency,
+                                "updated_at": acct.get("updated_at") or acct.get("created_date"),
+                            }
+                        )
 
         if is_paper_detected:
             if require_live:
@@ -1144,21 +1466,26 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 continue
             act_type = str(act.get("type") or "").strip().lower()
             ts = _parse_iso_ts(
-                act.get("trade_date") or act.get("settlement_date") or act.get("created_at")
+                act.get("trade_date")
+                or act.get("settlement_date")
+                or act.get("date")
+                or act.get("created_at")
             )
 
             opt_obj = act.get("option_symbol")
             is_opt = isinstance(opt_obj, Mapping) and bool(opt_obj)
-            sym_str, sym_ccy, sym_type = _extract_symbol_and_currency(act.get("symbol"), base_currency)
+            sym_source = act.get("symbol") if act.get("symbol") is not None else act.get("instrument")
+            sym_str, sym_ccy, sym_type = _extract_symbol_and_currency(sym_source, base_currency)
             if is_opt and isinstance(opt_obj, Mapping):
                 opt_ticker = str(opt_obj.get("ticker") or sym_str or "").strip().upper()
                 if opt_ticker:
                     sym_str = opt_ticker
 
-            qty = abs(float(act.get("units") or act.get("quantity") or 0.0))
+            qty = abs(_extract_units(act))
             price = abs(float(act.get("price") or 0.0))
             fee = abs(float(act.get("fee") or act.get("commission") or 0.0))
             currency = _extract_currency_code(act.get("currency"), sym_ccy or base_currency)
+            act_fx = _lookup_fx_rate(currency, base_currency, pair_rates) or 1.0
 
             if act_type in {"buy", "sell", "rei"}:
                 asset_cls = _infer_asset_class(sym_str, sym_type, is_option=is_opt)
@@ -1181,10 +1508,14 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     )
                     opt_und = und_sym or None
 
+                safe_entry_id = _scrub_account_identifiers(
+                    str(act.get("id") or f"st-{len(trades) + 1}"),
+                    raw_identifiers_to_scrub,
+                )
                 trades.append(
                     NormalizedTrade(
                         venue="SNAPTRADE_RELAY",
-                        native_entry_id=str(act.get("id") or f"st-{len(trades) + 1}"),
+                        native_entry_id=safe_entry_id,
                         symbol=sym_str or "UNKNOWN",
                         asset_class=asset_cls,
                         side="sell" if act_type == "sell" else "buy",
@@ -1192,6 +1523,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         price=price,
                         timestamp_utc=ts,
                         currency=currency,
+                        fx_rate_to_base=act_fx,
                         commission=fee,
                         multiplier=100.0 if asset_cls == AssetClass.OPTION else 1.0,
                         option_right=opt_right,
@@ -1209,13 +1541,16 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                 kind=FlowKind.DIVIDEND,
                                 amount=amt,
                                 currency=currency,
+                                fx_rate_to_base=act_fx,
                                 description="SnapTrade dividend reinvestment",
                             )
                         )
             elif act_type in {
                 "deposit",
                 "contribution",
+                "funds_contribution",
                 "withdrawal",
+                "funds_withdrawal",
                 "dividend",
                 "interest",
                 "fee",
@@ -1223,10 +1558,10 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 "transfer",
             }:
                 raw_amt = float(act.get("amount") if act.get("amount") is not None else (price * qty))
-                if act_type in {"deposit", "contribution"}:
+                if act_type in {"deposit", "contribution", "funds_contribution"}:
                     flow_kind = FlowKind.DEPOSIT
                     amt = abs(raw_amt)
-                elif act_type == "withdrawal":
+                elif act_type in {"withdrawal", "funds_withdrawal"}:
                     flow_kind = FlowKind.WITHDRAWAL
                     amt = -abs(raw_amt)
                 elif act_type == "dividend":
@@ -1257,9 +1592,13 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         kind=flow_kind,
                         amount=amt,
                         currency=currency,
+                        fx_rate_to_base=act_fx,
                         symbol=sym_str or None if flow_kind in {FlowKind.TRANSFER_IN_KIND, FlowKind.TRANSFER_OUT_KIND} else None,
                         quantity=qty if flow_kind in {FlowKind.TRANSFER_IN_KIND, FlowKind.TRANSFER_OUT_KIND} else None,
-                        description=str(act.get("description") or f"SnapTrade {act_type}"),
+                        description=_scrub_account_identifiers(
+                            str(act.get("description") or f"SnapTrade {act_type}"),
+                            raw_identifiers_to_scrub,
+                        ),
                     )
                 )
             elif act_type in {"optionexpiration", "optionassignment", "optionexercise", "split"} and sym_str:
@@ -1274,8 +1613,11 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         action_type=ca_map[act_type],
                         timestamp_utc=ts,
                         symbol=sym_str,
-                        quantity_delta=float(act.get("units") or 0.0),
-                        description=str(act.get("description") or f"SnapTrade {act_type}"),
+                        quantity_delta=_extract_units(act),
+                        description=_scrub_account_identifiers(
+                            str(act.get("description") or f"SnapTrade {act_type}"),
+                            raw_identifiers_to_scrub,
+                        ),
                     )
                 )
 
@@ -1290,12 +1632,11 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             aid = str(p.get("account_id") or "").strip()
             if selected_set and aid and aid not in selected_set:
                 continue
-            sym_str, sym_ccy, sym_type = _extract_symbol_and_currency(p.get("symbol"), base_currency)
-            units = float(p.get("units") or p.get("quantity") or 0.0)
+            sym_str, pos_ccy, asset_cls, mult = _position_asset_info(p, base_currency)
+            pos_fx = _lookup_fx_rate(pos_ccy, base_currency, pair_rates) or 1.0
+            units = _extract_units(p)
             price = float(p.get("price") or p.get("current_price") or 0.0)
             avg_cost = p.get("average_purchase_price")
-            asset_cls = _infer_asset_class(sym_str, sym_type)
-            mult = 100.0 if asset_cls == AssetClass.OPTION else 1.0
             if p.get("cost_basis") is not None:
                 cost_basis = float(p["cost_basis"])
             elif avg_cost is not None:
@@ -1311,7 +1652,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     quantity=units,
                     cost_basis=cost_basis,
                     market_value=units * price * mult,
-                    currency=sym_ccy or base_currency,
+                    currency=pos_ccy,
+                    fx_rate_to_base=pos_fx,
                     multiplier=mult,
                 )
             )
@@ -1323,8 +1665,24 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             for np_item in explicit_nav_points:
                 if not isinstance(np_item, Mapping):
                     continue
-                n_ts = _parse_iso_ts(np_item.get("timestamp_utc") or np_item.get("date"))
-                n_val = float(np_item.get("nav_base") or np_item.get("total") or 0.0)
+                n_ts = _parse_iso_ts(
+                    np_item.get("timestamp_utc") or np_item.get("date"),
+                    end_of_day=("timestamp_utc" not in np_item),
+                )
+                np_ccy = _extract_currency_code(np_item.get("currency"), base_currency)
+                np_fx = _lookup_fx_rate(np_ccy, base_currency, pair_rates) or 1.0
+                n_val = (
+                    float(
+                        np_item.get("nav_base")
+                        if np_item.get("nav_base") is not None
+                        else (
+                            np_item.get("total")
+                            if np_item.get("total") is not None
+                            else (np_item.get("value") or 0.0)
+                        )
+                    )
+                    * (1.0 if np_item.get("nav_base") is not None else np_fx)
+                )
                 n_cash = float(np_item["cash_base"]) if np_item.get("cash_base") is not None else None
                 prev_nav, prev_cash = nav_by_ts.get(n_ts, (0.0, None))
                 merged_cash = (
@@ -1333,6 +1691,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     else None
                 )
                 nav_by_ts[n_ts] = (prev_nav + n_val, merged_cash)
+
+        has_explicit_curve = sum(1 for v in nav_by_ts.values() if v[0] > 0.0) >= 2
 
         balances_raw = data.get("balances")
         balances_source: list[Mapping[str, Any]] = []
@@ -1343,28 +1703,38 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         else:
             balances_source.extend(flattened_balances)
 
-        for b in balances_source:
-            aid = str(b.get("account_id") or "").strip()
-            if selected_set and aid and aid not in selected_set:
-                continue
-            tot_field = b.get("total")
-            if isinstance(tot_field, Mapping):
-                tot = float(tot_field.get("amount") or tot_field.get("value") or 0.0)
-            else:
-                tot = float(
-                    tot_field
-                    if tot_field is not None
-                    else (b.get("current_balance") or b.get("equity") or b.get("cash") or 0.0)
+        if not has_explicit_curve:
+            for b in balances_source:
+                aid = str(b.get("account_id") or "").strip()
+                if selected_set and aid and aid not in selected_set:
+                    continue
+                tot_field = b.get("total")
+                b_ccy = _extract_currency_code(b.get("currency"), base_currency)
+                if isinstance(tot_field, Mapping):
+                    b_ccy = _extract_currency_code(tot_field.get("currency"), b_ccy)
+                    b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                    tot = float(tot_field.get("amount") or tot_field.get("value") or 0.0) * b_fx
+                else:
+                    b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                    tot = (
+                        float(
+                            tot_field
+                            if tot_field is not None
+                            else (b.get("current_balance") or b.get("equity") or b.get("cash") or 0.0)
+                        )
+                        * b_fx
+                    )
+                cash_ccy = _extract_currency_code(b.get("currency"), base_currency)
+                cash_fx = _lookup_fx_rate(cash_ccy, base_currency, pair_rates) or 1.0
+                cash_val = float(b["cash"]) * cash_fx if b.get("cash") is not None else None
+                b_ts = _parse_iso_ts(b.get("updated_at") or b.get("date"))
+                prev_nav, prev_cash = nav_by_ts.get(b_ts, (0.0, None))
+                merged_cash = (
+                    (prev_cash or 0.0) + cash_val
+                    if (prev_cash is not None or cash_val is not None)
+                    else None
                 )
-            cash_val = float(b["cash"]) if b.get("cash") is not None else None
-            b_ts = _parse_iso_ts(b.get("updated_at") or b.get("date"))
-            prev_nav, prev_cash = nav_by_ts.get(b_ts, (0.0, None))
-            merged_cash = (
-                (prev_cash or 0.0) + cash_val
-                if (prev_cash is not None or cash_val is not None)
-                else None
-            )
-            nav_by_ts[b_ts] = (prev_nav + tot, merged_cash)
+                nav_by_ts[b_ts] = (prev_nav + tot, merged_cash)
 
         nav_points = [
             NormalizedNavPoint(timestamp_utc=ts_key, nav_base=vals[0], cash_base=vals[1])
@@ -1419,13 +1789,14 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             corporate_actions=sorted(corporate_actions, key=lambda c: c.timestamp_utc),
             ending_positions=ending_positions,
             nav_points=nav_points,
+            conversion_rates=conversion_rates_out,
             enabled_sections=enabled_secs,
         )
 
     def fetch_live_ledger(
         self,
-        user_id: str,
-        user_secret: str,
+        user_id: str = "",
+        user_secret: str = "",
         *,
         blinding_salt_hex: str,
         start_date: str | None = None,
@@ -1434,12 +1805,20 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         require_live: bool = True,
     ) -> CanonicalPortfolioLedger:
         """Fetch live read-only accounts, holdings/positions, and paginated activities via SnapTrade V1."""
-        clean_user = (user_id or "").strip()
-        clean_secret = (user_secret or "").strip()
-        if not clean_user:
-            raise SnapTradeAuthenticationError("user_id is required for live SnapTrade queries")
-        if not clean_secret:
-            raise SnapTradeAuthenticationError("user_secret is required for live SnapTrade queries")
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            clean_secret = ""
+            req_user: str | None = None
+            req_secret: str | None = None
+        else:
+            clean_user = (user_id or "").strip()
+            clean_secret = (user_secret or "").strip()
+            if not clean_user:
+                raise SnapTradeAuthenticationError("user_id is required for live SnapTrade queries")
+            if not clean_secret:
+                raise SnapTradeAuthenticationError("user_secret is required for live SnapTrade queries")
+            req_user = clean_user
+            req_secret = clean_secret
 
         norm_start = _normalize_date_param(start_date, field_name="start_date")
         norm_end = _normalize_date_param(end_date, field_name="end_date")
@@ -1452,26 +1831,42 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             accts_resp = self._execute_signed(
                 "GET",
                 "/api/v1/accounts",
-                user_id=clean_user,
-                user_secret=clean_secret,
+                user_id=req_user,
+                user_secret=req_secret,
             )
             accts_raw = self._decode_json_or_raise(
                 accts_resp,
                 api_path="/api/v1/accounts",
                 extra_secrets=(clean_secret, clean_user),
             )
-            accounts_list = accts_raw if isinstance(accts_raw, list) else [accts_raw]
+            accounts_list = (
+                accts_raw
+                if isinstance(accts_raw, list)
+                else ([accts_raw] if isinstance(accts_raw, Mapping) and accts_raw else [])
+            )
+            has_account_ids = any(
+                isinstance(acct, Mapping) and bool(_extract_account_id(acct))
+                for acct in accounts_list
+            )
+            if not has_account_ids:
+                raise ValueError(
+                    "No brokerage accounts are connected to this SnapTrade session yet; "
+                    "complete the read-only broker sign-in first."
+                )
 
-            # 2. GET /api/v1/holdings (with fallback to per-account positions & balances if 404)
+            # 2. GET /api/v1/holdings (with fallback to per-account positions & balances)
             holdings_resp = self._execute_signed(
                 "GET",
                 "/api/v1/holdings",
-                user_id=clean_user,
-                user_secret=clean_secret,
+                user_id=req_user,
+                user_secret=req_secret,
             )
             holdings_list: list[Any] = []
             fallback_positions: list[Any] = []
             fallback_balances: list[Any] = []
+            pending_acct_fallbacks: list[
+                tuple[Mapping[str, Any], str, list[dict[str, Any]], list[dict[str, Any]]]
+            ] = []
 
             if holdings_resp.status_code == 200:
                 holdings_raw = self._decode_json_or_raise(
@@ -1480,7 +1875,9 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     extra_secrets=(clean_secret, clean_user),
                 )
                 holdings_list = holdings_raw if isinstance(holdings_raw, list) else [holdings_raw]
-            elif holdings_resp.status_code == 404:
+            elif holdings_resp.status_code in {400, 404, 405, 410, 501} or (
+                has_account_ids and holdings_resp.status_code in {401, 403, 422}
+            ):
                 for acct in accounts_list:
                     if not isinstance(acct, Mapping):
                         continue
@@ -1488,11 +1885,12 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     if not aid:
                         continue
                     safe_aid = urllib.parse.quote(aid, safe="")
+                    acct_positions: list[dict[str, Any]] = []
                     pos_r = self._execute_signed(
                         "GET",
                         f"/api/v1/accounts/{safe_aid}/positions",
-                        user_id=clean_user,
-                        user_secret=clean_secret,
+                        user_id=req_user,
+                        user_secret=req_secret,
                     )
                     if pos_r.status_code == 200:
                         pos_data = self._decode_json_or_raise(
@@ -1504,13 +1902,20 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                             if isinstance(p, Mapping):
                                 p_item = dict(p)
                                 p_item.setdefault("account_id", aid)
+                                acct_positions.append(p_item)
                                 fallback_positions.append(p_item)
+                    elif pos_r.status_code not in {404, 405, 501}:
+                        self._decode_json_or_raise(
+                            pos_r,
+                            api_path="/api/v1/accounts/[REDACTED]/positions",
+                            extra_secrets=(clean_secret, clean_user, aid),
+                        )
 
                     bal_r = self._execute_signed(
                         "GET",
                         f"/api/v1/accounts/{safe_aid}/balances",
-                        user_id=clean_user,
-                        user_secret=clean_secret,
+                        user_id=req_user,
+                        user_secret=req_secret,
                     )
                     if bal_r.status_code == 200:
                         bal_data = self._decode_json_or_raise(
@@ -1518,11 +1923,29 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                             api_path="/api/v1/accounts/[REDACTED]/balances",
                             extra_secrets=(clean_secret, clean_user, aid),
                         )
-                        for b in bal_data if isinstance(bal_data, list) else [bal_data]:
-                            if isinstance(b, Mapping):
-                                b_item = dict(b)
+                        bal_items = [
+                            dict(b)
+                            for b in (bal_data if isinstance(bal_data, list) else [bal_data])
+                            if isinstance(b, Mapping)
+                        ]
+                        has_explicit_total = any(
+                            b.get("total") is not None
+                            or b.get("current_balance") is not None
+                            or b.get("equity") is not None
+                            for b in bal_items
+                        )
+                        if has_explicit_total:
+                            for b_item in bal_items:
                                 b_item.setdefault("account_id", aid)
                                 fallback_balances.append(b_item)
+                        elif bal_items:
+                            pending_acct_fallbacks.append((acct, aid, bal_items, acct_positions))
+                    elif bal_r.status_code not in {404, 405, 501}:
+                        self._decode_json_or_raise(
+                            bal_r,
+                            api_path="/api/v1/accounts/[REDACTED]/balances",
+                            extra_secrets=(clean_secret, clean_user, aid),
+                        )
             else:
                 self._decode_json_or_raise(
                     holdings_resp,
@@ -1530,9 +1953,10 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     extra_secrets=(clean_secret, clean_user),
                 )
 
-            # 3. GET /api/v1/activities (paginated up to MAX_ACTIVITIES_PAGES)
+            # 3. GET /api/v1/activities (paginated up to MAX_ACTIVITIES_PAGES; per-account fallback)
             activities_list: list[Any] = []
             offset = 0
+            use_per_account_activities = False
             for _ in range(MAX_ACTIVITIES_PAGES):
                 act_params: dict[str, Any] = {
                     "limit": MAX_ACTIVITIES_PAGE_SIZE,
@@ -1546,10 +1970,16 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 act_resp = self._execute_signed(
                     "GET",
                     "/api/v1/activities",
-                    user_id=clean_user,
-                    user_secret=clean_secret,
+                    user_id=req_user,
+                    user_secret=req_secret,
                     extra_query_params=act_params,
                 )
+                if offset == 0 and (
+                    act_resp.status_code in {400, 404, 405, 410, 501}
+                    or (has_account_ids and act_resp.status_code in {401, 403, 422})
+                ):
+                    use_per_account_activities = True
+                    break
                 act_raw = self._decode_json_or_raise(
                     act_resp,
                     api_path="/api/v1/activities",
@@ -1569,11 +1999,259 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     break
                 offset += MAX_ACTIVITIES_PAGE_SIZE
 
+            if use_per_account_activities:
+                for acct in accounts_list:
+                    if not isinstance(acct, Mapping):
+                        continue
+                    aid = _extract_account_id(acct)
+                    if not aid:
+                        continue
+                    safe_aid = urllib.parse.quote(aid, safe="")
+                    acct_offset = 0
+                    for _ in range(MAX_ACTIVITIES_PAGES):
+                        acct_act_params: dict[str, Any] = {
+                            "limit": MAX_ACTIVITIES_PAGE_SIZE,
+                            "offset": acct_offset,
+                        }
+                        if norm_start:
+                            acct_act_params["startDate"] = norm_start
+                        if norm_end:
+                            acct_act_params["endDate"] = norm_end
+                        acct_act_resp = self._execute_signed(
+                            "GET",
+                            f"/api/v1/accounts/{safe_aid}/activities",
+                            user_id=req_user,
+                            user_secret=req_secret,
+                            extra_query_params=acct_act_params,
+                        )
+                        acct_act_raw = self._decode_json_or_raise(
+                            acct_act_resp,
+                            api_path="/api/v1/accounts/[REDACTED]/activities",
+                            extra_secrets=(clean_secret, clean_user, aid),
+                        )
+                        if isinstance(acct_act_raw, Mapping) and isinstance(
+                            acct_act_raw.get("data"), list
+                        ):
+                            acct_items = acct_act_raw["data"]
+                        elif isinstance(acct_act_raw, list):
+                            acct_items = acct_act_raw
+                        elif isinstance(acct_act_raw, Mapping) and acct_act_raw:
+                            acct_items = [acct_act_raw]
+                        else:
+                            acct_items = []
+                        for item in acct_items:
+                            if isinstance(item, Mapping):
+                                item_copy = dict(item)
+                                item_copy.setdefault("account_id", aid)
+                                activities_list.append(item_copy)
+                        if len(acct_items) < MAX_ACTIVITIES_PAGE_SIZE:
+                            break
+                        acct_offset += MAX_ACTIVITIES_PAGE_SIZE
+
+            # 3b. Opportunistic GET /api/v1/currencies/rates ONLY when non-USD or multi-currency
+            # holdings/balances/activities exist (gracefully ignored if unavailable).
+            observed_ccys: set[str] = set()
+            for acct in accounts_list:
+                if isinstance(acct, Mapping):
+                    meta_obj = acct.get("meta") if isinstance(acct.get("meta"), Mapping) else {}
+                    bal_obj = acct.get("balance")
+                    bal_tot_c = (
+                        bal_obj.get("total", {}).get("currency")
+                        if isinstance(bal_obj, Mapping) and isinstance(bal_obj.get("total"), Mapping)
+                        else None
+                    )
+                    c_code = _extract_currency_code(
+                        acct.get("currency") or meta_obj.get("currency") or bal_tot_c,
+                        default="",
+                    )
+                    if c_code:
+                        observed_ccys.add(c_code)
+            for h_item in holdings_list:
+                if isinstance(h_item, Mapping):
+                    h_tot = h_item.get("total_value")
+                    if isinstance(h_tot, Mapping):
+                        c_code = _extract_currency_code(h_tot.get("currency"), default="")
+                        if c_code:
+                            observed_ccys.add(c_code)
+                    for b_item in h_item.get("balances") or []:
+                        if isinstance(b_item, Mapping):
+                            c_code = _extract_currency_code(b_item.get("currency"), default="")
+                            if c_code:
+                                observed_ccys.add(c_code)
+                    for p_item in h_item.get("positions") or []:
+                        if isinstance(p_item, Mapping):
+                            _, p_ccy, _, _ = _position_asset_info(p_item, "")
+                            if p_ccy:
+                                observed_ccys.add(p_ccy)
+            for _, _, raw_bals, raw_pos in pending_acct_fallbacks:
+                for b_item in raw_bals:
+                    c_code = _extract_currency_code(b_item.get("currency"), default="")
+                    if c_code:
+                        observed_ccys.add(c_code)
+                for p_item in raw_pos:
+                    _, p_ccy, _, _ = _position_asset_info(p_item, "")
+                    if p_ccy:
+                        observed_ccys.add(p_ccy)
+            for b_item in fallback_balances:
+                if isinstance(b_item, Mapping):
+                    c_code = _extract_currency_code(b_item.get("currency"), default="")
+                    if c_code:
+                        observed_ccys.add(c_code)
+            for p_item in fallback_positions:
+                if isinstance(p_item, Mapping):
+                    _, p_ccy, _, _ = _position_asset_info(p_item, "")
+                    if p_ccy:
+                        observed_ccys.add(p_ccy)
+            for act_item in activities_list:
+                if isinstance(act_item, Mapping):
+                    sym_src = (
+                        act_item.get("symbol")
+                        if act_item.get("symbol") is not None
+                        else act_item.get("instrument")
+                    )
+                    _, s_ccy, _ = _extract_symbol_and_currency(sym_src, "")
+                    c_code = _extract_currency_code(act_item.get("currency"), s_ccy)
+                    if c_code:
+                        observed_ccys.add(c_code)
+
+            currency_rates_list: list[Any] = []
+            if len(observed_ccys) > 1 or (observed_ccys and observed_ccys != {"USD"}):
+                rates_resp = self._execute_signed("GET", "/api/v1/currencies/rates")
+                if rates_resp.status_code == 200 and rates_resp.body and rates_resp.body.strip():
+                    try:
+                        rates_raw = json.loads(rates_resp.body.decode("utf-8"))
+                    except Exception:
+                        rates_raw = None
+                    if isinstance(rates_raw, list):
+                        currency_rates_list = rates_raw
+
+            live_pair_rates, _ = _parse_currency_rate_pairs(currency_rates_list, None, "USD")
+
+            for acct, aid, bal_items, acct_positions in pending_acct_fallbacks:
+                meta_obj = acct.get("meta") if isinstance(acct.get("meta"), Mapping) else {}
+                acct_bal_obj = acct.get("balance")
+                acct_tot_val: float | None = None
+                acct_tot_ccy = ""
+                if isinstance(acct_bal_obj, Mapping) and isinstance(
+                    acct_bal_obj.get("total"), Mapping
+                ):
+                    raw_tot = acct_bal_obj["total"].get("amount")
+                    acct_tot_ccy = _extract_currency_code(
+                        acct_bal_obj["total"].get("currency"), default=""
+                    )
+                    if raw_tot is not None:
+                        acct_tot_val = float(raw_tot)
+                first_ccy = _extract_currency_code(bal_items[0].get("currency"), "USD")
+                acct_ccy = (
+                    _extract_currency_code(
+                        acct.get("currency") or meta_obj.get("currency") or acct_tot_ccy,
+                        default="",
+                    )
+                    or first_ccy
+                )
+                cash_sum = 0.0
+                for b_row in bal_items:
+                    if b_row.get("cash") is not None:
+                        row_ccy = _extract_currency_code(b_row.get("currency"), acct_ccy)
+                        row_fx = _lookup_fx_rate(row_ccy, acct_ccy, live_pair_rates) or 1.0
+                        cash_sum += float(b_row["cash"]) * row_fx
+                pos_mkt_sum = 0.0
+                for p_row in acct_positions:
+                    u = _extract_units(p_row)
+                    pr = float(p_row.get("price") or p_row.get("current_price") or 0.0)
+                    _, p_ccy, _, p_mult = _position_asset_info(p_row, acct_ccy)
+                    p_fx = _lookup_fx_rate(p_ccy, acct_ccy, live_pair_rates) or 1.0
+                    pos_mkt_sum += u * pr * p_mult * p_fx
+                if acct_tot_val is not None:
+                    tot_fx = (
+                        _lookup_fx_rate(acct_tot_ccy or acct_ccy, acct_ccy, live_pair_rates) or 1.0
+                    )
+                    resolved_total = acct_tot_val * tot_fx
+                else:
+                    resolved_total = cash_sum + pos_mkt_sum
+                fallback_balances.append(
+                    {
+                        "account_id": aid,
+                        "total": resolved_total,
+                        "cash": cash_sum,
+                        "currency": acct_ccy,
+                        "updated_at": bal_items[0].get("updated_at")
+                        or acct.get("updated_at")
+                        or acct.get("created_date"),
+                    }
+                )
+
+            # 4. Opportunistic GET /api/v1/performance/custom for daily totalEquityTimeframe
+            # (gracefully ignored when 4xx/5xx or unavailable on a brokerage/plan)
+            perf_nav_points: list[dict[str, Any]] = []
+            perf_end = norm_end or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            perf_start = norm_start
+            if not perf_start:
+                act_dates = [
+                    str(
+                        item.get("trade_date")
+                        or item.get("settlement_date")
+                        or item.get("date")
+                        or item.get("created_at")
+                        or ""
+                    ).strip()[:10]
+                    for item in activities_list
+                    if isinstance(item, Mapping)
+                ]
+                valid_dates = [d for d in act_dates if len(d) == 10 and d[4] == "-" and d[7] == "-"]
+                perf_start = min(valid_dates) if valid_dates else None
+            if perf_start and perf_start <= perf_end:
+                perf_params: dict[str, Any] = {
+                    "startDate": perf_start,
+                    "endDate": perf_end,
+                    "detailed": "true",
+                    "frequency": "daily",
+                }
+                if selected_account_ids:
+                    clean_sel = [str(x).strip() for x in selected_account_ids if str(x).strip()]
+                    if clean_sel:
+                        perf_params["accounts"] = ",".join(sorted(clean_sel))
+                perf_resp = self._execute_signed(
+                    "GET",
+                    "/api/v1/performance/custom",
+                    user_id=req_user,
+                    user_secret=req_secret,
+                    extra_query_params=perf_params,
+                )
+                if perf_resp.status_code == 200 and perf_resp.body and perf_resp.body.strip():
+                    try:
+                        perf_raw = json.loads(perf_resp.body.decode("utf-8"))
+                    except Exception:
+                        perf_raw = None
+                    if isinstance(perf_raw, Mapping):
+                        eq_tf = (
+                            perf_raw.get("totalEquityTimeframe")
+                            or perf_raw.get("total_equity_timeframe")
+                            or []
+                        )
+                        if isinstance(eq_tf, list):
+                            for pt in eq_tf:
+                                if not isinstance(pt, Mapping):
+                                    continue
+                                raw_dt = pt.get("date") or pt.get("timestamp_utc")
+                                raw_val = pt.get("value") if pt.get("value") is not None else pt.get("total")
+                                if raw_dt and raw_val is not None:
+                                    try:
+                                        f_val = float(raw_val)
+                                    except (TypeError, ValueError):
+                                        continue
+                                    if f_val > 0.0:
+                                        perf_nav_points.append({"date": str(raw_dt), "value": f_val})
+
             bundle_payload: dict[str, Any] = {
                 "accounts": accounts_list,
                 "holdings": holdings_list,
                 "activities": activities_list,
             }
+            if currency_rates_list:
+                bundle_payload["currency_rates"] = currency_rates_list
+            if len(perf_nav_points) >= 2:
+                bundle_payload["nav_points"] = perf_nav_points
             if fallback_positions:
                 bundle_payload["positions"] = fallback_positions
             if fallback_balances:
@@ -1591,7 +2269,12 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             redacted_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_list)
             if isinstance(
                 exc,
-                (SnapTradeError, PaperOrSandboxAccountRejectedError, DisallowedCapabilityError),
+                (
+                    SnapTradeError,
+                    PaperOrSandboxAccountRejectedError,
+                    DisallowedCapabilityError,
+                    ValueError,
+                ),
             ):
                 raise type(exc)(redacted_msg) from None
             raise SnapTradeServiceError(f"SnapTrade relay query failed: {redacted_msg}") from None
@@ -1604,18 +2287,30 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         user_secret: str | None = None,
         period_start_utc: str | None = None,
         period_end_utc: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         selected_account_ids: Sequence[str] | None = None,
         require_live: bool = True,
     ) -> CanonicalPortfolioLedger:
         """Read-only canonical ledger adapter entrypoint delegating to ``fetch_live_ledger``."""
         target_user = (user_id or self.user_id or "").strip()
         target_secret = (user_secret or self.user_secret or "").strip()
+        resolved_start = (
+            start_date[:10]
+            if start_date
+            else (period_start_utc[:10] if period_start_utc else None)
+        )
+        resolved_end = (
+            end_date[:10]
+            if end_date
+            else (period_end_utc[:10] if period_end_utc else None)
+        )
         return self.fetch_live_ledger(
             target_user,
             target_secret,
             blinding_salt_hex=blinding_salt_hex,
-            start_date=period_start_utc[:10] if period_start_utc else None,
-            end_date=period_end_utc[:10] if period_end_utc else None,
+            start_date=resolved_start,
+            end_date=resolved_end,
             selected_account_ids=selected_account_ids,
             require_live=require_live,
         )
@@ -1623,6 +2318,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
 __all__ = [
     "DEFAULT_SNAPTRADE_USER_AGENT",
+    "MAX_SNAPTRADE_PERSONAL_SLOTS",
     "MAX_SNAPTRADE_POC_SLOTS",
     "SNAPTRADE_BLOCKED_MUTATING_ENDPOINTS",
     "SNAPTRADE_LIVE_BASE_URL",
@@ -1638,4 +2334,5 @@ __all__ = [
     "compute_snaptrade_signature",
     "get_global_snaptrade_slot_manager",
     "is_snaptrade_env_configured",
+    "is_snaptrade_personal_key",
 ]

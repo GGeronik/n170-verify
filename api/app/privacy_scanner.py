@@ -32,7 +32,7 @@ _ACCOUNT_NUMBER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "raw_account_field",
         re.compile(
-            r'"(?:raw_account_id|broker_account_id|account_number)"\s*:\s*"[^"]+"'
+            r'"(?:raw_account_id|broker_account_id|account_number|wallet_address)"\s*:\s*"[^"]+"'
         ),
     ),
     (
