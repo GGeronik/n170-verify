@@ -487,24 +487,17 @@ class ProofStore:
                         raise ProofConflictError(
                             f"Proof {sanitized_bundle.proof_id!r} already exists with a different proof_hash"
                         )
-                    updated_opt_in = 1 if (opt_in_leaderboard or bool(existing_row["opt_in_leaderboard"])) else 0
-                    updated_json = (
-                        bundle_json
-                        if sanitized_bundle.holder_identity is not None
-                        else str(existing_row["bundle_json"])
-                    )
-                    self._conn.execute(
-                        """
-                        UPDATE proofs
-                        SET bundle_json = ?, opt_in_leaderboard = ?
-                        WHERE proof_id = ?
-                        """,
-                        (updated_json, updated_opt_in, sanitized_bundle.proof_id),
-                    )
-                    self._last_updated_utc = now_str
+                    # A published record is immutable. proof_hash covers the signed
+                    # header only, so a second post with the same hash can still
+                    # carry another holder name, fewer disclosed leaves or the
+                    # leaderboard flag. None of that is taken: the caller gets
+                    # back what is already stored. To publish with a holder
+                    # name, attach it before the first post.
                     self._conn.execute("COMMIT;")
-                    final_bundle = VerifyProofBundle.from_dict(json.loads(updated_json))
-                    return final_bundle, verification
+                    stored_bundle = VerifyProofBundle.from_dict(
+                        json.loads(str(existing_row["bundle_json"]))
+                    )
+                    return stored_bundle, verification
 
                 self._conn.execute(
                     """

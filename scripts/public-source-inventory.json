@@ -39,6 +39,7 @@
     "api/tests/__init__.py",
     "api/tests/test_api_lifecycle_and_security.py",
     "api/tests/test_launch_blockers_hyperliquid_snaptrade.py",
+    "api/tests/test_published_record_immutable.py",
     "api/tests/test_snaptrade_relay.py",
     "api/tests/test_viral_routes.py",
     "component-boundaries.json",
