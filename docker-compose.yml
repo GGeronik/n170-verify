@@ -24,11 +24,17 @@ services:
       N170_VERIFY_PUBLISHER_KID: "${N170_VERIFY_PUBLISHER_KID:-}"
       N170_VERIFY_SIGNING_SEED_FILE: "${N170_VERIFY_SIGNING_SEED_FILE:-/run/n170-verify-keys/publisher_seed.hex}"
       N170_VERIFY_ACCOUNT_SALT_HEX: "${N170_VERIFY_ACCOUNT_SALT_HEX:-}"
+      # Required in hosted mode: start-up stops without it.
+      N170_VERIFY_VAULT_KEK_HEX: "${N170_VERIFY_VAULT_KEK_HEX:-}"
       N170_VERIFY_CHECKPOINT_ORIGIN: "${N170_VERIFY_CHECKPOINT_ORIGIN:-verify.n170.org/continuity-log/v3}"
+      # The site's own public origin; SnapTrade portal redirects must match it.
+      N170_VERIFY_SITE_ORIGIN: "${N170_VERIFY_SITE_ORIGIN:-}"
       SNAPTRADE_CLIENT_ID: "${SNAPTRADE_CLIENT_ID:-}"
       SNAPTRADE_CONSUMER_KEY: "${SNAPTRADE_CONSUMER_KEY:-}"
       SNAPTRADE_AUTH_MODE: "${SNAPTRADE_AUTH_MODE:-auto}"
       N170_SNAPTRADE_DEV_KEY: "${N170_SNAPTRADE_DEV_KEY:-}"
+      # Relay session lifetime in seconds (60 to 1800); empty keeps the default.
+      N170_SNAPTRADE_SESSION_TTL_SECONDS: "${N170_SNAPTRADE_SESSION_TTL_SECONDS:-}"
       EODHD_API_KEY: "${EODHD_API_KEY:-}"
       N170_VERIFY_LLM_BASE_URL: "${N170_VERIFY_LLM_BASE_URL:-http://ollama:11434/v1}"
       N170_VERIFY_LLM_MODEL: "${N170_VERIFY_LLM_MODEL:-qwen2.5:7b-instruct}"
