@@ -134,7 +134,7 @@ def test_one_explicit_nav_point_is_never_paired_with_a_balances_snapshot() -> No
 
 
 def test_explicit_points_that_make_no_curve_are_never_paired_with_a_snapshot() -> None:
-    # Two explicit entries on one date merge into one point: still not a curve of two.
+    # Two explicit entries on one date are not a curve: the series repeats a date and is not used.
     payload = {
         "base_currency": "USD",
         "nav_points": [
@@ -733,3 +733,151 @@ def test_stated_base_currency_is_kept() -> None:
     }
     ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
     assert ledger.base_currency == "USD"
+
+
+# ---------------------------------------------------------------------------
+# A total valuation series with a repeated date is not used
+# ---------------------------------------------------------------------------
+
+_ACCT_10200 = {"id": "acct-dummy-a1", "currency": "USD", "name": "Individual",
+               "balance": {"total": {"amount": 10200, "currency": "USD"}}}
+
+
+def test_total_series_with_a_repeated_date_is_not_used() -> None:
+    series = [{"date": "2026-10-01", "value": 10000}, {"date": "2026-10-02", "value": 10100},
+              {"date": "2026-10-02", "value": 10100}, {"date": "2026-10-03", "value": 10200}]
+    ledger = _adapter().parse_payload({"accounts": [_ACCT_10200], "nav_points": series}, blinding_salt_hex=SALT)
+    assert 20200.0 not in [p.nav_base for p in ledger.nav_points]
+    assert len(ledger.nav_points) == 1
+    assert any("repeats a date" in w for w in ledger.parser_warnings)
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_total_series_with_the_same_date_once_with_a_time_is_not_used() -> None:
+    series = [{"date": "2026-10-01", "value": 10000}, {"date": "2026-10-02", "value": 10100},
+              {"date": "2026-10-02T00:00:00", "value": 10100}, {"date": "2026-10-03", "value": 10200}]
+    ledger = _adapter().parse_payload({"accounts": [_ACCT_10200], "nav_points": series}, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 1
+    assert any("repeats a date" in w for w in ledger.parser_warnings)
+
+
+def test_live_total_series_with_a_repeated_date_is_not_used() -> None:
+    def _transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> tuple[int, dict[str, str], Any]:
+        path = urllib.parse.urlsplit(url).path
+        if path == "/api/v1/accounts":
+            return (200, {"Content-Type": "application/json"}, [_ACCT_10200])
+        if path in {"/api/v1/holdings"}:
+            return (403, {"Content-Type": "application/json"}, {"detail": "restricted"})
+        if path == "/api/v1/activities" or path.endswith("/positions") or path.endswith("/activities"):
+            return (200, {"Content-Type": "application/json"}, [])
+        if path.endswith("/balances"):
+            return (200, {"Content-Type": "application/json"}, [{"currency": {"code": "USD"}, "cash": 10200.0}])
+        if path == "/api/v1/performance/custom":
+            return (200, {"Content-Type": "application/json"}, {"totalEquityTimeframe": [
+                {"date": "2026-10-01", "value": 10000}, {"date": "2026-10-02", "value": 10100},
+                {"date": "2026-10-02", "value": 10100}, {"date": "2026-10-03", "value": 10200}]})
+        return (404, {"Content-Type": "application/json"}, {"detail": "not_found"})
+
+    ledger = _adapter(_transport).fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT,
+                                                    start_date="2026-10-01", end_date="2026-10-03")
+    assert len(ledger.nav_points) == 1
+    assert any("repeats a date" in w for w in ledger.parser_warnings)
+
+
+# ---------------------------------------------------------------------------
+# Timestamps: no zone means UTC; a missing or unreadable date is never guessed
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _non_utc_local_time(monkeypatch: pytest.MonkeyPatch) -> Any:
+    import time as _time
+
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    _time.tzset()
+    yield
+    monkeypatch.undo()
+    _time.tzset()
+
+
+def test_timestamp_without_a_zone_is_read_as_utc(_non_utc_local_time: Any) -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1")],
+        "activities": [_flow("f-div", "DIVIDEND", 20.0, "2026-10-02T10:00:00")],
+        "nav_points": [{"timestamp_utc": "2026-10-01T20:00:00", "value": 10000.0},
+                       {"date": "2026-10-03", "value": 10100.0}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert [p.timestamp_utc for p in ledger.nav_points] == ["2026-10-01T20:00:00Z", "2026-10-03T23:59:59Z"]
+    assert [f.timestamp_utc for f in ledger.flows] == ["2026-10-02T10:00:00Z"]
+
+
+def test_activity_without_a_date_is_refused() -> None:
+    payload = {"accounts": [_usd_acct("acct-dummy-a1")],
+               "activities": [{"id": "d1", "type": "DIVIDEND", "amount": 5.0, "currency": "USD"}]}
+    with pytest.raises(ValueError, match="no readable date"):
+        _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+
+
+def test_activity_with_an_unreadable_date_is_refused() -> None:
+    payload = {"accounts": [_usd_acct("acct-dummy-a1")],
+               "activities": [_trade("t1", "BUY", "AAPL", "not-a-date")]}
+    with pytest.raises(ValueError, match="no readable date"):
+        _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+
+
+def test_ignored_activity_type_without_a_date_does_not_refuse() -> None:
+    payload = {"accounts": [_usd_acct("acct-dummy-a1")],
+               "activities": [{"id": "x1", "type": "UNKNOWN_KIND", "amount": 1.0}],
+               "nav_points": _series([10000, 10100])}
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 2
+
+
+def test_series_point_with_an_unreadable_or_missing_date_makes_the_series_unusable() -> None:
+    for bad_point in ({"date": "garbage", "value": 10050.0}, {"value": 10050.0}):
+        payload = {"accounts": [_ACCT_10200],
+                   "nav_points": [{"date": "2026-10-01", "value": 10000.0}, bad_point,
+                                  {"date": "2026-10-03", "value": 10200.0}]}
+        ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+        assert len(ledger.nav_points) == 1
+        assert any("readable date" in w for w in ledger.parser_warnings)
+
+
+def test_snapshot_row_with_an_unreadable_timestamp_is_refused() -> None:
+    payload = {"base_currency": "USD",
+               "balances": [{"account_id": "acct-dummy-a1", "total": 7000.0, "updated_at": "yesterday"}]}
+    with pytest.raises(ValueError, match="no readable date"):
+        _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+
+
+def test_snapshot_without_any_timestamp_uses_one_fetch_time() -> None:
+    payload = {"base_currency": "USD",
+               "balances": [{"account_id": "acct-dummy-a1", "total": 7000.0},
+                            {"account_id": "acct-dummy-b2", "total": 3000.0}]}
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 1
+    assert ledger.nav_points[0].nav_base == 10000.0
+
+
+# ---------------------------------------------------------------------------
+# "No account linked yet" is its own exception
+# ---------------------------------------------------------------------------
+
+
+def test_live_fetch_with_no_linked_account_raises_the_dedicated_class() -> None:
+    from n170_verify.connectors import (
+        SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE,
+        SnapTradeNoLinkedAccountError,
+    )
+
+    def _transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> tuple[int, dict[str, str], Any]:
+        if urllib.parse.urlsplit(url).path == "/api/v1/accounts":
+            return (200, {"Content-Type": "application/json"}, [])
+        return (404, {"Content-Type": "application/json"}, {"detail": "not_found"})
+
+    with pytest.raises(SnapTradeNoLinkedAccountError) as ctx:
+        _adapter(_transport).fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT)
+    assert isinstance(ctx.value, ValueError)
+    assert ctx.value.reason_code == "no_linked_account"
+    assert SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE in str(ctx.value)

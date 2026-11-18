@@ -471,19 +471,69 @@ def get_global_snaptrade_slot_manager() -> SnapTradeSlotManager:
     return _GLOBAL_POC_SLOT_MANAGER
 
 
-def _parse_iso_ts(value: str | None, *, end_of_day: bool = False) -> str:
-    if not value or not str(value).strip():
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def _fetch_time_ts() -> str:
+    """The current time, used only for a snapshot whose accounts carry no timestamp."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_iso_ts(value: Any, *, end_of_day: bool = False) -> str | None:
+    """Normalize a timestamp to UTC ``YYYY-MM-DDTHH:MM:SSZ``.
+
+    A value without a zone is read as UTC, never as the server's local time. A missing or
+    unreadable value returns ``None``: the caller decides, and a date is never guessed.
+    """
+    if value is None or not str(value).strip():
+        return None
     raw = str(value).strip()
     if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
         raw = f"{raw}T23:59:59Z" if end_of_day else f"{raw}T00:00:00Z"
     try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
-        if end_of_day and dt.hour == 0 and dt.minute == 0 and dt.second == 0 and "00:00:00.000" in raw:
-            dt = dt.replace(hour=23, minute=59, second=59)
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    except Exception:
-        return raw
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    if end_of_day and dt.hour == 0 and dt.minute == 0 and dt.second == 0 and "00:00:00.000" in raw:
+        dt = dt.replace(hour=23, minute=59, second=59)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# Stable text of the "no brokerage account is linked yet" refusal. Across a process boundary
+# that forwards only the message, this text is what identifies the refusal.
+SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE = "No brokerage accounts are connected to this SnapTrade session yet"
+
+
+class SnapTradeNoLinkedAccountError(ValueError):
+    """No brokerage account is linked to this connection yet; a retry after linking can succeed.
+
+    A ``ValueError`` subclass, so existing handlers still treat it as a validation refusal.
+    ``reason_code`` is a class attribute, so it survives re-raising with a new message.
+    """
+
+    reason_code = "no_linked_account"
+
+
+class SnapTradeUnreadableDateError(ValueError):
+    """A row that feeds a valuation or a flow has no readable date."""
+
+
+_TRADE_ACTIVITY_TYPES = frozenset({"buy", "sell", "rei"})
+_FLOW_ACTIVITY_TYPES = frozenset(
+    {
+        "deposit",
+        "contribution",
+        "funds_contribution",
+        "withdrawal",
+        "funds_withdrawal",
+        "dividend",
+        "interest",
+        "fee",
+        "tax",
+        "transfer",
+    }
+)
+_CORPORATE_ACTION_TYPES = frozenset({"optionexpiration", "optionassignment", "optionexercise", "split"})
 
 
 def _normalize_date_param(value: str | None, *, field_name: str) -> str | None:
@@ -1565,13 +1615,23 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 opt_ticker = str(opt_obj.get("ticker") or sym_str or "").strip().upper()
                 if opt_ticker:
                     sym_str = opt_ticker
+            if ts is None and (
+                act_type in _TRADE_ACTIVITY_TYPES
+                or act_type in _FLOW_ACTIVITY_TYPES
+                or (act_type in _CORPORATE_ACTION_TYPES and sym_str)
+            ):
+                # A trade, flow or corporate action is never placed at a guessed date.
+                raise SnapTradeUnreadableDateError(
+                    f"A {act_type} activity has no readable date; the record is refused rather "
+                    "than placing it at a guessed time."
+                )
 
             qty = abs(_extract_units(act))
             price = abs(float(act.get("price") or 0.0))
             fee = abs(float(act.get("fee") or act.get("commission") or 0.0))
             currency = _extract_currency_code(act.get("currency"), sym_ccy or base_currency)
 
-            if act_type in {"buy", "sell", "rei"}:
+            if act_type in _TRADE_ACTIVITY_TYPES:
                 act_fx = _require_fx_rate(currency, base_currency, pair_rates)
                 asset_cls = _infer_asset_class(sym_str, sym_type, is_option=is_opt)
                 opt_right: str | None = None
@@ -1630,18 +1690,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                 description="SnapTrade dividend reinvestment",
                             )
                         )
-            elif act_type in {
-                "deposit",
-                "contribution",
-                "funds_contribution",
-                "withdrawal",
-                "funds_withdrawal",
-                "dividend",
-                "interest",
-                "fee",
-                "tax",
-                "transfer",
-            }:
+            elif act_type in _FLOW_ACTIVITY_TYPES:
                 act_fx = _require_fx_rate(currency, base_currency, pair_rates)
                 raw_amt = float(act.get("amount") if act.get("amount") is not None else (price * qty))
                 if act_type in {"deposit", "contribution", "funds_contribution"}:
@@ -1687,7 +1736,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         ),
                     )
                 )
-            elif act_type in {"optionexpiration", "optionassignment", "optionexercise", "split"} and sym_str:
+            elif act_type in _CORPORATE_ACTION_TYPES and sym_str:
                 ca_map = {
                     "optionexpiration": CorporateActionType.OPTION_EXPIRATION,
                     "optionassignment": CorporateActionType.OPTION_ASSIGNMENT,
@@ -1792,12 +1841,22 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 )
                 explicit_items = []
 
+        # The valuation series is one total for the accounts in scope, one value per date: it is
+        # never summed. (Per-account rows are summed only in the balances snapshot below.)
+        series_rows: list[tuple[str, tuple[float, float | None]]] = []
         if explicit_items:
             for np_item in explicit_items:
                 n_ts = _parse_iso_ts(
                     np_item.get("timestamp_utc") or np_item.get("date"),
                     end_of_day=("timestamp_utc" not in np_item),
                 )
+                if n_ts is None:
+                    parser_warnings.append(
+                        "The valuation series was not used because a point has no readable date; "
+                        "returns are withheld."
+                    )
+                    series_rows = []
+                    break
                 if np_item.get("nav_base") is not None:
                     n_val = float(np_item["nav_base"])
                 else:
@@ -1812,13 +1871,15 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         * np_fx
                     )
                 n_cash = float(np_item["cash_base"]) if np_item.get("cash_base") is not None else None
-                prev_nav, prev_cash = nav_by_ts.get(n_ts, (0.0, None))
-                merged_cash = (
-                    (prev_cash or 0.0) + n_cash
-                    if (prev_cash is not None or n_cash is not None)
-                    else None
-                )
-                nav_by_ts[n_ts] = (prev_nav + n_val, merged_cash)
+                series_rows.append((n_ts, (n_val, n_cash)))
+        series_dates = [ts_key[:10] for ts_key, _ in series_rows]
+        if len(set(series_dates)) != len(series_dates):
+            parser_warnings.append(
+                "The valuation series was not used because it repeats a date, so it has more "
+                "than one total for one day; returns are withheld."
+            )
+            series_rows = []
+        nav_by_ts.update(series_rows)
 
         has_explicit_curve = len(_trim_valuation_series(list(nav_by_ts.items()))) >= 2
 
@@ -1865,11 +1926,18 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     snap_cash = (snap_cash or 0.0) + float(b["cash"]) * cash_fx
                 snap_total += tot
                 raw_b_ts = b.get("updated_at") or b.get("date")
-                if raw_b_ts and str(raw_b_ts).strip():
-                    snap_ts_values.append(_parse_iso_ts(raw_b_ts))
+                if raw_b_ts is not None and str(raw_b_ts).strip():
+                    parsed_b_ts = _parse_iso_ts(raw_b_ts)
+                    if parsed_b_ts is None:
+                        raise SnapTradeUnreadableDateError(
+                            "A balance row has no readable date; the record is refused rather "
+                            "than placing the valuation at a guessed time."
+                        )
+                    snap_ts_values.append(parsed_b_ts)
                 has_snapshot_row = True
             if has_snapshot_row:
-                b_ts = max(snap_ts_values) if snap_ts_values else _parse_iso_ts(None)
+                # The fetch time is used, once, only when no account carries a timestamp.
+                b_ts = max(snap_ts_values) if snap_ts_values else _fetch_time_ts()
                 # Explicit points that do not form a curve are never combined with the
                 # snapshot: values from two sources never make one return series.
                 nav_by_ts = {b_ts: (snap_total, snap_cash)}
@@ -2036,8 +2104,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 for acct in accounts_list
             )
             if not has_account_ids:
-                raise ValueError(
-                    "No brokerage accounts are connected to this SnapTrade session yet; "
+                raise SnapTradeNoLinkedAccountError(
+                    f"{SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE}; "
                     "complete the read-only broker sign-in first."
                 )
 
