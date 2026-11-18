@@ -37,11 +37,11 @@ from n170_verify.crypto import (
 try:
     from tests.test_api_lifecycle_and_security import _build_leaf_payloads
     from tests.test_publish_policy import _holder_claim
-    from tests.test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML
+    from tests.test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML, SYNTHETIC_TRADERSYNC_CSV
 except ImportError:  # run with api/tests on the path, as CI does
     from test_api_lifecycle_and_security import _build_leaf_payloads
     from test_publish_policy import _holder_claim
-    from test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML
+    from test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML, SYNTHETIC_TRADERSYNC_CSV
 
 HOST_KID = "n170-active-2026"
 LEADERBOARD_ALL = "/api/v1/leaderboard?include_private_bracket=1&min_capital_bracket=under_1k"
@@ -438,18 +438,23 @@ def _large_flow_statement() -> str:
 
 
 # What the statement upload adds to the shared pipeline's leaves on purpose: a
-# parser label in the reconciliation leaf, and journal tags cleaned of amounts
-# and account-like digit runs.
-_UPLOAD_ONLY_FIELDS = {"reconciliation": {"detected_format"}, "coaching_and_context": {"imported_journal_tags"}}
+# parser label in the reconciliation leaf. Journal tags are cleaned once, by the
+# shared pipeline, and compared like every other field.
+_UPLOAD_ONLY_FIELDS = {"reconciliation": {"detected_format"}}
+
+
+def _journal_statement_with_hard_tags() -> str:
+    """A journal export whose tags carry an ampersand and an account-like digit run."""
+    return SYNTHETIC_TRADERSYNC_CSV.replace("Opening Drive", "R&D Setup")
 
 
 class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
     """For one statement, the upload route and POST /api/v1/verify sign the same leaves and period."""
 
-    def _both(self, text: str) -> tuple[dict, dict]:
+    def _both(self, text: str, filename: str = "ibkr.xml") -> tuple[dict, dict]:
         upload = self.client.post(
             "/api/v1/verify/auto-detect",
-            json={"raw_statement_text": text, "filename": "ibkr.xml", "issued_at_utc": "2026-02-10T00:00:00Z"},
+            json={"raw_statement_text": text, "filename": filename, "issued_at_utc": "2026-02-10T00:00:00Z"},
         )
         verify = self.client.post(
             "/api/v1/verify",
@@ -498,6 +503,14 @@ class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
         self.assertIsNone(coaching.get("counterfactual_twin"))
         bundle = upload["bundle"]
         self.assertEqual(bundle["period_start_utc"], bundle["period_end_utc"])
+
+    def test_journal_tags_with_an_ampersand_and_a_long_digit_run_are_signed_alike(self) -> None:
+        upload, verify = self._both(_journal_statement_with_hard_tags(), filename="tradersync_trades.csv")
+        self._assert_same(upload, verify)
+        tags = self._leaves(upload)["coaching_and_context"]["imported_journal_tags"]
+        self.assertTrue(any(t.startswith("RD") for t in tags), tags)
+        self.assertFalse(any("&" in t or "99887766" in t for t in tags), tags)
+        self.assertEqual(upload["imported_journal_tags"], tags)
 
     def test_a_large_flow_statement_is_withheld_with_the_same_reason_on_both_routes(self) -> None:
         upload, verify = self._both(_large_flow_statement())

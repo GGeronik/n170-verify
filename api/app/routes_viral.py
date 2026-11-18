@@ -37,6 +37,7 @@ from app.worker_isolation import (
     WorkerValidationError,
     run_isolated_one_shot_verification,
 )
+from n170_verify.coaching import sanitize_journal_tags
 from n170_verify.connectors import (
     PaperOrSandboxAccountRejectedError,
     detect_and_parse_statement,
@@ -82,11 +83,6 @@ _DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s*:", re.IGNORE
 _DANGEROUS_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]+\s*=", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]*>")
 _DISCORD_MASS_MENTION_RE = re.compile(r"@(everyone|here)\b", re.IGNORECASE)
-_CURRENCY_AMOUNT_TOKEN_RE = re.compile(
-    r"(?:[$€£¥]\s*[-+]?\d[\d,.]*|\b(?:USD|EUR|GBP|CAD|CHF|JPY|AUD)\s*[-+]?\d[\d,.]*)",
-    re.IGNORECASE,
-)
-_LONG_DIGIT_RUN_RE = re.compile(r"\b\d{5,}\b")
 
 
 class _PlausibilityInputError(ValueError):
@@ -122,17 +118,16 @@ def sanitize_markdown_text(raw: Any, *, max_len: int = 96) -> str:
     return base.strip()
 
 
-def sanitize_journal_tag(raw: Any, *, max_len: int = 48) -> str | None:
-    """Sanitize an imported trade-journal setup/mistake tag (zero $ amounts or account IDs)."""
-    if raw is None:
+def sanitize_journal_tag(raw: Any) -> str | None:
+    """Clean one journal tag with the shared pipeline's cleaner; ``None`` when it is dropped.
+
+    The upload route does not call this: the shared pipeline cleans imported tags
+    once, and the route signs what it returns. Kept only for existing importers.
+    """
+    if not isinstance(raw, str):
         return None
-    text = "".join(ch for ch in str(raw) if is_safe_xml_char(ch))
-    text = _CURRENCY_AMOUNT_TOKEN_RE.sub("", text)
-    text = _LONG_DIGIT_RUN_RE.sub("", text)
-    text = text.replace("$", "").replace("€", "").replace("£", "")
-    safe = sanitize_public_label(text, max_len=max_len)
-    safe = safe.lstrip("=+-@'| \t\r\n").strip()
-    return safe if safe else None
+    cleaned = sanitize_journal_tags([raw])
+    return cleaned[0] if cleaned else None
 
 
 def _reject_json_nonfinite_constant(token: str) -> Any:
@@ -1203,18 +1198,13 @@ def build_and_sign_proof_bundle(
     delayed_trades = pipeline_out.delayed_closed_trades
     stripped_count = pipeline_out.stripped_recent_closed_trades_count
 
-    sanitized_tags: list[str] = []
-    if include_journal_tags:
-        existing_tags = list(pipeline_out.coaching.imported_journal_tags or [])
-        for raw_t in [*existing_tags, *imported_journal_tags]:
-            clean_t = sanitize_journal_tag(raw_t)
-            if clean_t and clean_t not in sanitized_tags and len(sanitized_tags) < 50:
-                sanitized_tags.append(clean_t)
-
+    # Journal tags are cleaned once, by the shared pipeline; the upload signs them as
+    # returned, or none at all when the caller asked to leave them out.
     coaching_report = pipeline_out.coaching
-    coaching_dict = coaching_report.to_dict()
-    coaching_dict["imported_journal_tags"] = sanitized_tags
-    coaching_report = coaching_report.from_dict(coaching_dict)
+    if not include_journal_tags:
+        coaching_dict = coaching_report.to_dict()
+        coaching_dict["imported_journal_tags"] = []
+        coaching_report = coaching_report.from_dict(coaching_dict)
 
     leaf_payloads = build_canonical_leaf_payloads(
         performance=perf_summary,
@@ -1630,10 +1620,8 @@ def handle_post_verify_auto_detect(
     if isinstance(coaching_payload, Mapping) and isinstance(
         coaching_payload.get("imported_journal_tags"), list
     ):
-        for t in coaching_payload["imported_journal_tags"]:
-            clean_t = sanitize_journal_tag(t)
-            if clean_t:
-                imported_tags.append(clean_t)
+        # The signed tags, exactly as the shared pipeline cleaned them.
+        imported_tags = [str(t) for t in coaching_payload["imported_journal_tags"]]
 
     bundle_dict = bundle.to_dict()
     response_body: dict[str, Any] = {
