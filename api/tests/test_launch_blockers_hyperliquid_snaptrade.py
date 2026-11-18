@@ -66,17 +66,26 @@ def picklable_hyperliquid_mock_transport(
             [{"time": dep_ms, "delta": {"type": "deposit", "usdc": "5000.00"}}],
         )
 
+    f_in = int((base_dt + dt.timedelta(days=3, hours=10)).timestamp() * 1000)
+    f_out = int((base_dt + dt.timedelta(days=4, hours=16)).timestamp() * 1000)
+    fills = [
+        {"coin": "BTC", "px": "94000.0", "sz": "0.2", "side": "B", "time": f_in, "fee": "2.0", "tid": 71},
+        {"coin": "BTC", "px": "96500.0", "sz": "0.2", "side": "A", "time": f_out, "fee": "2.1", "tid": 72},
+    ]
     if q_type == "userFills":
-        f_in = int((base_dt + dt.timedelta(days=3, hours=10)).timestamp() * 1000)
-        f_out = int((base_dt + dt.timedelta(days=4, hours=16)).timestamp() * 1000)
-        return (
-            200,
-            {"Content-Type": "application/json"},
-            [
-                {"coin": "BTC", "px": "94000.0", "sz": "0.2", "side": "B", "time": f_in, "fee": "2.0", "tid": 71},
-                {"coin": "BTC", "px": "96500.0", "sz": "0.2", "side": "A", "time": f_out, "fee": "2.1", "tid": 72},
-            ],
-        )
+        return (200, {"Content-Type": "application/json"}, fills)
+
+    if q_type == "userFillsByTime":
+        # As the service answers: the wallet's fills at or after startTime (and at or before
+        # endTime when given); this wallet has only the two fills above.
+        start_ms = int(payload["startTime"])
+        end_ms = payload.get("endTime")
+        in_range = [
+            f
+            for f in fills
+            if f["time"] >= start_ms and (end_ms is None or f["time"] <= int(end_ms))
+        ]
+        return (200, {"Content-Type": "application/json"}, in_range)
 
     return (400, {"Content-Type": "application/json"}, {"error": "unexpected_query"})
 
