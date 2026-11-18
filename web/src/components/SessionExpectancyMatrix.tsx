@@ -227,7 +227,7 @@ export function SessionExpectancyMatrix({
                       <div
                         key={`${wd}-${hr}`}
                         className="h-7 rounded-[3px] border border-hairline bg-elevated/35"
-                        title={`${WEEKDAY_LABELS[wd]} ${String(hr).padStart(2, "0")}:00 UTC — 0 executions`}
+                        title={`${WEEKDAY_LABELS[wd]} ${String(hr).padStart(2, "0")}:00 UTC: 0 executions`}
                       />
                     );
                   }

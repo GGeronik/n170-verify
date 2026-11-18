@@ -15,7 +15,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useTheme } from "@/components/ThemeProvider.tsx";
-import { renderInstitutionalBadgeSvg } from "@/lib/badgeSvg.ts";
+import { renderArchivalBadgeSvg } from "@/lib/badgeSvg.ts";
 import {
   extractTypedLeaves,
   type BundleVerificationResult,
@@ -59,11 +59,11 @@ export function ShareEmbedStudio({
   const originStr =
     typeof window !== "undefined" && window.location?.origin
       ? sanitizeOriginUrl(window.location.origin)
-      : "https://verify.n170.io";
+      : "https://verify.n170.org";
   const safeProofId = sanitizeProofIdSegment(bundle.proof_id);
   const permalinkUrl = `${originStr}/p/${encodeURIComponent(safeProofId)}`;
 
-  // Strictly bound to WebCrypto verification — never echoes unverified bundle claims
+  // Strictly bound to WebCrypto verification: never echoes unverified bundle claims
   const cardSummary = useMemo(
     () => extractVerifiedCardSummary(bundle, verification),
     [bundle, verification],
@@ -73,7 +73,7 @@ export function ShareEmbedStudio({
 
   const badgeSvgRaw = useMemo(() => {
     if (!verification) return "";
-    return renderInstitutionalBadgeSvg(bundle, verification, theme);
+    return renderArchivalBadgeSvg(bundle, verification, theme);
   }, [bundle, verification, theme]);
 
   const activeCardSvgRaw = useMemo(() => {
@@ -166,7 +166,7 @@ export function ShareEmbedStudio({
           </h3>
           <p className="mt-1 text-xs text-ink-secondary">
             All 4 orthogonal trust chips bind strictly to browser{" "}
-            <code className="text-ink">window.crypto.subtle</code> verification — zero
+            <code className="text-ink">window.crypto.subtle</code> verification: zero
             unverified bundle claims, zero exact dollar balances.
           </p>
         </div>
@@ -221,7 +221,7 @@ export function ShareEmbedStudio({
       {/* Main Split: Camera-Ready Card Canvas + 1-Click Copy Matrix */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left: Pixel-Perfect 16:9 or 9:16 Card Preview + Export Actions */}
-        <div className="inst-panel flex flex-col justify-between gap-4 rounded-md bg-institutional-grid p-4 sm:p-6 lg:col-span-7">
+        <div className="inst-panel flex flex-col justify-between gap-4 rounded-md bg-telemetry-grid p-4 sm:p-6 lg:col-span-7">
           <div className="flex flex-1 items-center justify-center py-2">
             {aspect === "16:9" ? (
               <div className="relative flex aspect-[16/9] w-full max-w-[650px] flex-col justify-between overflow-hidden rounded-md border border-hairline-strong bg-canvas p-5 shadow-2xl">
@@ -554,7 +554,7 @@ export function ShareEmbedStudio({
           {/* 1. Markdown Badge Snippet */}
           <CopyBlock
             id="md"
-            label="Markdown Badge (GitHub / Substack / LP Deck)"
+            label="Markdown Badge (GitHub / Substack / Pitch Deck)"
             code={markdownSnippet}
             copied={copiedId === "md"}
             onCopy={() => void copyText("md", markdownSnippet)}

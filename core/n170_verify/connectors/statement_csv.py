@@ -22,11 +22,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 from io import StringIO
+import math
 import re
 from typing import Any
 
 from n170_verify.connectors.ccxt_crypto import UnsupportedScraperPolicyError
-from n170_verify.connectors.ibkr_flex import IbkrFlexXmlSecurityError, parse_ibkr_flex_xml
+from n170_verify.connectors.ibkr_flex import (
+    IbkrFlexXmlSecurityError,
+    _trim_valuation_series,
+    parse_ibkr_flex_xml,
+)
 from n170_verify.contracts import (
     AccountScope,
     AssetClass,
@@ -69,7 +74,7 @@ _FORMULA_TRIGGER_CHARS: frozenset[str] = frozenset(
 )
 
 _XXE_DECL_SYSTEM_PUBLIC_RE = re.compile(
-    rb"<![^>]*?\b(?:doctype|entity|element|attlist|system|public)\b",
+    rb"<![^<>]{0,4096}\b(?:doctype|entity|element|attlist|system|public)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _XXE_EXTERNAL_URI_RE = re.compile(
@@ -293,6 +298,8 @@ def _parse_localized_float(raw: str | None, *, default: float | None = None) -> 
         val = float(cleaned)
     except ValueError:
         return default
+    if not math.isfinite(val) or abs(val) > 1e30:
+        raise ValueError(f"Non-finite or out-of-range numeric value rejected: {raw!r}")
     if neg and val > 0:
         val = -val
     return 0.0 if val == 0.0 else val
@@ -349,7 +356,9 @@ def _parse_multi_format_timestamp(date_str: str, time_str: str = "") -> str | No
 
 
 def _read_csv_rows(text: str) -> list[list[str]]:
-    stripped = text.strip()
+    # A carriage return alone (a spreadsheet's "Macintosh CSV") and a carriage return plus
+    # line feed both end a line, exactly as a line feed does.
+    stripped = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not stripped:
         return []
     first_line = stripped.splitlines()[0]
@@ -363,7 +372,14 @@ def _read_csv_rows(text: str) -> list[list[str]]:
     else:
         delimiter = ","
     reader = csv.reader(StringIO(stripped), delimiter=delimiter)
-    return [row for row in reader if any(cell.strip() for cell in row)]
+    try:
+        return [row for row in reader if any(cell.strip() for cell in row)]
+    except csv.Error as exc:
+        raise ValueError(
+            f"This file cannot be read as CSV (problem near line {reader.line_num}): a field is "
+            "too long or its quoting is broken. Upload the statement exactly as the broker "
+            "exported it."
+        ) from exc
 
 
 def _find_col(headers_lower: list[str], aliases: tuple[str, ...]) -> int | None:
@@ -468,6 +484,7 @@ def parse_degiro_csv_bundle(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "EUR",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse multi-locale (EN / NL / DE) DEGIRO CSV exports preserving ISINs and FX rates."""
@@ -613,20 +630,41 @@ def parse_degiro_csv_bundle(
 
     # 2. Account CSV (EN / NL / DE)
     acct_rows = _read_csv_rows(acct_text)
+    acct_flat_nav_by_ts: dict[str, NormalizedNavPoint] = {}
     if len(acct_rows) >= 2:
         enabled_sections.append("degiro_account_csv")
         hdrs = [h.strip().lower() for h in acct_rows[0]]
         c_date = _find_col(hdrs, ("date", "datum"))
         c_time = _find_col(hdrs, ("time", "tijd", "uhrzeit"))
+        c_prod_acct = _find_col(hdrs, ("product", "produkt"))
         c_isin = _find_col(hdrs, ("isin",))
-        c_desc = _find_col(hdrs, ("description", "omschrijving", "beschreibung"))
+        c_desc = _find_col(hdrs, ("description", "omschrijving", "beschrijving", "beschreibung"))
         c_fx = _find_col(hdrs, ("fx", "wisselkoers", "wechselkurs"))
         c_chg = _find_col(hdrs, ("change", "mutatie", "änderung", "aenderung"))
+        c_bal = _find_col(hdrs, ("balance", "saldo"))
+        c_oid_acct = _find_col(hdrs, ("order id", "order-id"))
+        has_separate_tx = len(tx_rows) >= 2
+        trade_desc_re = re.compile(
+            r"^\s*(koop|buy|kauf|achat|verkoop|sell|verkauf|vente)\s+([0-9.,]+)(?:\s+[^\s@]{1,32}){0,4}\s*@\s*([0-9.,]+)(?:\s+([A-Za-z]{3}))?",
+            re.IGNORECASE,
+        )
 
-        for row in acct_rows[1:]:
-            ts = _parse_multi_format_timestamp(_cell(row, c_date), _cell(row, c_time))
+        # Sort Account.csv rows chronologically so running share inventory & Saldo align
+        parsed_acct_rows: list[tuple[str, int, list[str]]] = []
+        for a_idx, row in enumerate(acct_rows[1:]):
+            ts_val = _parse_multi_format_timestamp(_cell(row, c_date), _cell(row, c_time))
+            if ts_val is not None:
+                parsed_acct_rows.append((ts_val, a_idx, row))
+        # Rows that share a timestamp keep the file's own chronological order: a file whose
+        # first row is later than its last is newest-first, so its ties run bottom-up.
+        newest_first = len(parsed_acct_rows) >= 2 and parsed_acct_rows[0][0] > parsed_acct_rows[-1][0]
+        parsed_acct_rows.sort(key=lambda item: (item[0], -item[1] if newest_first else item[1]))
+        open_qty_by_sym: dict[str, float] = {}
+        cash_bal_by_ccy: dict[str, float] = {}
+
+        for ts, a_idx, row in parsed_acct_rows:
             desc = sanitize_csv_text_field(_cell(row, c_desc))
-            if ts is None or not desc:
+            if not desc:
                 continue
 
             chg_cell = _cell(row, c_chg)
@@ -638,11 +676,18 @@ def parse_degiro_csv_bundle(
                 amt = _parse_localized_float(chg_cell)
                 ccy = next_cell.upper() if (len(next_cell) == 3 and next_cell.isalpha()) else base_ccy
 
-            if amt is None or amt == 0.0:
-                continue
-            kind = _classify_degiro_account_flow(desc, amt)
-            if kind is None:
-                continue
+            bal_val: float | None = None
+            bal_ccy = base_ccy
+            if c_bal is not None:
+                bal_cell = _cell(row, c_bal)
+                bal_next = _cell(row, c_bal + 1)
+                if bal_cell.isalpha() and len(bal_cell) == 3:
+                    bal_ccy = bal_cell.upper()
+                    bal_val = _parse_localized_float(bal_next)
+                else:
+                    bal_val = _parse_localized_float(bal_cell)
+                    if len(bal_next) == 3 and bal_next.isalpha():
+                        bal_ccy = bal_next.upper()
 
             raw_fx = _parse_localized_float(_cell(row, c_fx))
             if ccy == base_ccy:
@@ -653,18 +698,87 @@ def parse_degiro_csv_bundle(
                 fx_to_base = conversion_rates.get(f"{ccy}/{base_ccy}", 1.0)
 
             isin = _valid_isin(_cell(row, c_isin))
-            flows.append(
-                NormalizedFlow(
-                    timestamp_utc=ts,
-                    kind=kind,
-                    amount=amt,
-                    currency=ccy,
-                    fx_rate_to_base=fx_to_base,
-                    symbol=isin,
-                    isin=isin,
-                    description=desc,
+            prod_name = sanitize_csv_text_field(_cell(row, c_prod_acct))
+            m_trade = trade_desc_re.match(desc)
+            if m_trade and not has_separate_tx:
+                verb_low = m_trade.group(1).lower()
+                t_qty = _parse_localized_float(m_trade.group(2)) or 0.0
+                t_px = _parse_localized_float(m_trade.group(3)) or 0.0
+                t_ccy = (m_trade.group(4) or ccy or base_ccy).upper()
+                t_side = "buy" if verb_low in {"koop", "buy", "kauf", "achat"} else "sell"
+                sym_key = isin or prod_name or f"INST-{a_idx}"
+                if t_qty > 0.0 and t_px >= 0.0:
+                    oid = sanitize_csv_text_field(_cell(row, c_oid_acct)) or f"degiro-acct-{a_idx}"
+                    trades.append(
+                        NormalizedTrade(
+                            venue="degiro",
+                            native_entry_id=f"{oid}:{a_idx}",
+                            symbol=sym_key,
+                            asset_class=(
+                                AssetClass.ETF
+                                if "etf" in prod_name.lower() or "ucits" in prod_name.lower()
+                                else AssetClass.EQUITY
+                            ),
+                            side=t_side,
+                            quantity=abs(t_qty),
+                            price=abs(t_px),
+                            timestamp_utc=ts,
+                            currency=t_ccy,
+                            fx_rate_to_base=1.0 if t_ccy == base_ccy else fx_to_base,
+                            commission=0.0,
+                            isin=isin,
+                        )
+                    )
+                    signed_q = abs(t_qty) if t_side == "buy" else -abs(t_qty)
+                    new_open_q = round(open_qty_by_sym.get(sym_key, 0.0) + signed_q, 8)
+                    if new_open_q < -1e-8:
+                        # A sale exceeded known opening shares, so shares were held before the statement.
+                        acct_flat_nav_by_ts.clear()
+                    open_qty_by_sym[sym_key] = new_open_q
+            elif amt is not None and amt != 0.0:
+                kind = _classify_degiro_account_flow(desc, amt)
+                if kind is not None:
+                    flows.append(
+                        NormalizedFlow(
+                            timestamp_utc=ts,
+                            kind=kind,
+                            amount=amt,
+                            currency=ccy,
+                            fx_rate_to_base=fx_to_base,
+                            symbol=isin,
+                            isin=isin,
+                            description=desc,
+                        )
+                    )
+
+            if has_separate_tx:
+                continue
+            if bal_val is not None:
+                if bal_ccy not in cash_bal_by_ccy and bal_ccy != base_ccy:
+                    opening = bal_val - (amt or 0.0) if ccy == bal_ccy else bal_val
+                    if abs(opening) > 0.005:
+                        # This currency held cash before its first row, so every earlier
+                        # valuation left that cash out.
+                        acct_flat_nav_by_ts.clear()
+                cash_bal_by_ccy[bal_ccy] = bal_val
+            # A flat-position valuation is the cash of every currency at this moment. It is
+            # emitted only while all cash is in the base currency; cash held in another
+            # currency is never left out or valued at a rate from another moment.
+            if (
+                base_ccy in cash_bal_by_ccy
+                and all(abs(q) <= 1e-8 for q in open_qty_by_sym.values())
+                and all(
+                    abs(v) <= 0.005 for c, v in cash_bal_by_ccy.items() if c != base_ccy
                 )
-            )
+            ):
+                base_cash = cash_bal_by_ccy[base_ccy]
+                acct_flat_nav_by_ts[ts] = NormalizedNavPoint(
+                    timestamp_utc=ts,
+                    nav_base=base_cash,
+                    cash_base=base_cash,
+                )
+            else:
+                acct_flat_nav_by_ts.pop(ts, None)
 
     # 3. Portfolio CSV (EN / NL / DE)
     port_rows = _read_csv_rows(port_text)
@@ -745,11 +859,16 @@ def parse_degiro_csv_bundle(
     all_ts = [t.timestamp_utc for t in trades] + [f.timestamp_utc for f in flows]
     period_start = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     period_end = max(all_ts) if all_ts else "2025-01-01T00:00:00Z"
-    nav_points = (
-        [NormalizedNavPoint(timestamp_utc=period_end, nav_base=ending_nav, cash_base=ending_cash)]
-        if ending_nav > 0.0
-        else []
-    )
+    if "degiro_portfolio_csv" in enabled_sections:
+        nav_points = [
+            NormalizedNavPoint(timestamp_utc=period_end, nav_base=ending_nav, cash_base=ending_cash)
+        ]
+    elif acct_flat_nav_by_ts:
+        nav_points = _trim_valuation_series(
+            [acct_flat_nav_by_ts[k] for k in sorted(acct_flat_nav_by_ts)]
+        )
+    else:
+        nav_points = []
 
     return CanonicalPortfolioLedger(
         blinded_account_tag=compute_blinded_account_tag(
@@ -759,7 +878,7 @@ def parse_degiro_csv_bundle(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=base_ccy,
         period_start_utc=period_start,
@@ -779,6 +898,7 @@ def parse_robinhood_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse an offline Robinhood Account Activity CSV (`SELF_REPORTED`, `UNKNOWN_OFFLINE_SCOPE`)."""
@@ -924,7 +1044,7 @@ def parse_robinhood_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=ccy,
         period_start_utc=start_ts,
@@ -942,6 +1062,7 @@ def parse_schwab_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> CanonicalPortfolioLedger:
     """Parse an offline Charles Schwab Transactions CSV (`SELF_REPORTED`, `UNKNOWN_OFFLINE_SCOPE`)."""
@@ -1122,7 +1243,7 @@ def parse_schwab_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=ccy,
         period_start_utc=start_ts,
@@ -1169,7 +1290,17 @@ def _classify_degiro_single_csv_role(rows: list[list[str]]) -> str:
     ):
         return "portfolio_csv"
     if any(
-        h in {"change", "mutatie", "änderung", "aenderung", "description", "omschrijving", "beschreibung"}
+        h
+        in {
+            "change",
+            "mutatie",
+            "änderung",
+            "aenderung",
+            "description",
+            "omschrijving",
+            "beschrijving",
+            "beschreibung",
+        }
         for h in hdrs
     ):
         return "account_csv"
@@ -1341,7 +1472,11 @@ def detect_and_parse_statement(
                     and "profit" in full_lower
                 )
             )
-            if is_mt5 and not ("metatrader 4" in full_lower):
+            if (
+                is_mt5
+                and not ("metatrader 4" in full_lower)
+                and not ("closed transactions" in full_lower and "deals" not in full_lower)
+            ):
                 ledger = parse_mt5_statement(
                     raw_bytes,
                     blinding_salt_hex=blinding_salt_hex,
@@ -1633,8 +1768,8 @@ class DegiroOfflineCsvAdapter(OfflineExportAdapterBase):
     broker_id = "degiro_csv"
     display_name = "DEGIRO Offline CSV Import (EN/NL/DE)"
 
-    def parse_export(self, **kwargs: Any) -> CanonicalPortfolioLedger:
-        return parse_degiro_csv_bundle(**kwargs)
+    def parse_export(self, *, environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE, **kwargs: Any) -> CanonicalPortfolioLedger:
+        return parse_degiro_csv_bundle(environment_tier=environment_tier, **kwargs)
 
 
 class RobinhoodOfflineCsvAdapter(OfflineExportAdapterBase):

@@ -48,7 +48,7 @@ export function Navbar() {
                   N170 Verify
                 </span>
                 <span className="rounded border border-hairline-strong bg-elevated px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-secondary">
-                  v3.0
+                  Wave-4
                 </span>
               </div>
               <p className="hidden font-mono text-[10px] uppercase tracking-wider text-ink-muted xl:block">
@@ -86,17 +86,17 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* Right Controls: 1-Click Obsidian / LP Archival Paper Toggle + Verifier CTA */}
+        {/* Right Controls: 1-Click Obsidian / Archival Paper Toggle + Verifier CTA */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={toggleTheme}
             aria-label={
               theme === "obsidian"
-                ? "Switch to LP Archival Paper theme"
-                : "Switch to Institutional Obsidian theme"
+                ? "Switch to Archival Paper theme"
+                : "Switch to Obsidian theme"
             }
-            title="1-Click Institutional Theme Toggle (Obsidian Telemetry / LP Archival Paper)"
+            title="1-Click Theme Toggle (Obsidian Telemetry / Archival Paper)"
             className="inline-flex items-center gap-1.5 rounded border border-hairline-strong bg-panel px-2.5 py-1.5 font-mono text-[11px] font-medium text-ink-secondary transition hover:border-signal-champagne hover:text-ink"
           >
             {theme === "obsidian" ? (

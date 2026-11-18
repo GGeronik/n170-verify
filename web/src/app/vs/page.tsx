@@ -20,7 +20,7 @@ export default function ArenaIndexPage() {
   };
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
         <div className="max-w-3xl space-y-2 border-b border-hairline pb-6">
           <div className="inline-flex items-center gap-2 font-mono text-[11px]">

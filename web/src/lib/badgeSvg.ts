@@ -1,5 +1,5 @@
 /**
- * Institutional Obsidian & Brushed Champagne standalone SVG assurance badge renderer.
+ * Obsidian & Brushed Champagne standalone SVG assurance badge renderer.
  *
  * Strictly renders verifier-computed `BundleVerificationResult` fields (never
  * self-asserted claims) with XML entity escaping.
@@ -26,7 +26,7 @@ export function xmlEscape(raw: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function renderInstitutionalBadgeSvg(
+export function renderArchivalBadgeSvg(
   bundle: VerifyProofBundle,
   verification: BundleVerificationResult,
   theme: "obsidian" | "paper" = "obsidian",
@@ -105,3 +105,5 @@ export function renderInstitutionalBadgeSvg(
     `</svg>`,
   ].join("");
 }
+
+export const renderInstitutionalBadgeSvg = renderArchivalBadgeSvg;

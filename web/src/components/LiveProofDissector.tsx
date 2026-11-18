@@ -159,7 +159,7 @@ export function LiveProofDissector({
 
   const bracketLabel = rawLeaves.capitalBracket
     ? CAPITAL_BRACKET_LABELS[rawLeaves.capitalBracket]
-    : "$100K – $1M USD";
+    : "$100K - $1M USD";
 
   const terminalIdx =
     leaves.coreMetrics != null
@@ -254,7 +254,7 @@ export function LiveProofDissector({
             </span>
           </button>
 
-          {/* Switch 2: [Reveal $100k–$1M Bracket] */}
+          {/* Switch 2: [Reveal $100k-$1M Bracket] */}
           <button
             type="button"
             onClick={() => {
@@ -273,7 +273,7 @@ export function LiveProofDissector({
                 revealCapitalBracket ? "bg-signal-emerald" : "bg-signal-ochre"
               }`}
             />
-            <span>[Reveal $100k–$1M Bracket]</span>
+            <span>[Reveal $100k-$1M Bracket]</span>
             <span className="text-[10px] opacity-85">
               {revealCapitalBracket ? bracketLabel : "Redacted"}
             </span>
@@ -346,7 +346,7 @@ export function LiveProofDissector({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{SHORT_LEAF_LABELS[leafName]}</span>
-                    <span>{isRedacted ? "🔒" : "✓"}</span>
+                    <span>{isRedacted ? "[SALTED]" : "✓"}</span>
                   </div>
                 </button>
               );
@@ -385,7 +385,7 @@ export function LiveProofDissector({
                 <p className="mt-0.5 font-semibold text-signal-champagne">
                   {verification
                     ? ORIGIN_ASSURANCE_META[verification.effective_origin_assurance].shortLabel
-                    : "—"}
+                    : "-"}
                 </p>
               </div>
               <div className="rounded border border-hairline bg-panel p-2.5">
@@ -447,7 +447,7 @@ export function LiveProofDissector({
                     verifiers reconstruct the exact same publisher-signed{" "}
                     <code>merkle_root</code>:
                   </p>
-                  <p className="truncate text-ink">{activeUndisclosedHash ?? "—"}</p>
+                  <p className="truncate text-ink">{activeUndisclosedHash ?? "-"}</p>
                 </div>
               )}
             </div>

@@ -10,11 +10,11 @@ import {
   type ReactNode,
 } from "react";
 
-export type InstitutionalTheme = "obsidian" | "paper";
+export type StudioTheme = "obsidian" | "paper";
 
 interface ThemeContextValue {
-  theme: InstitutionalTheme;
-  setTheme: (next: InstitutionalTheme) => void;
+  theme: StudioTheme;
+  setTheme: (next: StudioTheme) => void;
   toggleTheme: () => void;
 }
 
@@ -27,7 +27,7 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<InstitutionalTheme>("obsidian");
+  const [theme, setThemeState] = useState<StudioTheme>("obsidian");
 
   useEffect(() => {
     try {
@@ -53,7 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const setTheme = useCallback((next: InstitutionalTheme) => {
+  const setTheme = useCallback((next: StudioTheme) => {
     setThemeState(next);
     document.documentElement.setAttribute("data-theme", next);
     try {
@@ -65,7 +65,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
-      const next: InstitutionalTheme = prev === "obsidian" ? "paper" : "obsidian";
+      const next: StudioTheme = prev === "obsidian" ? "paper" : "obsidian";
       document.documentElement.setAttribute("data-theme", next);
       try {
         window.localStorage.setItem(STORAGE_KEY, next);

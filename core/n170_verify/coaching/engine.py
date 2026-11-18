@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -37,6 +38,7 @@ from n170_verify.coaching.llm_coach import (
 from n170_verify.contracts import (
     AssetClass,
     CanonicalPortfolioLedger,
+    CostAndDragBreakdown,
     RedactedClosedTrade,
     TraderCoachingAndContextReport,
 )
@@ -108,19 +110,28 @@ class TraderCoachingEngine:
         enable_llm_narrative: bool = True,
         imported_journal_tags: Sequence[str] | None = None,
         max_drawdown_decimal: float | None = None,
+        scored_period_returns: Sequence[float] | None = None,
+        performance_withheld: bool = False,
+        annualization_allowed: bool = True,
     ) -> CoachingEngineOutput:
         """Compute ``TraderCoachingAndContextReport`` and 7-day-delayed ``RedactedClosedTrade`` list."""
         cost_drag = compute_cost_and_drag_breakdown(
             ledger,
             forex_midpoints=forex_midpoints,
         )
+        if not annualization_allowed and not performance_withheld:
+            cost_drag = dataclasses.replace(cost_drag, annualized_total_drag_bps=None)
         closed_trips = match_fifo_round_trips(ledger)
         behaviour = compute_behavioural_coaching_metrics(
             ledger,
             price_snapshots=price_snapshots,
             atr_14_series=atr_14_series,
-            cost_drag=cost_drag,
+            # A withheld record's drag ratios are not usable, so no takeaway is drawn from them.
+            cost_drag=None if performance_withheld else cost_drag,
         )
+        if performance_withheld:
+            # No figure derived from the valuation path is signed when the return is withheld.
+            behaviour = dataclasses.replace(behaviour, post_drawdown_sizing_discipline_atr=None)
 
         effective_as_of = as_of_utc if as_of_utc is not None else ledger.period_end_utc
         delayed_trades = extract_delayed_closed_trades(
@@ -147,7 +158,7 @@ class TraderCoachingEngine:
         )
 
         asset_mix_pct = _compute_asset_class_mix_pct(ledger)
-        if enable_llm_narrative and self.llm_client is not None:
+        if enable_llm_narrative and self.llm_client is not None and not performance_withheld:
             narrative = self.llm_client.generate_coaching_narrative(
                 cost_drag=cost_drag,
                 behaviour=behaviour,
@@ -179,20 +190,35 @@ class TraderCoachingEngine:
             det.safety_filter_triggered = True
             det.fallback_reason = "engine_post_check_rejected"
             narrative = det
+        if performance_withheld:
+            # The summary text states no ratio over valuations the record cannot use.
+            narrative.style_summary = (
+                f"Activity profile of {behaviour.observed_trades} closed round-trips over "
+                f"{behaviour.observed_days} days; the return and the friction ratios over the "
+                "account's valuations are withheld."
+            )
 
         session_heatmap = compute_session_expectancy_heatmap(
             ledger,
             closed_round_trips=closed_trips,
         )
-        counterfactual_twin = simulate_counterfactual_twin(
-            ledger,
-            cost_drag=cost_drag,
-            behaviour=behaviour,
-            closed_round_trips=closed_trips,
-            forex_midpoints=forex_midpoints,
-            atr_14_series=atr_14_series,
+        # The twin's "actual" path is the scored return path; a withheld return has none.
+        counterfactual_twin = (
+            None
+            if performance_withheld
+            else simulate_counterfactual_twin(
+                ledger,
+                cost_drag=cost_drag,
+                behaviour=behaviour,
+                closed_round_trips=closed_trips,
+                forex_midpoints=forex_midpoints,
+                atr_14_series=atr_14_series,
+                scored_period_returns=scored_period_returns,
+            )
         )
-        quant_dna = compute_quant_dna_profile(
+        # The profile's consistency, drawdown-resilience, sizing and cost-efficiency axes read
+        # the valuations, and the contract has no partial profile, so a withheld return signs none.
+        quant_dna = None if performance_withheld else compute_quant_dna_profile(
             ledger,
             behaviour=behaviour,
             cost_drag=cost_drag,
@@ -205,7 +231,20 @@ class TraderCoachingEngine:
         clean_journal_tags = sanitize_journal_tags(imported_journal_tags)
 
         report = TraderCoachingAndContextReport(
-            cost_drag=cost_drag,
+            # Every drag ratio divides by, or annualises over, the valuations; a withheld
+            # return signs none of them.
+            cost_drag=(
+                CostAndDragBreakdown(
+                    commission_and_fee_drag_bps=None,
+                    margin_and_funding_drag_bps=None,
+                    fx_conversion_drag_bps=None,
+                    withholding_tax_drag_bps=None,
+                    total_friction_drag_bps=None,
+                    annualized_total_drag_bps=None,
+                )
+                if performance_withheld
+                else cost_drag
+            ),
             behaviour=behaviour,
             catalyst_regime_win_rate=catalyst_ctx.catalyst_regime_win_rate,
             quiet_regime_win_rate=catalyst_ctx.quiet_regime_win_rate,
@@ -246,6 +285,7 @@ def build_trader_coaching_report(
     enable_llm_narrative: bool = True,
     imported_journal_tags: Sequence[str] | None = None,
     max_drawdown_decimal: float | None = None,
+    annualization_allowed: bool = True,
 ) -> TraderCoachingAndContextReport:
     """Convenience entrypoint returning a validated ``TraderCoachingAndContextReport``."""
     engine = TraderCoachingEngine(llm_client=llm_client)
@@ -263,6 +303,7 @@ def build_trader_coaching_report(
         enable_llm_narrative=enable_llm_narrative,
         imported_journal_tags=imported_journal_tags,
         max_drawdown_decimal=max_drawdown_decimal,
+        annualization_allowed=annualization_allowed,
     )
     return output.report
 

@@ -11,6 +11,7 @@ from n170_verify.connectors.ccxt_crypto import (
     UnsupportedScraperPolicyError,
 )
 from n170_verify.connectors.ctrader_oauth import CTraderReadOnlyOAuthAdapter
+from n170_verify.connectors.hyperliquid import HyperliquidPublicReadOnlyAdapter
 from n170_verify.connectors.ibkr_flex import (
     IbkrFlexOfflineAdapter,
     IbkrFlexWebServiceAdapter,
@@ -36,6 +37,7 @@ from n170_verify.connectors.tradier_schwab import (
     SchwabReadOnlyAdapter,
     TradierReadOnlyAdapter,
 )
+from n170_verify.connectors.snaptrade import SnapTradeReadOnlyAdapter
 from n170_verify.connectors.trading212 import Trading212ReadOnlyAdapter
 from n170_verify.contracts import BrokerAdapterDescriptor, ReadOnlyBrokerAdapter
 
@@ -70,6 +72,10 @@ CONNECTOR_CLASS_MAP: dict[str, type[ReadOnlyBrokerAdapter]] = {
     "tradersync_journal": JournalMigrationOfflineAdapter,
     "tradezella": JournalMigrationOfflineAdapter,
     "tradezella_journal": JournalMigrationOfflineAdapter,
+    "snaptrade": SnapTradeReadOnlyAdapter,
+    "snaptrade_relay": SnapTradeReadOnlyAdapter,
+    "snaptrade_poc": SnapTradeReadOnlyAdapter,
+    "hyperliquid": HyperliquidPublicReadOnlyAdapter,
 }
 
 
@@ -136,6 +142,10 @@ def create_connector(
         return JournalMigrationOfflineAdapter(source_hint="tradersync", **kwargs)
     if norm in {"tradezella", "tradezella_journal"}:
         return JournalMigrationOfflineAdapter(source_hint="tradezella", **kwargs)
+    if norm in {"snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+        return SnapTradeReadOnlyAdapter(env=env, **kwargs)
+    if norm == "hyperliquid":
+        return HyperliquidPublicReadOnlyAdapter(**kwargs)
 
     raise KeyError(f"Unknown broker_id {broker_id!r}; registered={sorted(CONNECTOR_CLASS_MAP)}")
 
@@ -144,6 +154,8 @@ def list_connector_descriptors(
     *,
     env: Mapping[str, str] | None = None,
     include_extended: bool = False,
+    include_poc: bool = False,
+    include_permissionless: bool = False,
 ) -> list[BrokerAdapterDescriptor]:
     """Return validated ``BrokerAdapterDescriptor`` records across canonical connectors."""
     sample_instances: list[ReadOnlyBrokerAdapter] = [
@@ -174,15 +186,26 @@ def list_connector_descriptors(
                 JournalMigrationOfflineAdapter(),
             ]
         )
+    if include_poc:
+        sample_instances.append(SnapTradeReadOnlyAdapter(env=env or {}))
+    if include_permissionless:
+        sample_instances.append(HyperliquidPublicReadOnlyAdapter())
     return [inst.describe_adapter() for inst in sample_instances]
 
 
 def list_all_connector_descriptors(
     *,
     env: Mapping[str, str] | None = None,
+    include_poc: bool = False,
+    include_permissionless: bool = False,
 ) -> list[BrokerAdapterDescriptor]:
     """Return validated ``BrokerAdapterDescriptor`` records including FX, Futures & Migration adapters."""
-    return list_connector_descriptors(env=env, include_extended=True)
+    return list_connector_descriptors(
+        env=env,
+        include_extended=True,
+        include_poc=include_poc,
+        include_permissionless=include_permissionless,
+    )
 
 
 def get_connector_descriptor(
@@ -203,8 +226,14 @@ def get_connector_descriptor(
         "tradersync_journal": "journal_migration",
         "tradezella": "journal_migration",
         "tradezella_journal": "journal_migration",
+        "snaptrade_relay": "snaptrade",
+        "snaptrade_poc": "snaptrade",
     }
     target = alias_map.get(norm, norm)
+    if target == "snaptrade":
+        return SnapTradeReadOnlyAdapter(env=env or {}).describe_adapter()
+    if target == "hyperliquid":
+        return HyperliquidPublicReadOnlyAdapter().describe_adapter()
     for desc in list_connector_descriptors(env=env, include_extended=True):
         if desc.broker_id == target:
             return desc

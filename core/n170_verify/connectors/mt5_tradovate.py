@@ -17,10 +17,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 import hashlib
 from html.parser import HTMLParser
+import math
 import re
 from typing import Any
 
 from n170_verify.connectors.ccxt_crypto import PaperOrSandboxAccountRejectedError
+from n170_verify.connectors.ibkr_flex import _trim_valuation_series
 from n170_verify.connectors.statement_csv import (
     MAX_STATEMENT_BYTES,
     OfflineExportAdapterBase,
@@ -97,8 +99,8 @@ _DEMO_SERVER_RE = re.compile(
     r"(?:\b(?:demo|contest|practice|trial|simulated|paper|playmoney)\b|-demo\d*\b)",
     re.IGNORECASE,
 )
-_MT_ACCOUNT_RE = re.compile(r"\baccount\s*[:#]?\s*([0-9]{4,20})\b", re.IGNORECASE)
-_MT_CURRENCY_RE = re.compile(r"\bcurrency\s*[:#]?\s*([A-Z]{3})\b", re.IGNORECASE)
+_MT_ACCOUNT_RE = re.compile(r"\baccount(?:[ \t]{0,64}[:#])?[ \t]{0,64}([0-9]{4,20})\b", re.IGNORECASE)
+_MT_CURRENCY_RE = re.compile(r"\bcurrency(?:[ \t]{0,64}[:#])?[ \t]{0,64}([A-Z]{3})\b", re.IGNORECASE)
 _MT_PAREN_CCY_RE = re.compile(r"\(([A-Z]{3})\s*,", re.IGNORECASE)
 _TRADOVATE_DEMO_ACCT_RE = re.compile(r"^(?:demo|sim|paper|practice)[a-z0-9_-]*$", re.IGNORECASE)
 
@@ -137,7 +139,12 @@ def compute_futures_roundtrip_pnl(
 ) -> float:
     """Compute gross base-currency PnL using CME/NYMEX/COMEX point multipliers."""
     _, mult = resolve_futures_root_and_multiplier(symbol)
-    val = (float(sell_price) - float(buy_price)) * abs(float(quantity)) * mult
+    b_f, s_f, q_f = float(buy_price), float(sell_price), float(quantity)
+    if not (math.isfinite(b_f) and math.isfinite(s_f) and math.isfinite(q_f)):
+        raise ValueError("Non-finite price or quantity in compute_futures_roundtrip_pnl")
+    val = (s_f - b_f) * abs(q_f) * mult
+    if not math.isfinite(val) or abs(val) > 1e30:
+        raise ValueError("Out-of-range futures roundtrip PnL")
     return 0.0 if val == 0.0 else val
 
 
@@ -237,6 +244,7 @@ class _HtmlTableExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.title_parts: list[str] = []
+        self.non_table_parts: list[str] = []
         self.rows: list[list[tuple[str, int]]] = []
         self._in_title = False
         self._in_ignored_tag = 0
@@ -267,6 +275,9 @@ class _HtmlTableExtractor(HTMLParser):
         elif t == "br" and self._current_cell is not None:
             self._current_cell.append(" ")
 
+        elif t in {"b", "div", "p", "span", "br"} and self._current_cell is None and not self._in_title:
+            self.non_table_parts.append("\n")
+
     def handle_endtag(self, tag: str) -> None:
         t = tag.lower()
         if t in {"script", "style"} and self._in_ignored_tag > 0:
@@ -285,6 +296,8 @@ class _HtmlTableExtractor(HTMLParser):
             if any(c[0] for c in self._current_row):
                 self.rows.append(self._current_row)
             self._current_row = None
+        elif t in {"b", "div", "p", "span"} and self._current_cell is None and not self._in_title:
+            self.non_table_parts.append("\n")
 
     def handle_data(self, data: str) -> None:
         if self._in_ignored_tag:
@@ -293,15 +306,24 @@ class _HtmlTableExtractor(HTMLParser):
             self.title_parts.append(data)
         if self._current_cell is not None:
             self._current_cell.append(data)
+        elif not self._in_title and self._current_row is None:
+            self.non_table_parts.append(data)
 
 
-def _extract_html_rows(html_text: str) -> tuple[str, list[list[str]], list[list[tuple[str, int]]]]:
+def _extract_html_rows(
+    html_text: str,
+) -> tuple[str, list[list[str]], list[list[tuple[str, int]]], list[str]]:
     parser = _HtmlTableExtractor()
     parser.feed(html_text)
     parser.close()
     title = " ".join("".join(parser.title_parts).split())
     plain_rows = [[cell_text for cell_text, _ in row] for row in parser.rows]
-    return title, plain_rows, parser.rows
+    extra_lines = [
+        " ".join(chunk.split())
+        for chunk in "".join(parser.non_table_parts).splitlines()
+        if chunk.strip()
+    ]
+    return title, plain_rows, parser.rows, extra_lines
 
 
 def _parse_mt_volume(raw: str | None) -> float | None:
@@ -324,9 +346,10 @@ def _detect_mt_metadata(
     title: str,
     rows: list[list[str]],
     default_currency: str,
+    extra_lines: list[str] | None = None,
 ) -> tuple[str | None, str, bool]:
     """Return ``(raw_account_id, base_currency, is_demo)`` from MT4/MT5 header rows."""
-    header_texts = [title] + [" | ".join(r) for r in rows[:15]]
+    header_texts = [title] + list(extra_lines or ()) + [" | ".join(r) for r in rows[:200]]
     combined_header = "\n".join(header_texts)
 
     acct_id: str | None = None
@@ -349,6 +372,109 @@ def _detect_mt_metadata(
     return acct_id, base_ccy, is_demo
 
 
+_MT_REPORT_TIME_LABELS: tuple[str, ...] = ("report date", "report time", "generated", "date")
+_MT_BALANCE_TOLERANCE = 0.01
+
+
+def _parse_mt_report_time(raw: str) -> str | None:
+    value = raw.strip()
+    # Only a value that states a time of day is a report time; a bare date is not.
+    if not re.search(r"\d{1,2}:\d{2}", value):
+        return None
+    return _parse_multi_format_timestamp(value)
+
+
+_MT_INLINE_EQUITY_RE = re.compile(
+    r"\bequity[ \t]{0,32}:[ \t]{0,32}([-+()0-9.,\xa0]+(?:\s+\d{3})*(?:\.[0-9]+)?)",
+    re.IGNORECASE,
+)
+_MT_INLINE_BALANCE_RE = re.compile(
+    r"\bbalance[ \t]{0,32}:[ \t]{0,32}([-+()0-9.,\xa0]+(?:\s+\d{3})*(?:\.[0-9]+)?)",
+    re.IGNORECASE,
+)
+
+
+def _detect_mt_report_time(
+    rows: list[list[str]], extra_lines: list[str] | None = None
+) -> str | None:
+    """Return the statement's own labelled report time (e.g. ``Date: 2026.02.20 12:34``)."""
+    scan_rows = [[line] for line in (extra_lines or ())] + rows[:200]
+    for row in scan_rows:
+        for i, cell in enumerate(row):
+            low = cell.strip().lower()
+            for label in _MT_REPORT_TIME_LABELS:
+                if low == f"{label}:" and (i + 1) < len(row):
+                    found = _parse_mt_report_time(row[i + 1])
+                elif low.startswith(f"{label}:"):
+                    found = _parse_mt_report_time(cell.strip()[len(label) + 1 :])
+                else:
+                    continue
+                if found is not None:
+                    return found
+    return None
+
+
+_MT_STILL_OPEN = "9999-12-31T23:59:59Z"
+# The section the round-trip matcher reads as "this input states its opening positions".
+_OPENINGS_ACCOUNTED_FOR_SECTION = "PriorPeriodPositions"
+
+
+def _points_while_flat(
+    points: dict[str, NormalizedNavPoint],
+    open_intervals: list[tuple[str, str]],
+) -> dict[str, NormalizedNavPoint]:
+    """Keep only balances stamped at an instant when no position is open.
+
+    A balance is realised cash: while a position is open the account's value also holds
+    that position's unrealised result, which the balance leaves out. A position counts as
+    open from its open time up to, but not including, its close time.
+    """
+    return {
+        ts: pt
+        for ts, pt in points.items()
+        if not any(opened <= ts < closed for opened, closed in open_intervals)
+    }
+
+
+def _reconciled_running_balance_points(
+    cash_deltas: list[tuple[str, float]],
+    *,
+    reference_balance: float | None,
+    platform: str,
+) -> tuple[dict[str, NormalizedNavPoint], float]:
+    """Rebuild the balance from the statement rows and check it against the statement.
+
+    The rebuilt balance starts from zero, so it is only a valuation of the account when it
+    ends at the balance the statement itself reports. A rebuilt balance that goes below
+    zero, or that ends elsewhere, means rows before the statement period are missing and
+    the record is refused. Without a reported balance to check against, no valuation is
+    emitted and the return is withheld.
+    """
+    points: dict[str, NormalizedNavPoint] = {}
+    running = 0.0
+    for ts, delta in sorted(cash_deltas, key=lambda item: item[0]):
+        running += delta
+        if running < -_MT_BALANCE_TOLERANCE:
+            raise ValueError(
+                f"The {platform} balance rebuilt from this statement's rows falls below zero, "
+                "so the statement does not start at the account's opening balance. Export the "
+                "statement for the account's full history (from its first deposit)."
+            )
+        points[ts] = NormalizedNavPoint(
+            timestamp_utc=ts, nav_base=round(running, 6), cash_base=round(running, 6)
+        )
+    if reference_balance is None:
+        return {}, running
+    if points and abs(running - reference_balance) > _MT_BALANCE_TOLERANCE + 1e-9:
+        raise ValueError(
+            f"The {platform} balance rebuilt from this statement's rows ({running:.2f}) does not "
+            f"match the balance its Summary reports ({reference_balance:.2f}), so the statement does "
+            "not start at the account's opening balance. Export the statement for the "
+            "account's full history (from its first deposit)."
+        )
+    return points, running
+
+
 def parse_mt4_statement(
     source: bytes | str,
     *,
@@ -366,8 +492,9 @@ def parse_mt4_statement(
     reject_xxe_and_dtd_declarations(raw_bytes)
 
     is_html = "<table" in text.lower() or "<tr" in text.lower() or "<html" in text.lower()
+    extra_lines: list[str] = []
     if is_html:
-        title, rows, _ = _extract_html_rows(text)
+        title, rows, _, extra_lines = _extract_html_rows(text)
     else:
         title = ""
         rows = _read_csv_rows(text)
@@ -375,7 +502,9 @@ def parse_mt4_statement(
     if not rows:
         raise ValueError("MT4 statement contains no table or CSV rows")
 
-    raw_acct_id, resolved_ccy, is_demo = _detect_mt_metadata(title, rows, base_currency)
+    raw_acct_id, resolved_ccy, is_demo = _detect_mt_metadata(
+        title, rows, base_currency, extra_lines=extra_lines
+    )
     env_tier = EnvironmentTier.LIVE_PRODUCTION
     if is_demo:
         if reject_demo:
@@ -388,8 +517,13 @@ def parse_mt4_statement(
     flows: list[NormalizedFlow] = []
     ending_positions: list[NormalizedPosition] = []
     enabled_sections: list[str] = []
+    parser_warnings: list[str] = []
     cash_deltas: list[tuple[str, float]] = []
     summary_equity: float | None = None
+    summary_balance: float | None = None
+    report_ts = _detect_mt_report_time(rows, extra_lines=extra_lines)
+    open_intervals: list[tuple[str, str]] = []
+    open_times_unknown = False
 
     section = "closed_transactions" if not is_html else "header"
     col_map: dict[str, int] = {}
@@ -419,13 +553,17 @@ def parse_mt4_statement(
                     enabled_sections.append("mt4_summary")
                 continue
 
-        # Summary key/value extraction (e.g. "Equity: 12 450.00")
+        # Summary key/value extraction (e.g. "Equity: 12 450.00", including <= 0.0 wipe-outs)
         if section == "summary":
             for i, cell_low in enumerate(lowered):
                 if cell_low.startswith("equity") and (i + 1) < len(row):
                     eq_val = _parse_localized_float(row[i + 1])
-                    if eq_val is not None and eq_val > 0.0:
+                    if eq_val is not None:
                         summary_equity = eq_val
+                if cell_low.startswith("balance") and (i + 1) < len(row):
+                    bal_val = _parse_localized_float(row[i + 1])
+                    if bal_val is not None:
+                        summary_balance = bal_val
             continue
 
         # Detect header row for Closed Transactions or Open Trades
@@ -494,7 +632,17 @@ def parse_mt4_statement(
             lots = _parse_mt_volume(_cell(row, col_map.get("size", 3)))
             raw_sym = _cell(row, col_map.get("item", 4))
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price", 5)))
-            close_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("close_time", 8))) or open_ts
+            stated_close_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("close_time", 8)))
+            if stated_close_ts is not None and stated_close_ts < open_ts:
+                raise ValueError(
+                    f"MT4 closed transaction ticket {ticket} has Close Time ({stated_close_ts}) "
+                    f"before Open Time ({open_ts})"
+                )
+            if stated_close_ts is None:
+                open_times_unknown = True
+            else:
+                open_intervals.append((open_ts, stated_close_ts))
+            close_ts = stated_close_ts or open_ts
             close_px = _parse_localized_float(_cell(row, col_map.get("close_price", 9)))
             comm = _parse_localized_float(_cell(row, col_map.get("commission", 10)), default=0.0) or 0.0
             taxes = _parse_localized_float(_cell(row, col_map.get("taxes", 11)), default=0.0) or 0.0
@@ -514,6 +662,7 @@ def parse_mt4_statement(
             )
             half_comm = abs(comm) / 2.0
             close_side = "sell" if row_type == "buy" else "buy"
+            ticket_pos_id = f"mt4-{ticket}-{r_idx}"
 
             trades.append(
                 NormalizedTrade(
@@ -529,6 +678,7 @@ def parse_mt4_statement(
                     fx_rate_to_base=fx_to_base,
                     multiplier=mult,
                     commission=half_comm,
+                    position_id=ticket_pos_id,
                 )
             )
             trades.append(
@@ -546,6 +696,7 @@ def parse_mt4_statement(
                     multiplier=mult,
                     commission=half_comm,
                     tax=abs(taxes),
+                    position_id=ticket_pos_id,
                 )
             )
             if swap != 0.0:
@@ -563,6 +714,7 @@ def parse_mt4_statement(
             cash_deltas.append((close_ts, net_trade_delta))
 
         elif section == "open_trades" and row_type in {"buy", "sell"}:
+            open_intervals.append((open_ts, _MT_STILL_OPEN))
             lots = _parse_mt_volume(_cell(row, col_map.get("size", 3)))
             raw_sym = _cell(row, col_map.get("item", 4))
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price", 5)))
@@ -595,32 +747,66 @@ def parse_mt4_statement(
                 )
             )
 
+    if extra_lines:
+        extra_joined = "\n".join(extra_lines)
+        if summary_equity is None:
+            m_eq = _MT_INLINE_EQUITY_RE.search(extra_joined)
+            if m_eq:
+                summary_equity = _parse_localized_float(m_eq.group(1))
+        if summary_balance is None:
+            m_bal = _MT_INLINE_BALANCE_RE.search(extra_joined)
+            if m_bal:
+                summary_balance = _parse_localized_float(m_bal.group(1))
+
     if not trades and not flows and not ending_positions:
         raise ValueError("MT4 statement contained no recognizable closed transactions, flows, or open trades")
 
-    # Reconstruct chronological running-balance NAV points when positive
-    nav_by_ts: dict[str, NormalizedNavPoint] = {}
-    running_bal = 0.0
-    for ts, delta in sorted(cash_deltas, key=lambda item: item[0]):
-        running_bal += delta
-        if running_bal > 0.0:
-            nav_by_ts[ts] = NormalizedNavPoint(
-                timestamp_utc=ts,
-                nav_base=round(running_bal, 6),
-                cash_base=round(running_bal, 6),
-            )
+    # The balance rebuilt from the rows is a valuation only when it reconciles with the
+    # statement's own balance: the Summary balance, or the equity when no trade is open.
+    reference_balance = summary_balance
+    if reference_balance is None and summary_equity is not None and not ending_positions:
+        reference_balance = summary_equity
+    nav_by_ts, running_bal = _reconciled_running_balance_points(
+        cash_deltas, reference_balance=reference_balance, platform="MetaTrader 4"
+    )
+    # A balance is the account's value only while no position is open; when a trade's
+    # close time is missing the statement cannot tell, and no balance is a valuation.
+    nav_by_ts = {} if open_times_unknown else _points_while_flat(nav_by_ts, open_intervals)
 
     source_sha = hashlib.sha256(raw_bytes).hexdigest()
     all_ts = [t.timestamp_utc for t in trades] + [f.timestamp_utc for f in flows] + list(nav_by_ts)
     start_ts = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     end_ts = max(all_ts) if all_ts else start_ts
 
-    if summary_equity is not None and summary_equity > 0.0:
-        nav_by_ts[end_ts] = NormalizedNavPoint(
-            timestamp_utc=end_ts,
-            nav_base=summary_equity,
-            cash_base=round(running_bal, 6) if running_bal > 0.0 else None,
+    # Open trades at period end require both a report timestamp and Summary equity; otherwise
+    # open losses could be hidden behind earlier closed-trade balances.
+    if ending_positions and (report_ts is None or summary_equity is None or report_ts < end_ts):
+        nav_by_ts = {}
+        parser_warnings.append(
+            "MetaTrader 4 statement has open trades at period end without a valid Summary Equity and report timestamp; valuations are withheld."
         )
+    elif (
+        summary_equity is not None
+        and report_ts is not None
+        and report_ts >= end_ts
+        and nav_by_ts
+    ):
+        nav_by_ts[report_ts] = NormalizedNavPoint(
+            timestamp_utc=report_ts,
+            nav_base=summary_equity,
+            cash_base=round(running_bal, 6),
+        )
+        end_ts = report_ts
+
+    nav_points_out = _trim_valuation_series([nav_by_ts[k] for k in sorted(nav_by_ts)])
+
+    # Every trade here comes from a row that is a finished round trip with its own entry
+    # and exit, so no position can be held from before the file within these trades: the
+    # file accounts for its opening positions (there are none), and a first sale is a
+    # genuine short. A fills or deals export, where a row is one side of a trade, never
+    # makes this claim.
+    if trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
 
     tag_seed = raw_acct_id or f"offline:{source_sha[:16]}"
     return CanonicalPortfolioLedger(
@@ -635,10 +821,11 @@ def parse_mt4_statement(
         period_start_utc=start_ts,
         period_end_utc=end_ts,
         ending_positions=ending_positions,
-        nav_points=[nav_by_ts[k] for k in sorted(nav_by_ts)],
+        nav_points=nav_points_out,
         trades=sorted(trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
         flows=sorted(flows, key=lambda f: f.timestamp_utc),
         enabled_sections=enabled_sections or ["mt4_closed_transactions"],
+        parser_warnings=parser_warnings,
     )
 
 
@@ -659,8 +846,9 @@ def parse_mt5_statement(
     reject_xxe_and_dtd_declarations(raw_bytes)
 
     is_html = "<table" in text.lower() or "<tr" in text.lower() or "<html" in text.lower()
+    extra_lines: list[str] = []
     if is_html:
-        title, rows, _ = _extract_html_rows(text)
+        title, rows, _, extra_lines = _extract_html_rows(text)
     else:
         title = ""
         rows = _read_csv_rows(text)
@@ -668,7 +856,9 @@ def parse_mt5_statement(
     if not rows:
         raise ValueError("MT5 statement contains no table or CSV rows")
 
-    raw_acct_id, resolved_ccy, is_demo = _detect_mt_metadata(title, rows, base_currency)
+    raw_acct_id, resolved_ccy, is_demo = _detect_mt_metadata(
+        title, rows, base_currency, extra_lines=extra_lines
+    )
     env_tier = EnvironmentTier.LIVE_PRODUCTION
     if is_demo:
         if reject_demo:
@@ -683,9 +873,21 @@ def parse_mt5_statement(
     positions_fallback_flows: list[NormalizedFlow] = []
     ending_positions: list[NormalizedPosition] = []
     enabled_sections: list[str] = []
+    parser_warnings: list[str] = []
     nav_by_ts: dict[str, NormalizedNavPoint] = {}
     fallback_cash_deltas: list[tuple[str, float]] = []
     summary_equity: float | None = None
+    summary_balance: float | None = None
+    report_ts = _detect_mt_report_time(rows, extra_lines=extra_lines)
+    # Open volume per symbol from the deals' in/out direction, and whether the account was
+    # flat after the last deal at each instant. Once a deal's direction cannot be read the
+    # statement no longer tells whether a position is open, and later instants are not flat.
+    open_volume: dict[str, float] = {}
+    flat_after: dict[str, bool] = {}
+    flatness_unknown = False
+    open_position_times: list[str | None] = []
+    position_open_intervals: list[tuple[str, str]] = []
+    positions_open_times_unknown = False
 
     section = "auto"
     col_map: dict[str, int] = {}
@@ -727,12 +929,16 @@ def parse_mt5_statement(
                 col_map = {}
                 continue
 
-        # Capture Equity from MT5 Summary block if present
+        # Capture Equity from MT5 Summary block if present (including <= 0.0 wipe-outs)
         for i, cell_low in enumerate(lowered):
             if cell_low in {"equity:", "equity"} and (i + 1) < len(row):
                 eq_v = _parse_localized_float(row[i + 1])
-                if eq_v is not None and eq_v > 0.0:
+                if eq_v is not None:
                     summary_equity = eq_v
+            if cell_low == "balance:" and (i + 1) < len(row):
+                bal_v = _parse_localized_float(row[i + 1])
+                if bal_v is not None:
+                    summary_balance = bal_v
 
         # Detect Deals header row
         if "deal" in lowered and "type" in lowered and "profit" in lowered:
@@ -748,6 +954,7 @@ def parse_mt5_statement(
                 "volume": _find_col(lowered, ("volume", "lots", "size")),
                 "price": _find_col(lowered, ("price",)),
                 "order": _find_col(lowered, ("order",)),
+                "position": _find_col(lowered, ("position", "position id", "positionid")),
                 "commission": _find_col(lowered, ("commission",)),
                 "fee": _find_col(lowered, ("fee",)),
                 "swap": _find_col(lowered, ("swap",)),
@@ -772,7 +979,11 @@ def parse_mt5_statement(
                 "type": lowered.index("type"),
                 "volume": lowered.index("volume"),
                 "open_price": price_cols[0] if price_cols else 5,
-                "close_time": time_cols[1] if len(time_cols) >= 2 else (time_cols[0] if time_cols else 0),
+                "close_time": (
+                    time_cols[1]
+                    if len(time_cols) >= 2
+                    else _find_col(lowered, ("close time", "closetime"))
+                ),
                 "close_price": price_cols[1] if len(price_cols) >= 2 else (price_cols[0] if price_cols else 5),
                 "commission": _find_col(lowered, ("commission",)),
                 "swap": _find_col(lowered, ("swap",)),
@@ -799,6 +1010,23 @@ def parse_mt5_statement(
             bal = _parse_localized_float(_cell(row, col_map.get("balance")))
             comment = sanitize_csv_text_field(_cell(row, col_map.get("comment")))
 
+            if deal_type in {"buy", "sell"}:
+                direction = sanitize_csv_text_field(_cell(row, col_map.get("direction"))).lower()
+                sym_key = sanitize_csv_text_field(raw_sym)
+                if direction not in {"in", "out"} or not sym_key or not vol or vol <= 0.0:
+                    flatness_unknown = True
+                else:
+                    held = open_volume.get(sym_key, 0.0) + (vol if direction == "in" else -vol)
+                    if held < -1e-9:
+                        # This closes a position opened before the statement: every earlier
+                        # instant had that position open.
+                        flat_after = {k: False for k in flat_after}
+                        held = 0.0
+                    open_volume[sym_key] = held
+            flat_after[ts] = not flatness_unknown and all(
+                abs(v) <= 1e-9 for v in open_volume.values()
+            )
+
             if deal_type in {"balance", "credit", "bonus"}:
                 if profit != 0.0:
                     flows.append(
@@ -811,7 +1039,7 @@ def parse_mt5_statement(
                         )
                     )
                     fallback_cash_deltas.append((ts, profit))
-                if bal is not None and bal > 0.0:
+                if bal is not None:
                     nav_by_ts[ts] = NormalizedNavPoint(
                         timestamp_utc=ts, nav_base=bal, cash_base=bal
                     )
@@ -830,7 +1058,7 @@ def parse_mt5_statement(
                     )
                 )
                 fallback_cash_deltas.append((ts, profit))
-                if bal is not None and bal > 0.0:
+                if bal is not None:
                     nav_by_ts[ts] = NormalizedNavPoint(
                         timestamp_utc=ts, nav_base=bal, cash_base=bal
                     )
@@ -848,7 +1076,7 @@ def parse_mt5_statement(
                     )
                 )
                 fallback_cash_deltas.append((ts, amt_fee))
-                if bal is not None and bal > 0.0:
+                if bal is not None:
                     nav_by_ts[ts] = NormalizedNavPoint(
                         timestamp_utc=ts, nav_base=bal, cash_base=bal
                     )
@@ -862,6 +1090,26 @@ def parse_mt5_statement(
                     lots=vol,
                 )
                 total_comm_fee = abs(comm) + abs(fee)
+                deal_dir = sanitize_csv_text_field(_cell(row, col_map.get("direction"))).lower()
+                raw_pos_col = (
+                    sanitize_csv_text_field(_cell(row, col_map.get("position")))
+                    if col_map.get("position") is not None
+                    else ""
+                )
+                deal_pos_id: str | None = None
+                if deal_dir in {"in", "out"}:
+                    if (deal_type == "buy" and deal_dir == "in") or (
+                        deal_type == "sell" and deal_dir == "out"
+                    ):
+                        deal_pos_id = f"mt5-deal-long-{raw_pos_col}" if raw_pos_col else "mt5-deal-long"
+                    elif (deal_type == "sell" and deal_dir == "in") or (
+                        deal_type == "buy" and deal_dir == "out"
+                    ):
+                        deal_pos_id = (
+                            f"mt5-deal-short-{raw_pos_col}" if raw_pos_col else "mt5-deal-short"
+                        )
+                elif raw_pos_col:
+                    deal_pos_id = f"mt5-deal-pos-{raw_pos_col}"
                 deals_trades.append(
                     NormalizedTrade(
                         venue="mt5",
@@ -876,6 +1124,7 @@ def parse_mt5_statement(
                         fx_rate_to_base=fx_to_base,
                         multiplier=mult,
                         commission=total_comm_fee,
+                        position_id=deal_pos_id,
                     )
                 )
                 if swap != 0.0:
@@ -892,21 +1141,39 @@ def parse_mt5_statement(
                     )
                 net_delta = profit - abs(comm) - abs(fee) + swap
                 fallback_cash_deltas.append((ts, net_delta))
-                if bal is not None and bal > 0.0:
+                if bal is not None:
                     nav_by_ts[ts] = NormalizedNavPoint(
                         timestamp_utc=ts, nav_base=bal, cash_base=bal
                     )
 
         elif section == "positions":
             open_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("open_time")))
-            if open_ts is None:
-                continue
             pos_id = sanitize_csv_text_field(_cell(row, col_map.get("position"))) or f"pos-{r_idx}"
             raw_sym = _cell(row, col_map.get("symbol"))
             pos_type = sanitize_csv_text_field(_cell(row, col_map.get("type"))).lower()
             vol = _parse_mt_volume(_cell(row, col_map.get("volume")))
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price")))
-            close_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("close_time"))) or open_ts
+            stated_close_ts = (
+                _parse_multi_format_timestamp(_cell(row, col_map.get("close_time")))
+                if col_map.get("close_time") is not None
+                else None
+            )
+            if pos_type in {"buy", "sell"}:
+                if open_ts is None:
+                    positions_open_times_unknown = True
+                    continue
+                if stated_close_ts is not None and stated_close_ts < open_ts:
+                    raise ValueError(
+                        f"MT5 position {pos_id} has close time ({stated_close_ts}) "
+                        f"before open time ({open_ts})"
+                    )
+                if stated_close_ts is None:
+                    positions_open_times_unknown = True
+                else:
+                    position_open_intervals.append((open_ts, stated_close_ts))
+            if open_ts is None:
+                continue
+            close_ts = stated_close_ts or open_ts
             close_px = _parse_localized_float(_cell(row, col_map.get("close_price")))
             comm = _parse_localized_float(_cell(row, col_map.get("commission")), default=0.0) or 0.0
             swap = _parse_localized_float(_cell(row, col_map.get("swap")), default=0.0) or 0.0
@@ -924,6 +1191,7 @@ def parse_mt5_statement(
             )
             half_comm = abs(comm) / 2.0
             close_side = "sell" if pos_type == "buy" else "buy"
+            pos_row_id = f"mt5-pos-{pos_id}-{r_idx}"
             positions_fallback_trades.append(
                 NormalizedTrade(
                     venue="mt5",
@@ -938,6 +1206,7 @@ def parse_mt5_statement(
                     fx_rate_to_base=fx_to_base,
                     multiplier=mult,
                     commission=half_comm,
+                    position_id=pos_row_id,
                 )
             )
             positions_fallback_trades.append(
@@ -954,6 +1223,7 @@ def parse_mt5_statement(
                     fx_rate_to_base=fx_to_base,
                     multiplier=mult,
                     commission=half_comm,
+                    position_id=pos_row_id,
                 )
             )
             if swap != 0.0:
@@ -976,6 +1246,12 @@ def parse_mt5_statement(
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price")))
             mkt_px = _parse_localized_float(_cell(row, col_map.get("close_price"))) or open_px
             floating_pl = _parse_localized_float(_cell(row, col_map.get("profit")), default=0.0) or 0.0
+            if pos_type in {"buy", "sell"}:
+                open_position_times.append(open_ts)
+                if open_ts is None:
+                    positions_open_times_unknown = True
+                else:
+                    position_open_intervals.append((open_ts, _MT_STILL_OPEN))
             if open_ts is None or pos_type not in {"buy", "sell"} or not raw_sym or not vol or open_px is None:
                 continue
             sym, ac, trade_ccy, mult, fx_to_base = _infer_mt_instrument_spec(
@@ -1003,21 +1279,45 @@ def parse_mt5_statement(
                 )
             )
 
+    if extra_lines:
+        extra_joined = "\n".join(extra_lines)
+        if summary_equity is None:
+            m_eq = _MT_INLINE_EQUITY_RE.search(extra_joined)
+            if m_eq:
+                summary_equity = _parse_localized_float(m_eq.group(1))
+        if summary_balance is None:
+            m_bal = _MT_INLINE_BALANCE_RE.search(extra_joined)
+            if m_bal:
+                summary_balance = _parse_localized_float(m_bal.group(1))
+
     final_trades = deals_trades if deals_trades else positions_fallback_trades
     final_flows = flows if deals_trades or flows else positions_fallback_flows
     if not final_trades and not final_flows and not ending_positions:
         raise ValueError("MT5 statement contained no recognizable deals, positions, or balance flows")
 
-    if not nav_by_ts and fallback_cash_deltas:
-        running_bal = 0.0
-        for ts, delta in sorted(fallback_cash_deltas, key=lambda item: item[0]):
-            running_bal += delta
-            if running_bal > 0.0:
-                nav_by_ts[ts] = NormalizedNavPoint(
-                    timestamp_utc=ts,
-                    nav_base=round(running_bal, 6),
-                    cash_base=round(running_bal, 6),
-                )
+    if nav_by_ts:
+        # The deal rows' own Balance column is the statement's balance series.
+        nav_by_ts = {p.timestamp_utc: p for p in _trim_valuation_series(list(nav_by_ts.values()))}
+    elif fallback_cash_deltas:
+        reference_balance = summary_balance
+        if reference_balance is None and summary_equity is not None and not ending_positions:
+            reference_balance = summary_equity
+        nav_by_ts, _ = _reconciled_running_balance_points(
+            fallback_cash_deltas, reference_balance=reference_balance, platform="MetaTrader 5"
+        )
+    # A balance is the account's value only at an instant when no position is open: flat
+    # after that instant's deals and outside every closed/open position interval.
+    if positions_open_times_unknown or any(t is None for t in open_position_times):
+        nav_by_ts = {}
+    else:
+        first_still_open = min(open_position_times, default=_MT_STILL_OPEN)
+        nav_by_ts = {
+            ts: pt
+            for ts, pt in nav_by_ts.items()
+            if flat_after.get(ts, False) and ts < first_still_open
+        }
+        if position_open_intervals:
+            nav_by_ts = _points_while_flat(nav_by_ts, position_open_intervals)
 
     source_sha = hashlib.sha256(raw_bytes).hexdigest()
     all_ts = (
@@ -1028,8 +1328,30 @@ def parse_mt5_statement(
     start_ts = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     end_ts = max(all_ts) if all_ts else start_ts
 
-    if summary_equity is not None and summary_equity > 0.0:
-        nav_by_ts[end_ts] = NormalizedNavPoint(timestamp_utc=end_ts, nav_base=summary_equity)
+    # Open positions at period end require both a report timestamp and Summary equity;
+    # otherwise open losses could be hidden behind earlier flat-balance valuations.
+    if ending_positions and (report_ts is None or summary_equity is None or report_ts < end_ts):
+        nav_by_ts = {}
+        parser_warnings.append(
+            "MetaTrader 5 statement has open positions at period end without a valid Summary Equity and report timestamp; valuations are withheld."
+        )
+    elif (
+        summary_equity is not None
+        and report_ts is not None
+        and report_ts >= end_ts
+        and nav_by_ts
+    ):
+        nav_by_ts[report_ts] = NormalizedNavPoint(timestamp_utc=report_ts, nav_base=summary_equity)
+        end_ts = report_ts
+
+    nav_points_out = _trim_valuation_series([nav_by_ts[k] for k in sorted(nav_by_ts)])
+
+    # When trades come from the Positions table, every trade comes from a row that is a
+    # finished round trip with its own open and close, so no position can be held from
+    # before the file within these trades: a first sale is a genuine short. Trades from the
+    # Deals table (one row per side) never make this claim.
+    if final_trades and not deals_trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
 
     tag_seed = raw_acct_id or f"offline:{source_sha[:16]}"
     return CanonicalPortfolioLedger(
@@ -1044,10 +1366,11 @@ def parse_mt5_statement(
         period_start_utc=start_ts,
         period_end_utc=end_ts,
         ending_positions=ending_positions,
-        nav_points=[nav_by_ts[k] for k in sorted(nav_by_ts)],
+        nav_points=nav_points_out,
         trades=sorted(final_trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
         flows=sorted(final_flows, key=lambda f: f.timestamp_utc),
         enabled_sections=enabled_sections or ["mt5_deals"],
+        parser_warnings=parser_warnings,
     )
 
 
@@ -1115,6 +1438,7 @@ def parse_tradovate_csv(
     enabled_sections: list[str] = []
     warnings: list[str] = []
     seen_accounts: list[str] = []
+    cash_history_currencies: set[str] = set()
     is_demo = False
 
     def _record_account(raw_acct: str) -> None:
@@ -1145,6 +1469,8 @@ def parse_tradovate_csv(
             c_spx = _find_col(hdrs, ("sellprice",))
             c_bts = _find_col(hdrs, ("boughttimestamp", "buytime"))
             c_sts = _find_col(hdrs, ("soldtimestamp", "selltime"))
+            c_ots = _find_col(hdrs, ("opentimestamp", "opentime", "open time"))
+            c_cts = _find_col(hdrs, ("closetimestamp", "closetime", "close time"))
             c_pnl = _find_col(hdrs, ("pnl", "p&l", "grosspnl"))
             c_fee = _find_col(hdrs, ("commission", "fees", "fee"))
             c_bfid = _find_col(hdrs, ("buyfillid",))
@@ -1158,6 +1484,17 @@ def parse_tradovate_csv(
                 sell_px = _parse_localized_float(_cell(row, c_spx))
                 buy_ts = _parse_multi_format_timestamp(_cell(row, c_bts))
                 sell_ts = _parse_multi_format_timestamp(_cell(row, c_sts))
+                explicit_open_ts = _parse_multi_format_timestamp(_cell(row, c_ots)) if c_ots is not None else None
+                explicit_close_ts = _parse_multi_format_timestamp(_cell(row, c_cts)) if c_cts is not None else None
+                if (
+                    explicit_open_ts is not None
+                    and explicit_close_ts is not None
+                    and explicit_close_ts < explicit_open_ts
+                ):
+                    raise ValueError(
+                        f"Tradovate performance row {r_idx} ({sym}) has close timestamp "
+                        f"({explicit_close_ts}) before open timestamp ({explicit_open_ts})"
+                    )
                 if not sym or not qty or qty <= 0.0 or buy_px is None or sell_px is None:
                     continue
                 if buy_ts is None and sell_ts is None:
@@ -1183,6 +1520,7 @@ def parse_tradovate_csv(
                 bfid = sanitize_csv_text_field(_cell(row, c_bfid)) or f"tv-p{part_idx}-{r_idx}-buy"
                 sfid = sanitize_csv_text_field(_cell(row, c_sfid)) or f"tv-p{part_idx}-{r_idx}-sell"
                 half_fee = fee_total / 2.0
+                row_pos_id = f"tv-perf-p{part_idx}-{r_idx}"
 
                 buy_leg = NormalizedTrade(
                     venue="tradovate",
@@ -1197,6 +1535,7 @@ def parse_tradovate_csv(
                     multiplier=mult,
                     commission=half_fee,
                     underlying_symbol=root or None,
+                    position_id=row_pos_id,
                 )
                 sell_leg = NormalizedTrade(
                     venue="tradovate",
@@ -1211,6 +1550,7 @@ def parse_tradovate_csv(
                     multiplier=mult,
                     commission=half_fee,
                     underlying_symbol=root or None,
+                    position_id=row_pos_id,
                 )
                 # Append in chronological fill order (supports both long and short futures trades!)
                 if s_ts < b_ts:
@@ -1296,13 +1636,14 @@ def parse_tradovate_csv(
                 row_ccy = sanitize_csv_text_field(_cell(row, c_ccy)).upper()
                 if len(row_ccy) == 3 and row_ccy.isalpha():
                     resolved_ccy = row_ccy
+                    cash_history_currencies.add(row_ccy)
                 chg_type = sanitize_csv_text_field(_cell(row, c_type))
                 chg_low = chg_type.lower()
                 delta = _parse_localized_float(_cell(row, c_delta), default=0.0) or 0.0
                 bal = _parse_localized_float(_cell(row, c_bal))
                 comment = sanitize_csv_text_field(_cell(row, c_comm))
 
-                if bal is not None and bal > 0.0:
+                if bal is not None:
                     nav_by_ts[ts] = NormalizedNavPoint(
                         timestamp_utc=ts, nav_base=bal, cash_base=bal
                     )
@@ -1342,6 +1683,21 @@ def parse_tradovate_csv(
             )
         env_tier = EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
 
+    # A valuation series describes exactly one account in one currency: cash balances of
+    # several accounts or currencies are never merged into one series.
+    if len(seen_accounts) > 1:
+        raise ValueError(
+            "This Tradovate export contains rows for more than one account. A performance "
+            "record covers one account: export each account separately and upload one file "
+            "per account."
+        )
+    if len(cash_history_currencies) > 1:
+        raise ValueError(
+            "This Tradovate cash history has balances in more than one currency, which cannot "
+            "be combined into one account value without exchange rates; export a cash history "
+            "in a single currency."
+        )
+
     # Prefer paired Performance trades when both Performance and Orders CSVs are supplied to avoid double-counting fills
     final_trades = perf_trades if perf_trades else order_trades
     if not final_trades and not flows and not nav_by_ts:
@@ -1356,6 +1712,12 @@ def parse_tradovate_csv(
     start_ts = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     end_ts = max(all_ts) if all_ts else start_ts
     tag_seed = ",".join(sorted(seen_accounts)) if seen_accounts else f"offline:{source_sha[:16]}"
+    # When trades come from the Performance export, every row pairs a buy fill with a sell
+    # fill, so no position can be held from before the file within these trades: a first
+    # sale is a genuine short. Trades from the Orders export (one fill per row) never make
+    # this claim.
+    if perf_trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
 
     return CanonicalPortfolioLedger(
         blinded_account_tag=compute_blinded_account_tag("tradovate", tag_seed, blinding_salt_hex),
@@ -1368,7 +1730,7 @@ def parse_tradovate_csv(
         base_currency=resolved_ccy,
         period_start_utc=start_ts,
         period_end_utc=end_ts,
-        nav_points=[nav_by_ts[k] for k in sorted(nav_by_ts)],
+        nav_points=_trim_valuation_series([nav_by_ts[k] for k in sorted(nav_by_ts)]),
         trades=sorted(final_trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
         flows=sorted(flows, key=lambda f: f.timestamp_utc),
         enabled_sections=enabled_sections,

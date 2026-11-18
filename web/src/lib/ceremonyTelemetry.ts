@@ -1,5 +1,5 @@
 /**
- * N170 Verify v3 — Step-by-Step WebCrypto Ceremony Telemetry & 7-Leaf Merkle Tree Inspector.
+ * N170 Verify: Step-by-Step WebCrypto Ceremony Telemetry & 7-Leaf Merkle Tree Inspector.
  *
  * Wraps the canonical zero-dependency `browserVerify.ts` primitives without altering
  * a single byte of cryptographic verification logic, capturing real sub-millisecond
@@ -150,7 +150,7 @@ export async function runCeremonyTelemetry(
       id: "ed25519_sig",
       index: 3,
       label: "3. Ed25519 Signature",
-      protocolSpec: "WebCrypto • n170.verify.bundle.v3",
+      protocolSpec: "WebCrypto • n170.verify.bundle",
       status: sigValid && fullResult.signer_trust_status !== "revoked_key" ? "pass" : "fail",
       durationMs: d3,
       metricSummary: sigValid ? `Verified (${bundle.publisher_kid})` : "Invalid Signature",
@@ -173,7 +173,7 @@ export async function runCeremonyTelemetry(
         ? `${ckptWitnesses} witness cosigs • Tree #${options.registryDoc.checkpoint?.size ?? 0}`
         : fullResult.signer_trust_status,
       technicalDetail: ckptValid
-        ? `Verified C2SP transparency checkpoint cosigned by ${ckptWitnesses} independent witnesses and anchored to Base L2 block #${options.registryDoc.l2_anchor?.block_number ?? "—"}.`
+        ? `Verified C2SP transparency checkpoint cosigned by ${ckptWitnesses} independent witnesses and anchored to Base L2 block #${options.registryDoc.l2_anchor?.block_number ?? "-"}.`
         : `Evaluated signer lifecycle status (${fullResult.signer_trust_status}) against /.well-known/n170-verify-keys.json.`,
       digestPreview: `ckpt: ${options.registryDoc.checkpoint?.hash_b64?.slice(0, 24) ?? "offline-pinned"}…`,
     },

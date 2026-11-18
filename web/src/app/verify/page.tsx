@@ -114,18 +114,18 @@ export default function OfflineVerifyPage() {
     parseAndTriggerCeremony(JSON.stringify(next, null, 2));
   };
 
-  const isInstitutionalChain =
+  const isSpecimenChain =
     parsedBundle?.proof_id === BUNDLE_INSTITUTIONAL_FUND.proof_id;
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
         {/* Masthead */}
         <div className="flex flex-col justify-between gap-4 border-b border-hairline pb-6 lg:flex-row lg:items-end">
           <div className="max-w-3xl space-y-2">
             <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
               <span className="badge-emerald rounded px-2 py-0.5 font-semibold uppercase tracking-wider">
-                Air-Gapped Browser WebCrypto • 0 Bytes Sent to Server
+                Offline Browser WebCrypto • 0 Bytes Sent to Server
               </span>
               <span className="rounded border border-hairline-strong bg-panel px-2 py-0.5 text-ink-secondary">
                 {liveRegistryConnected
@@ -193,7 +193,7 @@ export default function OfflineVerifyPage() {
             <div className="space-y-3">
               <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-signal-champagne">
                 <Upload className="h-4 w-4" />
-                <span>Air-Gapped .verify.json Dropzone</span>
+                <span>Offline .verify.json Dropzone</span>
               </div>
               <p className="text-xs text-ink-secondary">
                 Drag and drop a signed bundle from disk or select a local file. Bytes
@@ -298,12 +298,12 @@ export default function OfflineVerifyPage() {
               bundle={parsedBundle}
               registryDoc={activeRegistryDoc}
               chainHistory={
-                isInstitutionalChain
+                isSpecimenChain
                   ? [BUNDLE_INSTITUTIONAL_SEQ0, BUNDLE_INSTITUTIONAL_SEQ1]
                   : []
               }
               continuityLogLeaves={
-                isInstitutionalChain ? DEMO_CONTINUITY_LOG_LEAVES : undefined
+                isSpecimenChain ? DEMO_CONTINUITY_LOG_LEAVES : undefined
               }
               enableRedactionSimulator={false}
               autoPlayOnMount
@@ -317,12 +317,12 @@ export default function OfflineVerifyPage() {
             bundle={parsedBundle}
             registryDoc={activeRegistryDoc}
             chainHistory={
-              isInstitutionalChain
+              isSpecimenChain
                 ? [BUNDLE_INSTITUTIONAL_SEQ0, BUNDLE_INSTITUTIONAL_SEQ1]
                 : []
             }
             continuityLogLeaves={
-              isInstitutionalChain ? DEMO_CONTINUITY_LOG_LEAVES : undefined
+              isSpecimenChain ? DEMO_CONTINUITY_LOG_LEAVES : undefined
             }
             title={`Inspected Proof Bundle • ${parsedBundle.proof_id}`}
           />

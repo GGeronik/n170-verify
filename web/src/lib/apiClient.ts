@@ -1,10 +1,10 @@
 /**
- * N170 Verify v3 — Typed Client & Server API Adapter (`NEXT_PUBLIC_N170_VERIFY_API_URL`).
+ * N170 Verify: Typed Client & Server API Adapter (`NEXT_PUBLIC_N170_VERIFY_API_URL`).
  *
  * Connects `/connect`, `/p/[proofId]`, `/verify`, `/leaderboard`, and
  * `/.well-known/n170-verify-keys.json` to `./api` when configured,
  * with automatic offline fallback to cryptographically signed showcase bundles
- * when running air-gapped or statically hosted.
+ * when running offline or statically hosted.
  */
 
 import {
@@ -124,48 +124,6 @@ export function getBadgeSvgUrl(
   return `${base}/api/v1/badges/${encodeURIComponent(proofId)}.svg`;
 }
 
-export function mergeWithDemoRegistry(
-  liveDoc: PublisherKeyRegistryDocument | null,
-): PublisherKeyRegistryDocument {
-  if (!liveDoc) {
-    return DEMO_REGISTRY_DOCUMENT;
-  }
-  const seenKids = new Set<string>(liveDoc.keys.map((k) => k.publisher_kid));
-  const mergedKeys: PublisherKeyRecord[] = [...liveDoc.keys];
-  for (const dk of DEMO_REGISTRY_DOCUMENT.keys) {
-    if (!seenKids.has(dk.publisher_kid)) {
-      mergedKeys.push(dk);
-    }
-  }
-
-  const seenNotaries = new Set<string>(liveDoc.notaries.map((n) => n.notary_id));
-  const mergedNotaries: NotaryNodeInfo[] = [...liveDoc.notaries];
-  for (const dn of DEMO_REGISTRY_DOCUMENT.notaries) {
-    if (!seenNotaries.has(dn.notary_id)) {
-      mergedNotaries.push(dn);
-    }
-  }
-
-  const mergedBrokerKeys: Record<string, Record<string, string>> = {
-    ...(DEMO_REGISTRY_DOCUMENT.pinned_broker_keys ?? {}),
-  };
-  for (const [brokerId, keyMap] of Object.entries(
-    liveDoc.pinned_broker_keys ?? {},
-  )) {
-    mergedBrokerKeys[brokerId] = {
-      ...(mergedBrokerKeys[brokerId] ?? {}),
-      ...keyMap,
-    };
-  }
-
-  return {
-    ...liveDoc,
-    keys: mergedKeys,
-    notaries: mergedNotaries,
-    pinned_broker_keys: mergedBrokerKeys,
-  };
-}
-
 export async function fetchLiveRegistryDocument(
   fetchImpl: typeof fetch = fetch,
 ): Promise<PublisherKeyRegistryDocument | null> {
@@ -192,6 +150,36 @@ export async function fetchLiveRegistryDocument(
   }
 }
 
+
+export function combineRegistryDocuments(
+  liveDoc: PublisherKeyRegistryDocument | null,
+): PublisherKeyRegistryDocument {
+  if (!liveDoc) {
+    return DEMO_REGISTRY_DOCUMENT;
+  }
+  const seenKids = new Set<string>(liveDoc.keys.map((k) => k.publisher_kid));
+  const mergedKeys: PublisherKeyRecord[] = [...liveDoc.keys];
+  for (const dk of DEMO_REGISTRY_DOCUMENT.keys) {
+    if (!seenKids.has(dk.publisher_kid)) {
+      mergedKeys.push(dk);
+    }
+  }
+
+  const seenNotaries = new Set<string>(liveDoc.notaries.map((n) => n.notary_id));
+  const mergedNotaries: NotaryNodeInfo[] = [...liveDoc.notaries];
+  for (const dn of DEMO_REGISTRY_DOCUMENT.notaries) {
+    if (!seenNotaries.has(dn.notary_id)) {
+      mergedNotaries.push(dn);
+    }
+  }
+
+  return {
+    ...liveDoc,
+    keys: mergedKeys,
+    notaries: mergedNotaries,
+  };
+}
+
 export async function fetchActiveRegistryDocument(
   fetchImpl: typeof fetch = fetch,
 ): Promise<{
@@ -200,7 +188,7 @@ export async function fetchActiveRegistryDocument(
 }> {
   const liveDoc = await fetchLiveRegistryDocument(fetchImpl);
   return {
-    registryDoc: mergeWithDemoRegistry(liveDoc),
+    registryDoc: combineRegistryDocuments(liveDoc),
     liveConnected: liveDoc !== null,
   };
 }

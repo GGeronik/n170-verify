@@ -344,6 +344,10 @@ class TestBehaviouralMetricsAndDisposition(unittest.TestCase):
             ),
         ]
         ledger = _make_base_ledger(trades=trades, corporate_actions=actions)
+        # The input states its opening positions (none), so XYZ's first sale opens a short.
+        ledger = CanonicalPortfolioLedger.from_dict(
+            {**ledger.to_dict(), "enabled_sections": ["PriorPeriodPositions"]}
+        )
         trips = match_fifo_round_trips(ledger)
         self.assertEqual(len(trips), 3)
 

@@ -28,7 +28,7 @@ export default async function ProofTearSheetPage({
 
   if (!profile) {
     return (
-      <div className="bg-institutional-grid py-16">
+      <div className="bg-telemetry-grid py-16">
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <div className="inst-panel rounded-md p-8 text-center">
             <p className="font-mono text-xs font-semibold uppercase tracking-widest text-signal-ochre">
@@ -42,7 +42,7 @@ export default async function ProofTearSheetPage({
               By default, N170 Verify executes in{" "}
               <code className="text-ink">no_persistent_storage</code> mode and never
               retains user proof bundles unless explicitly published. Drop your local{" "}
-              <code className="text-ink">.verify.json</code> file into the air-gapped
+              <code className="text-ink">.verify.json</code> file into the offline
               verifier or inspect a signed public showcase specimen below.
             </p>
 
@@ -79,7 +79,7 @@ export default async function ProofTearSheetPage({
   const useContinuityLog = profile.proofId === "prf-inst-alpha-012";
 
   return (
-    <div className="bg-institutional-grid">
+    <div className="bg-telemetry-grid">
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         {/* Screen-Only Specimen Switcher Strip (Hidden on Cmd+P Print) */}
         <div className="no-print inst-panel flex flex-wrap items-center justify-between gap-2 rounded-md px-4 py-2.5 text-xs">

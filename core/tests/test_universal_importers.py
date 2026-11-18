@@ -422,8 +422,10 @@ class TestMt4Mt5AndTradovateImporters(unittest.TestCase):
         # Open Trades parsed into ending_positions (GBPUSD 0.20 lot)
         self.assertEqual(len(mt4_ledger.ending_positions), 1)
         self.assertAlmostEqual(mt4_ledger.ending_positions[0].quantity, 0.20)
-        # Final Summary Equity anchored at 10186.60
-        self.assertAlmostEqual(mt4_ledger.nav_points[-1].nav_base, 10_186.60)
+        # The Summary states no balance and a trade is open, so the balance rebuilt from the
+        # rows cannot be checked against the statement, and the equity has no stated report
+        # time: no valuation is emitted and the return is withheld.
+        self.assertEqual(mt4_ledger.nav_points, [])
 
         # Demo/Contest server rejected when reject_demo=True, flagged when reject_demo=False
         demo_html = _synthetic_mt4_html(server="MetaQuotes-Demo", account_id="99112233")
@@ -441,7 +443,8 @@ class TestMt4Mt5AndTradovateImporters(unittest.TestCase):
         )
         mt4_csv_ledger = parse_mt4_statement(mt4_csv, blinding_salt_hex=TEST_SALT_HEX)
         self.assertEqual(len(mt4_csv_ledger.trades), 2)
-        self.assertAlmostEqual(mt4_csv_ledger.nav_points[-1].nav_base, 5196.50)
+        # No Summary to reconcile the rebuilt balance with: no valuation is emitted.
+        self.assertEqual(mt4_csv_ledger.nav_points, [])
 
     def test_mt5_html_and_utf16_csv_deals_commission_fee_swap_profit_accounting(self) -> None:
         mt5_ledger = Mt5OfflineStatementAdapter().parse_export(

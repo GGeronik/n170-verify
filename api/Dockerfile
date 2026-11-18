@@ -20,11 +20,12 @@ COPY api /srv/n170-verify/api
 COPY README.md /srv/n170-verify/README.md
 
 RUN pip install --no-cache-dir /srv/n170-verify/core "/srv/n170-verify/api[fastapi]" \
-    && chown -R n170verify:n170verify /srv/n170-verify
+    && mkdir -p /data /var/lib/n170-verify \
+    && chown -R n170verify:n170verify /srv/n170-verify /data /var/lib/n170-verify
 
 USER n170verify:n170verify
 WORKDIR /srv/n170-verify/api
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "ulimit -c 0 && exec python3 -B -m app.main --host 0.0.0.0 --port 8080"]
+CMD ["sh", "-c", "ulimit -c 0 && exec python3 -B -m app.main --host 0.0.0.0 --port ${PORT:-8080}"]

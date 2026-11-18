@@ -181,7 +181,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 ),
             ],
             trusted_notaries=self.notaries,
-            checkpoint_origin="verify.n170.ai/continuity-log/v3",
+            checkpoint_origin="verify.example.org/continuity-log/v3",
             checkpoint_witness_signers=[
                 (
                     "witness-cosigner-1",
@@ -191,6 +191,8 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
                 )
             ],
             hosted_multi_user_mode=True,
+            allow_client_supplied_series_for_tests=True,
+            allow_caller_clock_for_tests=True,
             db_path=":memory:",
             sync_db_path=":memory:",
             vault_master_kek_hex="aa" * 32,
@@ -203,13 +205,27 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
     def tearDown(self) -> None:
         self.app.close()
 
+    def _self_hosted_app(self, **kwargs: object) -> VerifyApiApplication:
+        """The same configuration as a self-hosted deployment (hosted mode off)."""
+        import dataclasses
+
+        return create_app(
+            dataclasses.replace(self.config, hosted_multi_user_mode=False),
+            prefer_fastapi=False,
+            **kwargs,
+        )
+
     # ------------------------------------------------------------------
     # 1. Subprocess-Isolated One-Shot Mode & Governance Enforcement
     # ------------------------------------------------------------------
     def test_one_shot_verify_spawn_isolation_rlimit_core_and_zero_db_rows(self) -> None:
+        # The synthetic series needs an account id and period, which only a self-hosted
+        # deployment accepts on this route.
+        self_hosted = self._self_hosted_app()
+        self.addCleanup(self_hosted.close)
         os.environ["N170_CANARY_PARENT_SECRET"] = "do-not-leak-into-child-env"
         try:
-            resp = self.client.post(
+            resp = VerifyApiTestClient(self_hosted).post(
                 "/api/v1/verify",
                 json={
                     "broker_id": "ibkr_flex",
@@ -254,10 +270,10 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
 
         # Confirm ZERO rows written across ProofStore and SyncVault in one-shot mode
         self.assertEqual(
-            self.app.store.total_row_counts(),
+            self_hosted.store.total_row_counts(),
             {"proofs": 0, "chains": 0, "continuity_log": 0},
         )
-        self.assertEqual(self.app.sync_vault.connection_count(), 0)
+        self.assertEqual(self_hosted.sync_vault.connection_count(), 0)
 
         # Confirm zero raw account IDs, tokens, raw statement text, or dollar NAVs in output
         serialized = resp.text
@@ -361,7 +377,11 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
             },
         ]
 
-        resp = self.client.post(
+        # The synthetic trade list needs an account id and period, which only a self-hosted
+        # deployment accepts on this route.
+        self_hosted = self._self_hosted_app()
+        self.addCleanup(self_hosted.close)
+        resp = VerifyApiTestClient(self_hosted).post(
             "/api/v1/verify",
             json={
                 "broker_id": "schwab",
@@ -1341,10 +1361,10 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
     # 9. Dependency-Injected Pipeline Protocol & Key Lifecycle Checks
     # ------------------------------------------------------------------
     def test_dependency_injected_pipeline_spec_in_spawn_worker(self) -> None:
-        custom_app = create_app(
-            self.config,
+        # The hook's synthetic record needs an account id and period, which only a
+        # self-hosted deployment accepts on this route.
+        custom_app = self._self_hosted_app(
             pipeline_spec="test_api_lifecycle_and_security:sample_injected_wave3_pipeline",
-            prefer_fastapi=False,
         )
         try:
             cclient = VerifyApiTestClient(custom_app)
@@ -1439,7 +1459,12 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
     def test_from_env_defaults_zero_demo_notaries_and_parses_env_notaries_and_sync_token(self) -> None:
         from unittest import mock
 
-        with mock.patch.dict(os.environ, {}, clear=True):
+        hosted_keys = {
+            "N170_VERIFY_ACCOUNT_SALT_HEX": "ab" * 32,
+            "N170_VERIFY_VAULT_KEK_HEX": "cd" * 32,
+            "N170_VERIFY_SIGNING_SEED_HEX": "42" * 32,
+        }
+        with mock.patch.dict(os.environ, hosted_keys, clear=True):
             cfg_default = ApiConfig.from_env()
         self.assertEqual(cfg_default.trusted_notaries, [])
         self.assertEqual(ApiConfig().trusted_notaries, [])
@@ -1457,6 +1482,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
             {
                 "N170_VERIFY_TRUSTED_NOTARIES_JSON": json.dumps(env_notaries),
                 "N170_VERIFY_SYNC_API_TOKEN": "prod-sync-secret-99",
+                **hosted_keys,
             },
             clear=True,
         ):
@@ -1619,7 +1645,8 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
 
         # Re-submitting identical bundle is idempotent and preserves stored_at_utc
         r_idem = self.client.post("/api/v1/proofs", json={"proof_bundle": original_bundle.to_dict()})
-        self.assertEqual(r_idem.status_code, 201, r_idem.text)
+        # An unchanged re-post answers 200 with the record already stored.
+        self.assertEqual(r_idem.status_code, 200, r_idem.text)
         self.assertEqual(
             self.client.get("/api/v1/proofs/prf-immutable-conflict-test").json()["stored_at_utc"],
             first_stored_at,

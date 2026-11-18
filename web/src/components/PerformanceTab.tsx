@@ -145,12 +145,12 @@ export function PerformanceTab({
               ? `${(perf.unsmoothed_volatility * 100).toFixed(1)}%`
               : perf.annualized_volatility != null
                 ? `${(perf.annualized_volatility * 100).toFixed(1)}%`
-                : "—"
+                : "-"
           }
           sub={`Raw ${
             perf.annualized_volatility != null
               ? `${(perf.annualized_volatility * 100).toFixed(1)}%`
-              : "—"
+              : "-"
           } • ξ̂=${fmtNum(perf.smoothing_index_xi)}`}
         />
         <MetricCard
@@ -237,7 +237,7 @@ export function PerformanceTab({
         </div>
       )}
 
-      {/* Glowing 1,000-Path Stationary Block-Bootstrap & Risk-of-Ruin Fan Chart */}
+      {/* 1,000-Path Stationary Block-Bootstrap & Risk-of-Ruin Fan Chart */}
       <BootstrapFanChartPanel
         summary={bootstrapSummary}
         hoverConeIdx={hoverConeIdx}
@@ -252,7 +252,7 @@ export function PerformanceTab({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-signal-champagne">
-                  Getmansky–Lo–Makarov (2004)
+                  Getmansky-Lo-Makarov (2004)
                 </p>
                 <h3 className="mt-0.5 text-sm font-semibold tracking-telemetry text-ink">
                   Autocorrelation-Adjusted Volatility &amp; Sharpe
@@ -505,7 +505,7 @@ export function PerformanceTab({
                               className="flex h-14 flex-col justify-between rounded border border-hairline bg-elevated/30 p-1.5 font-mono text-[9.5px] text-ink-muted/60 tabular-nums"
                             >
                               <span>{String(dayNum).padStart(2, "0")}</span>
-                              <span className="text-[9px]">—</span>
+                              <span className="text-[9px]">-</span>
                             </div>
                           );
                         }
@@ -833,15 +833,6 @@ function BootstrapFanChartPanel({
               <stop offset="0%" stopColor="var(--signal-emerald)" stopOpacity="0.18" />
               <stop offset="100%" stopColor="var(--signal-emerald)" stopOpacity="0.34" />
             </linearGradient>
-            <filter id="bootstrapMedianGlow" x="-10%" y="-25%" width="120%" height="150%">
-              <feDropShadow
-                dx="0"
-                dy="0"
-                stdDeviation="3.5"
-                floodColor="var(--signal-emerald)"
-                floodOpacity="0.45"
-              />
-            </filter>
           </defs>
 
           {/* Horizontal Reference Hairlines */}
@@ -890,14 +881,14 @@ function BootstrapFanChartPanel({
             strokeOpacity="0.8"
           />
 
-          {/* Glowing p50 Median Trajectory */}
+          {/* p50 Median Trajectory */}
           <path
             d={medianPath}
             fill="none"
             stroke="var(--chart-wealth-stroke)"
             strokeWidth="2.5"
             strokeLinecap="round"
-            filter="url(#bootstrapMedianGlow)"
+            
           />
 
           {/* Active Step Crosshair */}
@@ -1065,15 +1056,6 @@ function SynchronizedWealthDrawdownSvg({
             <stop offset="0%" stopColor="transparent" />
             <stop offset="100%" stopColor="var(--chart-dd-top)" />
           </linearGradient>
-          <filter id="instWealthGlow" x="-8%" y="-20%" width="116%" height="140%">
-            <feDropShadow
-              dx="0"
-              dy="0"
-              stdDeviation="3"
-              floodColor="var(--signal-emerald)"
-              floodOpacity="0.38"
-            />
-          </filter>
         </defs>
 
         {/* Fine 1px Horizontal Hairlines (Zero Heavy Dashed Gridlines) */}
@@ -1118,7 +1100,7 @@ function SynchronizedWealthDrawdownSvg({
           strokeWidth="2.35"
           strokeLinecap="round"
           strokeLinejoin="round"
-          filter="url(#instWealthGlow)"
+          
         />
 
         {/* Synchronized Underwater Drawdown Pane */}

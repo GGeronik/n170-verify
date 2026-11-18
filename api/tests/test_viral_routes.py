@@ -309,7 +309,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
                 ),
             ],
             trusted_notaries=notaries,
-            checkpoint_origin="verify.n170.ai/continuity-log/v3",
+            checkpoint_origin="verify.example.org/continuity-log/v3",
             checkpoint_witness_signers=[
                 (
                     "witness-c2sp-1",
@@ -319,6 +319,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
                 )
             ],
             hosted_multi_user_mode=True,
+            allow_caller_clock_for_tests=True,
             account_blinding_salt_hex="ab" * 32,
             vault_master_kek_hex="cd" * 32,
             sync_backup_retention_hours=0,
@@ -871,7 +872,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
             file_field="file",
             filename="tradersync_trades.csv",
             file_bytes=SYNTHETIC_TRADERSYNC_CSV.encode("utf-8"),
-            extra_fields={"base_currency": "USD", "issued_at_utc": "2026-02-01T00:00:00Z"},
+            extra_fields={"issued_at_utc": "2026-02-01T00:00:00Z"},
         )
         ts_resp = self.stdlib_client.post(
             "/api/v1/verify/auto-detect",
@@ -888,7 +889,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
         self.assertEqual(ts_data["reconciliation_status"], "insufficient_sections")
         self.assertTrue(any("ORB Breakout" in t for t in ts_data["imported_journal_tags"]))
 
-        # Suppressing journal tags with include_journal_tags=False yields empty list
+        # The upload signs the shared pipeline's journal tags; a caller cannot switch them off.
         ts_notags = self.stdlib_client.post(
             "/api/v1/verify/auto-detect",
             json={
@@ -898,12 +899,12 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
                 "issued_at_utc": "2026-02-01T00:00:00Z",
             },
         )
-        self.assertEqual(ts_notags.status_code, 200, ts_notags.text)
-        self.assertEqual(ts_notags.json()["imported_journal_tags"], [])
+        self.assertEqual(ts_notags.status_code, 400, ts_notags.text)
+        self.assertEqual(ts_notags.json()["error"], "field_not_accepted")
 
         # 3. Raw CSV body upload (Robinhood CSV)
         rh_resp = self.fastapi_client.post(
-            "/api/v1/verify/auto-detect?base_currency=USD&issued_at_utc=2026-02-01T00:00:00Z",
+            "/api/v1/verify/auto-detect?issued_at_utc=2026-02-01T00:00:00Z",
             content=SYNTHETIC_ROBINHOOD_CSV.encode("utf-8"),
             headers={"Content-Type": "text/csv", "X-Filename": "robinhood_activity.csv"},
         )

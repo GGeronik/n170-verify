@@ -42,6 +42,24 @@ CAPITAL_FLOW_KINDS_FOR_TWR: frozenset[FlowKind] = frozenset(
 
 SECONDS_PER_ACT365_YEAR = 365.0 * 86400.0
 
+# A return is withheld when the cash flows inside one valuation interval (gross: the sum of
+# the absolute external and in-kind flows) add up to more than this fraction of the
+# account's value at the start of that interval.
+LARGE_INTERVAL_FLOW_FRACTION = 0.10
+
+# Annualised figures are withheld when the longest valuation interval is more than this many
+# times the median interval. Five leaves room for business-day series across long weekends and
+# holidays (a 4-day Thursday-to-Monday gap against a 1-day median).
+UNEVEN_INTERVAL_RATIO = 5.0
+
+# Annualised figures also need at least this many intervals, none shorter than this (one day
+# less six hours, so a daily close stamped a little early or late still counts as a day).
+MIN_ANNUALISED_INTERVALS = 3
+MIN_ANNUALISED_INTERVAL_SECONDS = 18.0 * 3600.0
+
+# CAGR states a yearly rate, so it is signed only for a series spanning at least a year.
+MIN_CAGR_SPAN_DAYS = 365.0
+
 
 @dataclass(frozen=True, slots=True)
 class SubperiodReturnObservation:
@@ -60,6 +78,8 @@ class PerformanceCalculationResult:
     return_observations: tuple[SubperiodReturnObservation, ...]
     econometrics: EconometricBundle | None
     withheld: bool
+    # Intervals per year used to annualise; None when withheld or the intervals are uneven.
+    annualization_periods_per_year: float | None = None
 
 
 def _has_valid_base_valuation(flow: NormalizedFlow, ledger: CanonicalPortfolioLedger) -> bool:
@@ -331,18 +351,42 @@ def _build_daily_calendar_cells(
     return cells
 
 
+def _withheld_result(
+    warnings: list[str],
+    *,
+    psr_benchmark_sr: float,
+    methodology: str,
+) -> PerformanceCalculationResult:
+    """Return a summary that states no return was computed; its numeric fields are placeholders."""
+    reason = warnings[-1]
+    summary = PerformanceSummary(
+        twr_decimal=0.0,
+        psr_benchmark_sr=psr_benchmark_sr,
+        methodology=methodology,
+        warnings=list(dict.fromkeys(warnings)),
+        performance_withheld=True,
+        withheld_reasons=[reason],
+    )
+    return PerformanceCalculationResult(
+        summary=summary,
+        return_observations=(),
+        econometrics=None,
+        withheld=True,
+    )
+
+
 def calculate_portfolio_performance_detailed(
     ledger: CanonicalPortfolioLedger,
     *,
     reference_provider: ReferenceDataProvider | None = None,
     benchmark_symbol: str | None = None,
     annual_risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = None,
     cash_flow_timing: str = "end_of_day",
     psr_benchmark_sr: float = 0.0,
 ) -> PerformanceCalculationResult:
     """Compute cash- and in-kind-flow-adjusted TWR, CAGR, XIRR, GLM unsmoothing, and gated PSR."""
-    if periods_per_year <= 0:
+    if periods_per_year is not None and periods_per_year <= 0:
         raise ValueError("periods_per_year must be positive")
     if not math.isfinite(annual_risk_free_rate) or annual_risk_free_rate <= -1.0:
         raise ValueError("annual_risk_free_rate must be finite and > -1.0")
@@ -358,18 +402,7 @@ def calculate_portfolio_performance_detailed(
 
     if len(ledger.nav_points) < 2:
         warnings.append("At least two NAV observations are required to compute portfolio returns.")
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     nav_sorted: list[tuple[datetime, NormalizedNavPoint]] = sorted(
         ((parse_utc_timestamp(pt.timestamp_utc), pt) for pt in ledger.nav_points),
@@ -378,18 +411,7 @@ def calculate_portfolio_performance_detailed(
     nav_timestamps = [ts for ts, _ in nav_sorted]
     if len(set(nav_timestamps)) != len(nav_timestamps):
         warnings.append("Performance metrics were withheld due to duplicate NAV timestamps.")
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     start_ts = nav_timestamps[0]
     end_ts = nav_timestamps[-1]
@@ -417,18 +439,7 @@ def calculate_portfolio_performance_detailed(
             "Performance metrics were withheld because at least one in-period external or in-kind "
             "capital flow lacks base-currency valuation."
         )
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     observations: list[SubperiodReturnObservation] = []
     for (prev_ts, prev_pt), (curr_ts, curr_pt) in zip(nav_sorted, nav_sorted[1:]):
@@ -440,6 +451,27 @@ def calculate_portfolio_performance_detailed(
         net_flow = math.fsum(f_amt for _, f_amt in interval_flows)
         open_val = float(prev_pt.nav_base)
         close_val = float(curr_pt.nav_base)
+
+        if open_val <= 0.0 or not math.isfinite(open_val):
+            # An interval that opens at or below zero has no return in any timing mode.
+            warnings.append(
+                f"Performance metrics were withheld because the flow-adjusted sub-period return ending "
+                f"{curr_pt.timestamp_utc} is non-positive or invalid."
+            )
+            return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
+
+        if open_val > 0.0:
+            gross_flow = math.fsum(abs(f_amt) for _, f_amt in interval_flows)
+            if gross_flow > LARGE_INTERVAL_FLOW_FRACTION * open_val:
+                warnings.append(
+                    f"Performance metrics were withheld because cash flows of "
+                    f"{100.0 * gross_flow / open_val:.1f}% of the opening value fall inside the "
+                    f"valuation interval ending {curr_pt.timestamp_utc}; that interval's return "
+                    "cannot be computed from its two valuations."
+                )
+                return _withheld_result(
+                    warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology
+                )
 
         if cash_flow_timing == "end_of_day":
             denom = open_val
@@ -461,18 +493,7 @@ def calculate_portfolio_performance_detailed(
                 f"Performance metrics were withheld because the flow-adjusted sub-period return ending "
                 f"{curr_pt.timestamp_utc} is non-positive or invalid."
             )
-            summary = PerformanceSummary(
-                twr_decimal=0.0,
-                psr_benchmark_sr=psr_benchmark_sr,
-                methodology=methodology,
-                warnings=list(dict.fromkeys(warnings)),
-            )
-            return PerformanceCalculationResult(
-                summary=summary,
-                return_observations=(),
-                econometrics=None,
-                withheld=True,
-            )
+            return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
         observations.append(
             SubperiodReturnObservation(
@@ -533,55 +554,90 @@ def calculate_portfolio_performance_detailed(
 
     twr_decimal = wealth - 1.0
     elapsed_days = (end_ts - start_ts).total_seconds() / 86400.0
+
+    # The annualisation factor is the scored series' own number of intervals per year
+    # (ACT/365), unless a library caller states one. Annualised figures are signed only for a
+    # series that can carry one factor: at least MIN_ANNUALISED_INTERVALS intervals, none
+    # shorter than MIN_ANNUALISED_INTERVAL_SECONDS, and every interval within
+    # UNEVEN_INTERVAL_RATIO of the median either way. Otherwise they are withheld while the
+    # return itself stands.
+    gaps_sec = [
+        (curr_ts - prev_ts).total_seconds()
+        for (prev_ts, _), (curr_ts, _) in zip(nav_sorted, nav_sorted[1:])
+    ]
+    span_years = (end_ts - start_ts).total_seconds() / SECONDS_PER_ACT365_YEAR
+    refusal: str | None = None
+    if len(gaps_sec) < MIN_ANNUALISED_INTERVALS:
+        refusal = f"fewer than {MIN_ANNUALISED_INTERVALS} valuation intervals"
+    elif min(gaps_sec) < MIN_ANNUALISED_INTERVAL_SECONDS:
+        refusal = "a valuation interval shorter than a day"
+    else:
+        med_gap = median(gaps_sec)
+        if max(gaps_sec) > UNEVEN_INTERVAL_RATIO * med_gap or min(gaps_sec) < med_gap / UNEVEN_INTERVAL_RATIO:
+            refusal = (
+                f"uneven valuation intervals (one is more than {UNEVEN_INTERVAL_RATIO:g} times "
+                "longer or shorter than the median)"
+            )
+    annualization_factor: float | None
+    if refusal is not None:
+        annualization_factor = None
+        warnings.append(
+            f"The annualised figures are withheld because the scored series has {refusal}: "
+            "CAGR, XIRR, volatility, Sharpe, Sortino, the probabilistic Sharpe ratio and the "
+            "information ratio."
+        )
+    elif periods_per_year is not None:
+        annualization_factor = float(periods_per_year)
+    else:
+        annualization_factor = len(gaps_sec) / span_years
+
     cagr_decimal: float | None = None
-    if elapsed_days > 0.0 and wealth > 0.0:
+    if annualization_factor is not None and elapsed_days >= MIN_CAGR_SPAN_DAYS and wealth > 0.0:
         try:
             cagr_decimal = wealth ** (365.0 / elapsed_days) - 1.0
         except OverflowError:
             cagr_decimal = None
-        if elapsed_days < 90.0:
-            warnings.append("CAGR over a period shorter than 90 days is highly unstable.")
-
-    gaps_days = [
-        (curr_ts - prev_ts).total_seconds() / 86400.0
-        for (prev_ts, _), (curr_ts, _) in zip(nav_sorted, nav_sorted[1:])
-    ]
-    if gaps_days and median(gaps_days) > 4.0:
+    elif annualization_factor is not None:
         warnings.append(
-            f"NAV observations have median spacing > 4 days; {periods_per_year}-period annualization may distort volatility."
+            f"CAGR and XIRR are withheld because the scored series spans less than {MIN_CAGR_SPAN_DAYS:g} days."
         )
 
     ann_vol: float | None = None
     sharpe: float | None = None
     sortino: float | None = None
-    if len(returns) >= 2:
-        ann_vol = stdev(returns) * math.sqrt(periods_per_year)
-        rf_period = (1.0 + annual_risk_free_rate) ** (1.0 / periods_per_year) - 1.0
+    if annualization_factor is None:
+        pass
+    elif len(returns) >= 2:
+        ann_vol = stdev(returns) * math.sqrt(annualization_factor)
+        rf_period = (1.0 + annual_risk_free_rate) ** (1.0 / annualization_factor) - 1.0
         excess = [r - rf_period for r in returns]
         excess_std = stdev(excess)
         if excess_std > 0.0:
-            sharpe = (mean(excess) / excess_std) * math.sqrt(periods_per_year)
+            sharpe = (mean(excess) / excess_std) * math.sqrt(annualization_factor)
         else:
             warnings.append("Sharpe ratio is undefined because excess-return volatility is zero.")
 
         downside_dev = math.sqrt(mean(min(val, 0.0) ** 2 for val in excess))
         if downside_dev > 0.0:
-            sortino = (mean(excess) / downside_dev) * math.sqrt(periods_per_year)
+            sortino = (mean(excess) / downside_dev) * math.sqrt(annualization_factor)
         else:
             warnings.append("Sortino ratio is undefined because there are no downside excess returns.")
     else:
         warnings.append("Volatility, Sharpe, and Sortino require at least two return observations.")
 
-    xirr_cfs: list[tuple[datetime, float]] = [(start_ts, -float(nav_sorted[0][1].nav_base))]
-    for fts, fl in in_period_flows:
-        xirr_cfs.append((fts, -_signed_flow_amount_base(fl)))
-    xirr_cfs.append((end_ts, float(nav_sorted[-1][1].nav_base)))
-    xirr_val, xirr_warnings = solve_xirr_act365(xirr_cfs, preferred_rate=cagr_decimal)
-    warnings.extend(xirr_warnings)
+    xirr_decimal: float | None = None
+    if annualization_factor is not None and elapsed_days >= MIN_CAGR_SPAN_DAYS:
+        xirr_cfs: list[tuple[datetime, float]] = [(start_ts, -float(nav_sorted[0][1].nav_base))]
+        for fts, fl in in_period_flows:
+            xirr_cfs.append((fts, -_signed_flow_amount_base(fl)))
+        xirr_cfs.append((end_ts, float(nav_sorted[-1][1].nav_base)))
+        xirr_val, xirr_warnings = solve_xirr_act365(xirr_cfs, preferred_rate=cagr_decimal)
+        xirr_decimal = xirr_val
+        warnings.extend(xirr_warnings)
 
     econ = evaluate_econometric_diagnostics(
         returns,
-        periods_per_year=float(periods_per_year),
+        periods_per_year=annualization_factor if annualization_factor is not None else 1.0,
         annual_risk_free_rate=annual_risk_free_rate,
         psr_benchmark_sr_annualized=psr_benchmark_sr,
     )
@@ -608,21 +664,24 @@ def calculate_portfolio_performance_detailed(
     )
     bootstrap_summary = run_stationary_block_bootstrap(returns)
 
+    annualized_ok = annualization_factor is not None
     summary = PerformanceSummary(
         twr_decimal=twr_decimal,
         cagr_decimal=cagr_decimal,
-        xirr_decimal=xirr_val,
+        xirr_decimal=xirr_decimal,
         annualized_volatility=ann_vol,
         smoothing_index_xi=econ.smoothing_index_xi,
         lag1_autocorrelation=econ.lag1_autocorrelation,
-        unsmoothed_volatility=econ.unsmoothed_volatility,
-        unsmoothed_sharpe_ratio=econ.unsmoothed_sharpe_ratio,
+        unsmoothed_volatility=econ.unsmoothed_volatility if annualized_ok else None,
+        unsmoothed_sharpe_ratio=econ.unsmoothed_sharpe_ratio if annualized_ok else None,
         sharpe_ratio=sharpe,
         sortino_ratio=sortino,
-        probabilistic_sharpe_ratio=econ.probabilistic_sharpe_ratio,
-        psr_glm_unsmoothed=econ.psr_glm_unsmoothed,
-        min_track_record_length_periods=econ.min_track_record_length_periods,
-        psr_sample_eligible=econ.psr_sample_eligible,
+        probabilistic_sharpe_ratio=econ.probabilistic_sharpe_ratio if annualized_ok else None,
+        psr_glm_unsmoothed=econ.psr_glm_unsmoothed if annualized_ok else None,
+        min_track_record_length_periods=(
+            econ.min_track_record_length_periods if annualized_ok else None
+        ),
+        psr_sample_eligible=econ.psr_sample_eligible if annualized_ok else False,
         observation_count=econ.observation_count,
         psr_benchmark_sr=psr_benchmark_sr,
         max_drawdown_decimal=max_dd,
@@ -644,6 +703,7 @@ def calculate_portfolio_performance_detailed(
         return_observations=tuple(observations),
         econometrics=econ,
         withheld=False,
+        annualization_periods_per_year=annualization_factor,
     )
 
 
@@ -653,7 +713,7 @@ def calculate_portfolio_performance(
     reference_provider: ReferenceDataProvider | None = None,
     benchmark_symbol: str | None = None,
     annual_risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = None,
     cash_flow_timing: str = "end_of_day",
     psr_benchmark_sr: float = 0.0,
 ) -> PerformanceSummary:
@@ -671,6 +731,11 @@ def calculate_portfolio_performance(
 
 __all__ = [
     "CAPITAL_FLOW_KINDS_FOR_TWR",
+    "LARGE_INTERVAL_FLOW_FRACTION",
+    "MIN_ANNUALISED_INTERVALS",
+    "MIN_ANNUALISED_INTERVAL_SECONDS",
+    "MIN_CAGR_SPAN_DAYS",
+    "UNEVEN_INTERVAL_RATIO",
     "PerformanceCalculationResult",
     "SubperiodReturnObservation",
     "calculate_portfolio_performance",

@@ -76,6 +76,44 @@ SECRET_PATTERNS = (
     ("github-token", re.compile(r"(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}")),
     ("google-api-key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
+    # Any value the SnapTrade connector treats as a personal client id: it
+    # upper-cases the id and checks the prefix, so the prefix is matched in any
+    # case and any non-empty suffix of letters, digits and hyphens counts. The
+    # prefix must start a token: one inside a longer hyphenated or underscored
+    # token (an account id, a package version) is not a value the connector
+    # would read as personal. The bare prefix alone, as used in code and prose
+    # that describes the rule, is not an id.
+    (
+        "snaptrade-personal-client-id",
+        re.compile(r"(?<![A-Za-z0-9_-])(?i:PERS)-[A-Za-z0-9-]*[A-Za-z0-9]"),
+    ),
+    # A SnapTrade consumer key assigned or passed under a name that says what it
+    # is (env, Python, JSON, YAML, JavaScript and TypeScript forms). A real key
+    # is a long random run of letters and digits, so the value must be at least
+    # 32 such characters with no separator; hyphenated or underscored
+    # placeholders, short tokens and variable references do not match.
+    (
+        "snaptrade-consumer-key",
+        re.compile(
+            r"(?i:consumer[_-]?key)\w*[\"'`]?\]?\s*"
+            r"(?::\s*[A-Za-z_][\w.\[\]| ]*?\s*)?"
+            r"(?:=>|:=|[=:,]|\s)\s*[rbuRBU]{0,2}[\"'`]?"
+            r"[A-Za-z0-9]{32,}(?![A-Za-z0-9_-])"
+        ),
+    ),
+    # Any long letters-and-digits value assigned or passed under a name that pairs
+    # SnapTrade with "secret" or "key" (a user secret, an API key), in the same
+    # source forms as above. Variable references, hyphenated or underscored
+    # placeholders and values shorter than 24 characters do not match.
+    (
+        "snaptrade-secret",
+        re.compile(
+            r"(?i:snap_?trade\w*(?:secret|key)|(?:secret|key)\w*snap_?trade)\w*[\"'`]?\]?\s*"
+            r"(?::\s*[A-Za-z_][\w.\[\]| ]*?\s*)?"
+            r"(?:=>|:=|[=:,]|\s)\s*[rbuRBU]{0,2}[\"'`]?"
+            r"[A-Za-z0-9]{24,}(?![A-Za-z0-9_-])"
+        ),
+    ),
     ("hard-coded-home-path", re.compile(r"/(?:Users|home)/[^/\s'\"]+/")),
     ("known-development-password", re.compile("neo4j/" + "n170")),
 )
@@ -128,6 +166,47 @@ REVIEWED_NEGATIVE_TEST_FILES = {
         "sha256": "ec39c0fde3ca0f106e23e03461154c864e187446d8ca5cd3f6e83ff0b6de054d",
         "reviewed_marker_snippet": '["/' + 'Users/synthetic/private.txt", "-----BEGIN ' + 'PRIVATE KEY-----"]',
     },
+}
+
+# Synthetic strings that the personal client id rule matches in test fixtures,
+# allowed only at the exact repository path listed and only as the exact whole
+# match, prefix case included. Each entry is (prefix as written, text after the
+# hyphen), so this file holds no full id. Every entry is a readable label of
+# words and short counters, not a random string. The same string at any other
+# path, in another prefix case, or any other match in these files is blocked.
+REVIEWED_SYNTHETIC_PERSONAL_CLIENT_IDS = {
+    "api/tests/test_launch_blockers_hyperliquid_snaptrade.py": frozenset(
+        {
+            ("PERS", "WORKER-ISOLATION-01"),
+            ("PERS", "FOUNDER-LIVE-01"),
+            ("PERS", "BAD-MODE-01"),
+            # Consumer-key placeholders that happen to begin with the prefix.
+            ("pers", "consumer-secret-live-xyz"),
+            ("pers", "consumer-secret-badmode"),
+        }
+    ),
+    "api/tests/test_snaptrade_session_binding.py": frozenset({("PERS", "DUMMY-OWNER-01")}),
+    "core/tests/test_hyperliquid_and_snaptrade_personal.py": frozenset(
+        {
+            ("PERS", "COMPAT-01"),
+            ("PERS", "CUSTOM"),
+            ("PERS", "EMPTY-CHECK-01"),
+            ("PERS", "FOUNDER-001"),
+            ("PERS", "FOUNDER-EUR-01"),
+            ("PERS", "FOUNDER-KEY-99"),
+            ("PERS", "N170-FOUNDER"),
+            # A lower-case id that checks the connector's case folding.
+            ("pers", "lower-key"),
+            # A portal URL path segment in a mocked relay response.
+            ("pers", "session"),
+            # Consumer-key placeholders that happen to begin with the prefix.
+            ("pers", "compat-secret"),
+            ("pers", "empty-secret"),
+            ("pers", "eur-secret"),
+            ("pers", "hmac-secret-999"),
+        }
+    ),
+    "core/tests/test_snaptrade_nav_and_fx.py": frozenset({("PERS", "DUMMY-CLIENT-01")}),
 }
 
 BROKER_EXPORT_SUFFIXES = {".csv", ".json", ".xml"}
@@ -244,7 +323,19 @@ def _content_rules(path: Path, *, relative_path: str | None = None) -> list[str]
             return ["reviewed-negative-test-integrity"]
         text = text.replace(reviewed_neg["reviewed_marker_snippet"], "", 1)
 
-    return [name for name, pattern in SECRET_PATTERNS if pattern.search(text)]
+    reviewed_ids = REVIEWED_SYNTHETIC_PERSONAL_CLIENT_IDS.get(normalized or "", frozenset())
+    rules: list[str] = []
+    for name, pattern in SECRET_PATTERNS:
+        if name == "snaptrade-personal-client-id":
+            matched = any(
+                tuple(match.group(0).split("-", 1)) not in reviewed_ids
+                for match in pattern.finditer(text)
+            )
+        else:
+            matched = pattern.search(text) is not None
+        if matched:
+            rules.append(name)
+    return rules
 
 
 def _tree_entries(root: Path) -> tuple[list[tuple[str, bool]], list[Finding]]:

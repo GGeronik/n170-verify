@@ -50,7 +50,7 @@ from n170_verify.contracts import (
 )
 
 
-_TAG_SPLIT_RE = re.compile(r"[;,]+|\s+\|\s+")
+_TAG_SPLIT_RE = re.compile(r"[;,|]+")
 
 
 @dataclass(slots=True)
@@ -192,6 +192,7 @@ def parse_journal_migration_csv(
     blinding_salt_hex: str = "ab" * 32,
     base_currency: str = "USD",
     max_bytes: int = MAX_STATEMENT_BYTES,
+    environment_tier: EnvironmentTier | str = EnvironmentTier.UNVERIFIED_OFFLINE,
     **extra_kwargs: Any,
 ) -> JournalMigrationResult:
     """Import a TraderSync or TradeZella CSV journal backup with sanitized tags and notes."""
@@ -221,7 +222,8 @@ def parse_journal_migration_csv(
     c_exit_px = _find_col(hdrs, ("exit price", "avg sell", "avg exit", "close price"))
     c_comm = _find_col(hdrs, ("commission", "commissions", "fees", "fee"))
     c_asset = _find_col(hdrs, ("asset type", "instrument type", "asset class", "market"))
-    c_setup = _find_col(hdrs, ("setups", "playbook", "setup", "strategy"))
+    c_playbook = _find_col(hdrs, ("playbook", "strategy"))
+    c_setup = _find_col(hdrs, ("setups", "setup"))
     c_mistake = _find_col(hdrs, ("mistakes", "mistake tags", "mistake", "error tags"))
     c_tags = _find_col(hdrs, ("custom tags", "tags"))
     c_notes = _find_col(hdrs, ("notes", "trade notes", "journal notes", "note", "comment"))
@@ -256,7 +258,14 @@ def parse_journal_migration_csv(
         close_ts = _parse_multi_format_timestamp(
             _cell(row, c_close_date), _cell(row, c_close_time)
         )
+        if close_ts is not None and close_ts < open_ts:
+            raise ValueError(
+                f"Journal row {r_idx} ({sym}) has close timestamp ({close_ts}) "
+                f"before open timestamp ({open_ts})"
+            )
         qty = _parse_localized_float(_cell(row, c_qty))
+        if c_qty is None and qty is None:
+            qty = 1.0
         entry_px = _parse_localized_float(_cell(row, c_entry_px))
         exit_px = _parse_localized_float(_cell(row, c_exit_px))
         if qty is None or abs(qty) == 0.0 or entry_px is None or entry_px < 0.0:
@@ -274,7 +283,14 @@ def parse_journal_migration_csv(
         comm_total = abs(_parse_localized_float(_cell(row, c_comm), default=0.0) or 0.0)
         trade_key = f"{broker_id}-{r_idx}"
 
-        setup_tags = _extract_sanitized_tags(_cell(row, c_setup))
+        playbook_tags = _extract_sanitized_tags(_cell(row, c_playbook))
+        raw_setup_tags = (
+            _extract_sanitized_tags(_cell(row, c_setup)) if c_setup != c_playbook else []
+        )
+        setup_tags: list[str] = []
+        for st_item in [*playbook_tags, *raw_setup_tags]:
+            if st_item.lower() not in {x.lower() for x in setup_tags}:
+                setup_tags.append(st_item)
         mistake_tags = _extract_sanitized_tags(_cell(row, c_mistake))
         custom_tags = _extract_sanitized_tags(_cell(row, c_tags))
         _register_tags(setup_tags)
@@ -311,6 +327,7 @@ def parse_journal_migration_csv(
                     multiplier=mult,
                     commission=comm_total,
                     underlying_symbol=underlying,
+                    position_id=trade_key,
                 )
             )
             signed_qty = -abs(qty) if is_short else abs(qty)
@@ -329,7 +346,7 @@ def parse_journal_migration_csv(
                 )
             )
         else:
-            eff_close_ts = close_ts if (close_ts and close_ts >= open_ts) else open_ts
+            eff_close_ts = close_ts if close_ts is not None else open_ts
             half_comm = comm_total / 2.0
             trades.append(
                 NormalizedTrade(
@@ -345,6 +362,7 @@ def parse_journal_migration_csv(
                     multiplier=mult,
                     commission=half_comm,
                     underlying_symbol=underlying,
+                    position_id=trade_key,
                 )
             )
             trades.append(
@@ -361,6 +379,7 @@ def parse_journal_migration_csv(
                     multiplier=mult,
                     commission=half_comm,
                     underlying_symbol=underlying,
+                    position_id=trade_key,
                 )
             )
 
@@ -384,7 +403,7 @@ def parse_journal_migration_csv(
         account_scope=AccountScope.UNKNOWN_OFFLINE_SCOPE,
         claimed_origin_assurance=OriginAssurance.SELF_REPORTED,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
-        environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+        environment_tier=EnvironmentTier(environment_tier),
         source_body_sha256=source_sha,
         base_currency=resolved_ccy,
         period_start_utc=start_ts,
@@ -392,7 +411,10 @@ def parse_journal_migration_csv(
         ending_positions=ending_positions,
         nav_points=[],
         trades=sorted(trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
-        enabled_sections=[f"{detected_format}_csv"],
+        # Every journal row states its own entry (and exit, once closed), so no position can be
+        # held from before the file within these trades: the file accounts for its opening
+        # positions (there are none), and a first sale is a genuine short.
+        enabled_sections=[f"{detected_format}_csv", "PriorPeriodPositions"],
         parser_warnings=list(warnings),
     )
 

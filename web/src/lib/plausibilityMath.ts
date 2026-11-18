@@ -1,5 +1,5 @@
 /**
- * N170 Verify v3 — Client-Side Bailey & Lopez de Prado (2012) Non-Normal PSR & MinTRL Engine
+ * N170 Verify: Client-Side Bailey & Lopez de Prado (2012) Non-Normal PSR & MinTRL Engine
  * plus Diplomatic Proof-Challenge Sanitizers.
  *
  * Matches `n170_verify.performance.econometrics` 1:1 with zero external dependencies,
@@ -257,13 +257,13 @@ export function computeClaimPlausibility(
   } else if (
     sufficiencyTier === SufficiencyTier.STATISTICALLY_SUFFICIENT_IF_UNSMOOTHED
   ) {
-    plainEnglishSummary = `Across T=${observedPeriods} observations (skew=${skewness.toFixed(2)}, excess kurtosis=${excessKurtosis.toFixed(2)}), a ${claimedSharpe.toFixed(2)} Sharpe exceeds SR*=${benchmarkSharpe.toFixed(2)} with PSR=${psrPctStr} (95% MinTRL=${requiredMinTrl95?.toFixed(1) ?? "—"} periods), provided returns are GLM-unsmoothed and all sub-accounts are enumerated.`;
+    plainEnglishSummary = `Across T=${observedPeriods} observations (skew=${skewness.toFixed(2)}, excess kurtosis=${excessKurtosis.toFixed(2)}), a ${claimedSharpe.toFixed(2)} Sharpe exceeds SR*=${benchmarkSharpe.toFixed(2)} with PSR=${psrPctStr} (95% MinTRL=${requiredMinTrl95?.toFixed(1) ?? "-"} periods), provided returns are GLM-unsmoothed and all sub-accounts are enumerated.`;
   } else {
     const shortfall =
       requiredMinTrl95 != null
         ? Math.max(0, Math.ceil(requiredMinTrl95 - observedPeriods))
         : 0;
-    plainEnglishSummary = `Across T=${observedPeriods} observations with skew=${skewness.toFixed(2)} and excess kurtosis=${excessKurtosis.toFixed(2)}, implied PSR is ${psrPctStr} against SR*=${benchmarkSharpe.toFixed(2)} — below the 95% institutional threshold (MinTRL=${requiredMinTrl95?.toFixed(1) ?? "—"} periods; ${shortfall} additional periods needed).`;
+    plainEnglishSummary = `Across T=${observedPeriods} observations with skew=${skewness.toFixed(2)} and excess kurtosis=${excessKurtosis.toFixed(2)}, implied PSR is ${psrPctStr} against SR*=${benchmarkSharpe.toFixed(2)} , below the 95% confidence threshold (MinTRL=${requiredMinTrl95?.toFixed(1) ?? "-"} periods; ${shortfall} additional periods needed).`;
   }
 
   return {
@@ -421,7 +421,7 @@ export function sanitizeHandleInput(raw: string): string {
   return `@${stripped}`;
 }
 
-export type ChallengeTone = "institutional" | "peer_quant" | "concise_reply";
+export type ChallengeTone = "professional" | "peer_quant" | "concise_reply" | "institutional";
 
 export function buildPoliteChallengeReply(options: {
   handle: string;
@@ -439,7 +439,7 @@ export function buildPoliteChallengeReply(options: {
   const sanitizedHandle = sanitizeHandleInput(options.handle);
   const sanitizedClaim = sanitizePlainInput(options.claimText, 72);
   const sanitizedContext = sanitizePlainInput(options.assetContext ?? "", 48);
-  const baseOrigin = (options.originUrl ?? "https://verify.n170.io").replace(
+  const baseOrigin = (options.originUrl ?? "https://verify.example.org").replace(
     /\/+$/,
     "",
   );
@@ -456,12 +456,12 @@ export function buildPoliteChallengeReply(options: {
   const claimClause = sanitizedClaim ? ` on the ${sanitizedClaim} run` : "";
 
   let replyText: string;
-  if (options.tone === "institutional") {
-    replyText = `${greeting}${claimClause}. If you ever want to share a cryptographic percentage tear sheet for LP/peer review without revealing dollar NAV, account ID, or live positions (7-day embargo on closed trades), N170 Verify (Apache-2.0) generates a client-verifiable Indexed-100 proof in ~60s: ${connectUrl}`;
+  if (options.tone === "professional" || options.tone === "institutional") {
+    replyText = `${greeting}${claimClause}. If you ever want to share a cryptographic percentage tear sheet for peer review without revealing dollar NAV, account ID, or live positions (7-day embargo on closed trades), N170 Verify (Apache-2.0) generates a client-verifiable Indexed-100 proof in ~60s: ${connectUrl}`;
   } else if (options.tone === "concise_reply") {
-    replyText = `${greeting}${claimClause} — would love to see an Indexed-100 cryptographic tear sheet on N170 Verify (60s read-only setup; $ NAV, account ID, and live open positions stay 100% private): ${challengeUrl}`;
+    replyText = `${greeting}${claimClause}, would love to see an Indexed-100 cryptographic tear sheet on N170 Verify (60s read-only setup; $ NAV, account ID, and live open positions stay kept private): ${challengeUrl}`;
   } else {
-    replyText = `${greeting}${claimClause}! If you're open to sharing a privacy-preserving proof, you can verify pure % returns in 60s on N170 Verify while keeping $ balance, raw account ID, and live open positions (7-day guard) 100% private: ${challengeUrl}`;
+    replyText = `${greeting}${claimClause}! If you're open to sharing a privacy-preserving proof, you can verify pure % returns in 60s on N170 Verify while keeping $ balance, raw account ID, and live open positions (7-day guard) kept private: ${challengeUrl}`;
   }
 
   return {

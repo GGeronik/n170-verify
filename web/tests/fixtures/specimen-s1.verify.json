@@ -1,0 +1,331 @@
+{
+  "proof_id": "specimen-s1",
+  "issued_at_utc": "2026-04-01T12:00:00Z",
+  "publisher_kid": "n170-pub-2026-q1",
+  "publisher_public_key_hex": "74fbf42d31b2b00bf7700bcfd806d1bb9ea7b7f00fdbd003a534c805ba867d77",
+  "broker_id": "ibkr",
+  "blinded_account_tag": "5b9b66287fc4187aea4b57c9ddedfd27c5319a5ce7b203b8b0e647e8a3a298c8",
+  "account_scope": "all_enumerated_subaccounts",
+  "provider_approval_state": "approved_live",
+  "environment_tier": "live_production",
+  "claimed_origin_assurance": "independently_witnessed_tls",
+  "source_body_sha256": "38c39fec22340c6d81f8e22767788e7d227795a0468ee5535dd6a536c5422b73",
+  "period_start_utc": "2026-01-01T00:00:00Z",
+  "period_end_utc": "2026-03-31T23:59:59Z",
+  "base_currency": "USD",
+  "merkle_root": "5ef285cb893a3ef94650ea5b76b45332a66ce395bbc22909e2e5e6a9b2f110a9",
+  "signature_hex": "87b0e90798c0184f8eaae66a2ec5f5a4a6acd6ef23edb79dac50a5523239281de16ecbf8d8cd4c60abe63ec4b2f317635cd4249a02fb916019ee1047b647d00f",
+  "schema_version": "n170-verify-v3",
+  "disclosed_leaves": [
+    {
+      "leaf_name": "core_metrics",
+      "salt_hex": "f33f1600591443b5051914f64c079544f6ce4675508ba9c5ea5ee15fc95902b9",
+      "payload": {
+        "twr_decimal": 0.285,
+        "twr_pct": 28.5,
+        "cagr_decimal": 1.42,
+        "cagr_pct": 142.0,
+        "xirr_decimal": 1.38,
+        "annualized_volatility": 0.182,
+        "max_drawdown_decimal": 0.064,
+        "max_drawdown_pct": 6.4,
+        "sharpe_ratio": 2.14,
+        "sortino_ratio": 3.25,
+        "calmar_ratio": 4.45,
+        "observation_count": 63,
+        "trading_days": 63,
+        "start_date": "2026-01-01",
+        "end_date": "2026-03-31",
+        "base_currency": "USD",
+        "psr_sample_eligible": true,
+        "probabilistic_sharpe_ratio": 0.982,
+        "psr_glm_unsmoothed": 0.975,
+        "min_track_record_length_days": 42.5,
+        "unconditional_monthly_var_95": 0.041,
+        "unconditional_monthly_cvar_95": 0.058,
+        "benchmark_symbol": "SPY",
+        "benchmark_twr_decimal": 0.082,
+        "alpha_decimal": 0.203
+      },
+      "leaf_hash_hex": "28b4f68b9934df98d21e3f2d390e49c1709a41907fa361fe32f42bffa2dbf78c",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "44120c5a505b25c97a348c20cf6262de17f15bfb4fb3ac6373451a29bd7ed7e7"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "d4b7cec6aa502d7dc1b49d5286d85f233df068f6931a61fc3e3dba3394b3d9fe"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "e1e136e3053b5a73d32079b1613fd793b1f50725af0973a25d9c7cd685f2a238"
+        }
+      ]
+    },
+    {
+      "leaf_name": "indexed_curve",
+      "salt_hex": "352596db1f78fe463df5fc7f3bab0685a31092280b80c3c203930cdf774f726d",
+      "payload": {
+        "base_index": 100.0,
+        "points": [
+          {
+            "timestamp_utc": "2026-01-01T00:00:00Z",
+            "index_value": 100.0,
+            "drawdown_decimal": 0.0,
+            "benchmark_index_value": 100.0
+          },
+          {
+            "timestamp_utc": "2026-02-15T00:00:00Z",
+            "index_value": 114.2,
+            "drawdown_decimal": 0.015,
+            "benchmark_index_value": 104.1
+          },
+          {
+            "timestamp_utc": "2026-03-31T23:59:59Z",
+            "index_value": 128.5,
+            "drawdown_decimal": 0.021,
+            "benchmark_index_value": 108.2
+          }
+        ]
+      },
+      "leaf_hash_hex": "44120c5a505b25c97a348c20cf6262de17f15bfb4fb3ac6373451a29bd7ed7e7",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "28b4f68b9934df98d21e3f2d390e49c1709a41907fa361fe32f42bffa2dbf78c"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "d4b7cec6aa502d7dc1b49d5286d85f233df068f6931a61fc3e3dba3394b3d9fe"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "e1e136e3053b5a73d32079b1613fd793b1f50725af0973a25d9c7cd685f2a238"
+        }
+      ]
+    },
+    {
+      "leaf_name": "reconciliation",
+      "salt_hex": "a7bdc7c2a9e3b41facc2a40affbde46d54972d5b6f165f4b14f11d8cadb5b12a",
+      "payload": {
+        "status": "reconciled_clean",
+        "discrepancy_count": 0,
+        "evaluated_at_utc": "2026-04-01T12:00:00Z",
+        "tolerance_bps": 5.0,
+        "sections_checked": [
+          "nav_continuity",
+          "cash_flow_timing",
+          "corporate_actions",
+          "market_envelope"
+        ],
+        "findings": [
+          {
+            "category": "nav_continuity_bridge",
+            "outcome": "pass",
+            "residual_bps": 0.0,
+            "technical_explanation": "Period NAV continuity verified with zero residual across valuation points."
+          }
+        ]
+      },
+      "leaf_hash_hex": "64b97ce377c9c7fb2db4f530457689b21821d5be00c54f84ea7d6a5831bb4f70",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "fb8726ee15ac6c2d7ae27a3ec8311025182069dae0b692b4e5f5bdb27d92b63a"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "dcf5085c877a07708725b4e9660d679a69832d79fe72481d9aa094413646af64"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "e1e136e3053b5a73d32079b1613fd793b1f50725af0973a25d9c7cd685f2a238"
+        }
+      ]
+    },
+    {
+      "leaf_name": "coaching_and_context",
+      "salt_hex": "75440b770ab9314b3f754e4aa358766eddf71186dbec671fc08d223973c81aa5",
+      "payload": {
+        "cost_drag": {
+          "commission_and_fee_drag_bps": 12.4,
+          "margin_and_funding_drag_bps": 15.6,
+          "fx_conversion_drag_bps": 6.2,
+          "withholding_tax_drag_bps": 2.1,
+          "total_friction_drag_bps": 36.3,
+          "annualized_total_drag_bps": 145.2
+        },
+        "behaviour": {
+          "sample_eligible": true,
+          "min_trades_gate": 30,
+          "observed_trades": 84,
+          "observed_days": 63,
+          "median_holding_hours": 18.5,
+          "holding_horizon_label": "swing_momentum",
+          "win_rate": 0.655,
+          "profit_factor": 2.12,
+          "winner_vs_loser_hold_ratio": 1.45,
+          "odean_pgr_plr_spread": 0.042,
+          "post_drawdown_sizing_discipline_atr": 0.92,
+          "atr_normalized": true,
+          "return_concentration_top5_pct": 28.4,
+          "actionable_improvements": [
+            "Discipline score within target: post-drawdown risk sizing maintained at 0.92x baseline ATR."
+          ]
+        },
+        "catalyst_regime_win_rate": 0.725,
+        "quiet_regime_win_rate": 0.612,
+        "event_window_share_pct": 24.5,
+        "event_observations": []
+      },
+      "leaf_hash_hex": "fb8726ee15ac6c2d7ae27a3ec8311025182069dae0b692b4e5f5bdb27d92b63a",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "64b97ce377c9c7fb2db4f530457689b21821d5be00c54f84ea7d6a5831bb4f70"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "dcf5085c877a07708725b4e9660d679a69832d79fe72481d9aa094413646af64"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "e1e136e3053b5a73d32079b1613fd793b1f50725af0973a25d9c7cd685f2a238"
+        }
+      ]
+    },
+    {
+      "leaf_name": "capital_bracket",
+      "salt_hex": "f532b7849536c17a3d2a830b82403150664957188ff9242d09b05d97644c8fa6",
+      "payload": {
+        "capital_bracket": "100k_to_1m",
+        "valuation_currency": "USD"
+      },
+      "leaf_hash_hex": "3c81f97b476ae37d18b41e354cde9d88636951b71790482e0df26496d64c1a96",
+      "audit_path": [
+        {
+          "side": "right",
+          "sibling_hash_hex": "fe393d1a4e189923467cf1c220702b13c513e0183e085f473ad6c36ff61ff332"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "d49ba3fc1ebd48e94dbb6bef0daf1104788835b8f5f59bf44e689034891a825e"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "7c69ff4c3d5b4734e804b4ec26ef6de89377eb4b605217a3fa6f515fed3fc264"
+        }
+      ]
+    },
+    {
+      "leaf_name": "benchmark_alpha",
+      "salt_hex": "7646c64776a6f0c7dbb9b55f73315e84303b48fc5f56f75678b4b51a2f428a43",
+      "payload": {
+        "benchmark_symbol": "SPY",
+        "benchmark_twr_decimal": 0.082,
+        "alpha_decimal": 0.203,
+        "information_ratio": 1.84,
+        "beta": 0.94
+      },
+      "leaf_hash_hex": "fe393d1a4e189923467cf1c220702b13c513e0183e085f473ad6c36ff61ff332",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "3c81f97b476ae37d18b41e354cde9d88636951b71790482e0df26496d64c1a96"
+        },
+        {
+          "side": "right",
+          "sibling_hash_hex": "d49ba3fc1ebd48e94dbb6bef0daf1104788835b8f5f59bf44e689034891a825e"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "7c69ff4c3d5b4734e804b4ec26ef6de89377eb4b605217a3fa6f515fed3fc264"
+        }
+      ]
+    },
+    {
+      "leaf_name": "delayed_closed_trades",
+      "salt_hex": "68a1081aa601063f7e31ecc3bda7c67eeb2da71c36a3ee7ea8e8999f87e2b0e0",
+      "payload": {
+        "embargo_days": 7,
+        "trades": [
+          {
+            "symbol": "AAPL",
+            "asset_class": "equity",
+            "entry_timestamp_utc": "2026-01-15T14:35:00Z",
+            "exit_timestamp_utc": "2026-01-22T20:45:00Z",
+            "holding_duration_hours": 174.1,
+            "realized_pnl_bps": 340.0,
+            "return_decimal": 0.034,
+            "was_short": false,
+            "atr_multiple_at_exit": 2.1
+          }
+        ],
+        "stripped_recent_count": 3
+      },
+      "leaf_hash_hex": "d49ba3fc1ebd48e94dbb6bef0daf1104788835b8f5f59bf44e689034891a825e",
+      "audit_path": [
+        {
+          "side": "left",
+          "sibling_hash_hex": "1e03a0c1242948c14c8a263a3032eb38e01047130792ed309a6961463c5e1a1a"
+        },
+        {
+          "side": "left",
+          "sibling_hash_hex": "7c69ff4c3d5b4734e804b4ec26ef6de89377eb4b605217a3fa6f515fed3fc264"
+        }
+      ]
+    }
+  ],
+  "undisclosed_leaf_hashes": {},
+  "witness_attestations": [
+    {
+      "protocol": "tlsn-v0.1.0-alpha.15",
+      "tls_version": "1.2",
+      "defer_decryption_from_start": true,
+      "notary_id": "notary-pse-eu",
+      "server_sni": "ndcdyn.interactivebrokers.com",
+      "sanitized_request_target": "/AccountManagement/FlexWebService/GetStatement?t=[REDACTED]&q=[REDACTED]&v=3",
+      "redacted_headers": [
+        "Authorization: [REDACTED]"
+      ],
+      "commitment_kind": "whole_body_sha256",
+      "response_body_sha256": "38c39fec22340c6d81f8e22767788e7d227795a0468ee5535dd6a536c5422b73",
+      "session_timestamp_utc": "2026-04-01T03:10:00Z",
+      "signature_hex": "c2a60ecf8d1433ec6954094ac712cbd8fdcc9fbaf5faeae87f0d54c43a46305d00780f1306ee92e6a922614fb94c0351027abfac1f355e6b5a22cabb8ac55201"
+    },
+    {
+      "protocol": "tlsn-v0.1.0-alpha.15",
+      "tls_version": "1.2",
+      "defer_decryption_from_start": true,
+      "notary_id": "notary-swiss-ch",
+      "server_sni": "ndcdyn.interactivebrokers.com",
+      "sanitized_request_target": "/AccountManagement/FlexWebService/GetStatement?t=[REDACTED]&q=[REDACTED]&v=3",
+      "redacted_headers": [
+        "Authorization: [REDACTED]"
+      ],
+      "commitment_kind": "whole_body_sha256",
+      "response_body_sha256": "38c39fec22340c6d81f8e22767788e7d227795a0468ee5535dd6a536c5422b73",
+      "session_timestamp_utc": "2026-04-01T03:10:12Z",
+      "signature_hex": "ad713fbe3ffa6cd3f0b4a4e64febce24e3902cb05d8f105a01c1914d5024fc59c2b11fb2ac442a9b079e15587e2fb8bd9180a021319f5c5c81b380551bf5fb0e"
+    },
+    {
+      "protocol": "tlsn-v0.1.0-alpha.15",
+      "tls_version": "1.2",
+      "defer_decryption_from_start": true,
+      "notary_id": "notary-nordic-is",
+      "server_sni": "ndcdyn.interactivebrokers.com",
+      "sanitized_request_target": "/AccountManagement/FlexWebService/GetStatement?t=[REDACTED]&q=[REDACTED]&v=3",
+      "redacted_headers": [
+        "Authorization: [REDACTED]"
+      ],
+      "commitment_kind": "whole_body_sha256",
+      "response_body_sha256": "38c39fec22340c6d81f8e22767788e7d227795a0468ee5535dd6a536c5422b73",
+      "session_timestamp_utc": "2026-04-01T03:10:25Z",
+      "signature_hex": "a158d5919a2c5bd085c6ab5347dc4084062f45820643f64bcbb9b34c27a969ba0d3ae669a532242709fc30ce8742a14cacd9fde5ac5b121095d88d5aeec7f90c"
+    }
+  ],
+  "broker_native_signature": null,
+  "prospective_chain_link": null,
+  "retention_mode": "no_persistent_storage"
+}

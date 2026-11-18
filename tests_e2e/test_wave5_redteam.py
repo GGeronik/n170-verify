@@ -26,7 +26,6 @@ for _p in (str(REPO_ROOT), str(REPO_ROOT / "core"), str(REPO_ROOT / "api")):
 
 from app.config import ApiConfig
 from app.main import VerifyApiTestClient, create_app
-from app.routes_viral import sanitize_journal_tag
 from app.worker_isolation import (
     WorkerIsolationError,
     WorkerValidationError,
@@ -910,6 +909,7 @@ class TestWave5CryptographicAndDowngradeAttacks(unittest.TestCase):
                     sync_db_path=str(tmp_p / "s.sqlite3"),
                     publisher_keypair=self.kp,
                     publisher_kid=self.kid,
+                    allow_caller_clock_for_tests=True,
                 ),
                 prefer_fastapi=False,
             )
@@ -1031,6 +1031,7 @@ class TestWave5ParserXxeSsrfFormulaInjectionAndDos(unittest.TestCase):
             sync_db_path=str(tmp_p / "s.sqlite3"),
             publisher_keypair=self.kp,
             publisher_kid="kid-w5-parser",
+            allow_caller_clock_for_tests=True,
         )
         self.app = create_app(self.cfg, prefer_fastapi=False)
         self.client = VerifyApiTestClient(self.app)
@@ -1255,8 +1256,6 @@ class TestWave5ParserXxeSsrfFormulaInjectionAndDos(unittest.TestCase):
 
         # Second-order formula prefix emergence after $ / long-digit redaction
         for second_order in ("$100=cmd", "-12345+cmd", "'=cmd", "|=cmd"):
-            tag_out = sanitize_journal_tag(second_order)
-            _assert_clean_cell(tag_out, f"sanitize_journal_tag({second_order!r})")
             for core_tag in sanitize_journal_tags([second_order]):
                 _assert_clean_cell(core_tag, f"sanitize_journal_tags({second_order!r})")
 
@@ -1456,6 +1455,7 @@ class TestWave5XssClickjackingAndSecretLeakage(unittest.TestCase):
             sync_db_path=str(tmp_p / "s.sqlite3"),
             publisher_keypair=self.kp,
             publisher_kid=self.kid,
+            allow_client_supplied_series_for_tests=True,
         )
         self.app = create_app(self.cfg, prefer_fastapi=False)
         self.client = VerifyApiTestClient(self.app)
@@ -1710,17 +1710,20 @@ class TestWave5XssClickjackingAndSecretLeakage(unittest.TestCase):
         for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247891.55"):
             self.assertNotIn(leak, str(v_ctx.exception))
 
-        with self.assertRaises(WorkerIsolationError) as w_ctx:
+        # An unexpected error inside the worker is answered with a fixed sentence: none of the
+        # worker's own text (and so no secret, account id or dollar amount) is passed on.
+        from app.worker_isolation import UNREADABLE_INPUT_DETAIL
+
+        with self.assertRaises(WorkerValidationError) as w_ctx:
             run_isolated_one_shot_verification(
                 worker_payload,
                 config=self.cfg,
                 pipeline_spec=f"{__name__}:_crashing_secret_worker_pipeline",
             )
         w_err = str(w_ctx.exception)
-        for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247,891.55"):
+        for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247,891.55", "247891.55"):
             self.assertNotIn(leak, w_err)
-        self.assertIn("/v1/accounts/[REDACTED]/balances", w_err)
-        self.assertIn("$[REDACTED]", w_err)
+        self.assertEqual(w_err, UNREADABLE_INPUT_DETAIL)
 
         # 4. Serialized VerifyProofBundle contains zero raw account IDs or exact dollar NAVs
         ledger = _build_35_day_ledger(raw_account_id=raw_ibkr_acct)

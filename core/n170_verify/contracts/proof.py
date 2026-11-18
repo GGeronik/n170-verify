@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+import ipaddress
+import re
+import unicodedata
 from typing import Any
+import urllib.parse
 
 from n170_verify.contracts.assurance import (
     AccountScope,
@@ -53,12 +58,219 @@ from n170_verify.crypto.witness_quorum import (
 
 
 VERIFY_SCHEMA_VERSION = "n170-verify-v3"
+HOLDER_SCHEMA_VERSION = "n170-holder-v1"
+SIGNING_DOMAIN_HOLDER = b"n170.verify.holder.v3"
 ALLOWED_RETENTION_MODES: frozenset[str] = frozenset(
     {
         "no_persistent_storage",
         "opt_in_encrypted_sync",
     }
 )
+_HOLDER_HANDLE_RE = re.compile(r"^@[A-Za-z0-9_.\-]{1,32}\Z")
+_FORBIDDEN_HOLDER_CHARS_RE = re.compile(r'[<>"\'`\x00-\x1f\x7f]')
+_FORBIDDEN_HOLDER_CATEGORIES: frozenset[str] = frozenset(
+    {"Cf", "Cc", "Cs", "Co", "Cn", "Zl", "Zp"}
+)
+_FORBIDDEN_HOLDER_CODEPOINTS: frozenset[int] = frozenset(
+    {0x034F, 0x061C, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
+)
+_BLANK_FILLER_LETTERS: frozenset[int] = frozenset({0x115F, 0x1160, 0x3164, 0xFFA0})
+
+
+def _is_forbidden_holder_char(ch: str) -> bool:
+    cat = unicodedata.category(ch)
+    if cat in _FORBIDDEN_HOLDER_CATEGORIES:
+        return True
+    if cat == "Zs" and ch != " ":
+        return True
+    cp = ord(ch)
+    return (
+        cp in _FORBIDDEN_HOLDER_CODEPOINTS
+        or 0x180B <= cp <= 0x180F
+        or 0xFE00 <= cp <= 0xFE0F
+        or 0xFFF0 <= cp <= 0xFFFF
+        or 0xE0100 <= cp <= 0xE01EF
+    )
+
+
+def holder_text_has_format_character(*values: str | None) -> bool:
+    """True when any holder text holds a forbidden Unicode format, control, separator, or ignorable character."""
+    return any(
+        value is not None and any(_is_forbidden_holder_char(ch) for ch in value)
+        for value in values
+    )
+
+
+def holder_claim_fields_are_valid(att: HolderIdentityAttestation) -> bool:
+    """Validate holder display_name, handle, and profile_url for verification parity across core/api/web."""
+    name = att.display_name
+    if (
+        not name
+        or len(name) > 64
+        or _FORBIDDEN_HOLDER_CHARS_RE.search(name)
+        or any(_is_forbidden_holder_char(ch) for ch in name)
+    ):
+        return False
+    if not any(
+        unicodedata.category(ch)[0] in {"L", "N"} and ord(ch) not in _BLANK_FILLER_LETTERS
+        for ch in name
+    ):
+        return False
+
+    if att.handle is not None:
+        if not _HOLDER_HANDLE_RE.match(att.handle) or any(
+            _is_forbidden_holder_char(ch) for ch in att.handle
+        ):
+            return False
+
+    if att.profile_url is not None:
+        url = att.profile_url
+        if (
+            not url.startswith("https://")
+            or len(url) > 180
+            or _FORBIDDEN_HOLDER_CHARS_RE.search(url)
+            or any(ch.isspace() or _is_forbidden_holder_char(ch) for ch in url)
+        ):
+            return False
+        try:
+            unquoted = urllib.parse.unquote(url, errors="strict")
+        except UnicodeError:
+            return False
+        if any(_is_forbidden_holder_char(ch) for ch in unquoted):
+            return False
+        try:
+            parts = urllib.parse.urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return False
+        if (
+            parts.scheme != "https"
+            or parts.username is not None
+            or parts.password is not None
+            or "@" in parts.netloc
+            or port is not None
+            or ":" in parts.netloc
+        ):
+            return False
+        host = parts.hostname
+        if (
+            not host
+            or "." not in host
+            or host.startswith(".")
+            or host.endswith(".")
+            or host.lower() == "localhost"
+        ):
+            return False
+        try:
+            ipaddress.ip_address(host.strip("[]"))
+            return False
+        except ValueError:
+            pass
+        if all(seg.isdigit() for seg in host.split(".")):
+            return False
+
+    return True
+
+
+@dataclass(slots=True)
+class HolderIdentityAttestation(ContractModelMixin):
+    """Optional browser-signed Ed25519 owner attribution for CVs, GitHub, and LinkedIn."""
+
+    display_name: str
+    proof_id: str
+    proof_hash: str
+    merkle_root: str
+    claimed_at_utc: str
+    holder_public_key_hex: str
+    signature_hex: str
+    schema_version: str = HOLDER_SCHEMA_VERSION
+    handle: str | None = None
+    profile_url: str | None = None
+
+    def _validate(self) -> None:
+        if self.schema_version != HOLDER_SCHEMA_VERSION:
+            raise ValueError(
+                f"HolderIdentityAttestation.schema_version must be {HOLDER_SCHEMA_VERSION!r}"
+            )
+        clean_name = self.display_name.strip(" \t\r\n")
+        if (
+            not clean_name
+            or len(clean_name) > 64
+            or _FORBIDDEN_HOLDER_CHARS_RE.search(clean_name)
+        ):
+            raise ValueError("HolderIdentityAttestation.display_name is invalid")
+        object.__setattr__(self, "display_name", clean_name)
+
+        if self.handle is not None:
+            if not _HOLDER_HANDLE_RE.match(self.handle):
+                raise ValueError("HolderIdentityAttestation.handle is invalid")
+
+        if self.profile_url is not None:
+            if (
+                not self.profile_url.startswith("https://")
+                or len(self.profile_url) > 180
+                or _FORBIDDEN_HOLDER_CHARS_RE.search(self.profile_url)
+            ):
+                raise ValueError("HolderIdentityAttestation.profile_url must be a clean https URL")
+
+        if not self.proof_id.strip():
+            raise ValueError("HolderIdentityAttestation.proof_id must not be empty")
+        parse_utc_timestamp(
+            self.claimed_at_utc, field_name="HolderIdentityAttestation.claimed_at_utc"
+        )
+        object.__setattr__(
+            self,
+            "proof_hash",
+            validate_hex_digest(
+                self.proof_hash, field_name="HolderIdentityAttestation.proof_hash", num_bytes=32
+            ),
+        )
+        object.__setattr__(
+            self,
+            "merkle_root",
+            validate_hex_digest(
+                self.merkle_root, field_name="HolderIdentityAttestation.merkle_root", num_bytes=32
+            ),
+        )
+        object.__setattr__(
+            self,
+            "holder_public_key_hex",
+            validate_hex_digest(
+                self.holder_public_key_hex,
+                field_name="HolderIdentityAttestation.holder_public_key_hex",
+                num_bytes=32,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "signature_hex",
+            validate_hex_digest(
+                self.signature_hex,
+                field_name="HolderIdentityAttestation.signature_hex",
+                num_bytes=64,
+            ),
+        )
+
+    def signable_claim(self) -> dict[str, Any]:
+        return {
+            "claimed_at_utc": self.claimed_at_utc,
+            "display_name": self.display_name,
+            "handle": self.handle,
+            "holder_public_key_hex": self.holder_public_key_hex,
+            "merkle_root": self.merkle_root,
+            "profile_url": self.profile_url,
+            "proof_hash": self.proof_hash,
+            "proof_id": self.proof_id,
+            "schema_version": self.schema_version,
+        }
+
+    def verify_signature(self) -> bool:
+        return ed25519_verify_domain(
+            self.holder_public_key_hex,
+            SIGNING_DOMAIN_HOLDER,
+            jcs_canonicalize(self.signable_claim()),
+            self.signature_hex,
+        )
 
 
 @dataclass(slots=True)
@@ -88,6 +300,13 @@ class VerifyProofBundle(ContractModelMixin):
     broker_native_signature: BrokerNativeSignature | None = None
     prospective_chain_link: ProspectiveChainLink | None = None
     retention_mode: str = "no_persistent_storage"
+    holder_identity: HolderIdentityAttestation | None = None
+
+    def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
+        serialized = ContractModelMixin.to_dict(self, exclude_none=exclude_none)
+        if self.holder_identity is None:
+            serialized.pop("holder_identity", None)
+        return serialized
 
     def _validate(self) -> None:
         if not self.proof_id.strip():
@@ -260,6 +479,7 @@ class VerifyProofBundle(ContractModelMixin):
             prospective_chain_link=self.prospective_chain_link,
             retention_mode=self.retention_mode,
             signature_hex=self.signature_hex,
+            holder_identity=self.holder_identity,
         )
 
     def get_disclosed_payload(self, leaf_name: str) -> Any:
@@ -342,9 +562,36 @@ def create_signed_proof_bundle(
     return draft
 
 
+class HolderClaimStatus(str, Enum):
+    """Status of the optional holder name, reported apart from the record's ``valid``.
+
+    The holder key is not bound to the broker account or wallet, so a correct
+    holder signature shows only that whoever attached the name held that key.
+    """
+
+    ABSENT = "absent"
+    SELF_ASSERTED = "self_asserted"
+    INVALID = "invalid"
+
+
+HOLDER_SELF_ASSERTED_MESSAGE = (
+    "Holder name is self-asserted: its key is not bound to the account, "
+    "so the name is not verified and is not part of this record's validity"
+)
+HOLDER_INVALID_MESSAGE = (
+    "Holder attestation is invalid (signature or binding to this record does not check out); "
+    "no holder name is shown"
+)
+
+
 @dataclass(slots=True)
 class BundleVerificationResult(ContractModelMixin):
-    """Comprehensive verification outcome with dynamically derived six-axis assurance profile."""
+    """Comprehensive verification outcome with dynamically derived six-axis assurance profile.
+
+    ``valid`` describes the record only. The holder name is reported separately in
+    ``holder_claim_status``; ``holder_display_name`` is set only when that status is
+    ``self_asserted``.
+    """
 
     valid: bool
     proof_id: str
@@ -362,6 +609,8 @@ class BundleVerificationResult(ContractModelMixin):
     chain_verification: ChainVerificationResult | None = None
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    holder_claim_status: HolderClaimStatus = HolderClaimStatus.ABSENT
+    holder_display_name: str | None = None
 
 
 def verify_proof_bundle(
@@ -391,6 +640,25 @@ def verify_proof_bundle(
     signature_valid = proof_bundle.verify_publisher_signature()
     if not signature_valid:
         errors.append("Publisher Ed25519 signature verification failed")
+
+    # The holder claim is reported on its own and never changes ``valid``.
+    holder_claim_status = HolderClaimStatus.ABSENT
+    holder_display_name: str | None = None
+    if proof_bundle.holder_identity is not None:
+        att = proof_bundle.holder_identity
+        if (
+            att.proof_id != proof_bundle.proof_id
+            or att.merkle_root != proof_bundle.merkle_root
+            or att.proof_hash != proof_bundle.proof_hash()
+            or not holder_claim_fields_are_valid(att)
+            or not att.verify_signature()
+        ):
+            holder_claim_status = HolderClaimStatus.INVALID
+            warnings.append(HOLDER_INVALID_MESSAGE)
+        else:
+            holder_claim_status = HolderClaimStatus.SELF_ASSERTED
+            holder_display_name = att.display_name
+            warnings.append(HOLDER_SELF_ASSERTED_MESSAGE)
 
     merkle_valid, merkle_errors = verify_selective_disclosure(
         proof_bundle.merkle_root,
@@ -511,12 +779,20 @@ def verify_proof_bundle(
         chain_verification=chain_result,
         errors=list(dict.fromkeys(errors)),
         warnings=list(dict.fromkeys(warnings)),
+        holder_claim_status=holder_claim_status,
+        holder_display_name=holder_display_name,
     )
 
 
 __all__ = [
     "ALLOWED_RETENTION_MODES",
     "BundleVerificationResult",
+    "HOLDER_INVALID_MESSAGE",
+    "HOLDER_SCHEMA_VERSION",
+    "HOLDER_SELF_ASSERTED_MESSAGE",
+    "HolderClaimStatus",
+    "HolderIdentityAttestation",
+    "SIGNING_DOMAIN_HOLDER",
     "VERIFY_SCHEMA_VERSION",
     "VerifyProofBundle",
     "create_signed_proof_bundle",

@@ -3,7 +3,7 @@
   "keys": [
     {
       "publisher_kid": "n170-pub-2026-q1",
-      "public_key_hex": "519749abe49eaf67bff092d850c243df38be8697b84a2dde4b8fad150d08ff78",
+      "public_key_hex": "74fbf42d31b2b00bf7700bcfd806d1bb9ea7b7f00fdbd003a534c805ba867d77",
       "status": "active",
       "not_before_utc": "2026-01-01T00:00:00Z",
       "not_after_utc": "2027-01-01T00:00:00Z",
@@ -12,7 +12,7 @@
     },
     {
       "publisher_kid": "n170-pub-2025-h2",
-      "public_key_hex": "01080b646c2f518909f7766c30229aecdfe6894e5c7757f71c828c8ef8841703",
+      "public_key_hex": "59b87127db4cecc0f9b9dabb209c27c9625209e7458a7b06e8a1775f4d53dbe9",
       "status": "retired",
       "not_before_utc": "2025-07-01T00:00:00Z",
       "not_after_utc": "2025-12-31T23:59:59Z",
@@ -21,7 +21,7 @@
     },
     {
       "publisher_kid": "n170-pub-compromised-test",
-      "public_key_hex": "9641f1e0f3e858410a22ce94888e9fb87e0ad34fc33c1b6815a1330a8ba10144",
+      "public_key_hex": "7ee970a0a24526b8c547cced17c46c54db1c9fb03015cfafa02bad94317e284b",
       "status": "revoked",
       "not_before_utc": "2025-01-01T00:00:00Z",
       "not_after_utc": null,
@@ -34,7 +34,7 @@
       "notary_id": "notary-pse-eu",
       "operator_org": "PSE TLSNotary Foundation",
       "asn": "AS24940",
-      "public_key_hex": "e62531931eaf8b085d1965fc220a085e607dfc76f99f732c9a48c192776cb6d1",
+      "public_key_hex": "ba2005198b03fa692641fe0724d8fbd148085e9bea74428c0e3143507dd46768",
       "is_debug_build": false,
       "attestation_type": "aws_nitro_enclave"
     },
@@ -42,7 +42,7 @@
       "notary_id": "notary-swiss-ch",
       "operator_org": "Zurich Independent Attestations AG",
       "asn": "AS13030",
-      "public_key_hex": "96fe1168f097e664807fff68d82257ea3d6dd2421b43cb30be36a121cfd2954d",
+      "public_key_hex": "400a63144619deeea657c588010869a0edbcfa4c8d3b64a1778317f5401eb215",
       "is_debug_build": false,
       "attestation_type": "amd_sev_snp"
     },
@@ -50,7 +50,7 @@
       "notary_id": "notary-nordic-is",
       "operator_org": "Reykjavik Transparency Lab",
       "asn": "AS44530",
-      "public_key_hex": "b340c6a8ab3890078c08632043eb7ae3c015d6ccfcc56f28d691202a376f2d2e",
+      "public_key_hex": "1ce9f5732cc77dc53f4187269d4c59a3cf722d886859aa5bb62e2defee3a936f",
       "is_debug_build": false,
       "attestation_type": "aws_nitro_enclave"
     },
@@ -58,7 +58,7 @@
       "notary_id": "notary-colocated-eu2",
       "operator_org": "Berlin Notary Guild",
       "asn": "AS24940",
-      "public_key_hex": "016d30f3cc956561e7e433df41d5780a701c847229b1d5d95f35704907cfdd7b",
+      "public_key_hex": "705d4c3567e02b85fcb39d960070ad89330da9d96653c5b7c227d74e9d503758",
       "is_debug_build": false,
       "attestation_type": "production"
     }
@@ -66,35 +66,28 @@
   "checkpoint": {
     "origin": "n170.verify/transparency/v3",
     "size": 1284,
-    "hash_b64": "qNNnSPvOdC6EhQHaf9Sde2shsaF31ZkYhq6t+UD+xPo=",
+    "hash_b64": "/Um4CdUBwHHJaCs3vfg67JBWVIAW6xDyAZAQxdAqrKA=",
     "publisher_kid": "n170-pub-2026-q1",
-    "publisher_signature_hex": "f6f9b5508a8a084dcb7b18f604abe81d1d9ca213a865ee2e391b575fb9f8dff2d2735bfe6da79181097bf55af08f819272c0a04269284d45a0d071360df94606",
+    "publisher_signature_hex": "3b8bd50b8b518d40d9c40099d2f15a9044b7fbdcb420a1f5379a51103ec9b6fd59c3754173863d7d4d50c8c20476ca69915eb275570f005922d4bbb83501af09",
     "witness_cosignatures": [
       {
         "witness_id": "witness-sigsum-se",
-        "public_key_hex": "6372809b80fcc875762401d4dd49ae2cb54b27f9ee380b2d09d70fa52f117c71",
+        "public_key_hex": "d549fc0d680c4aec69aed1736b85b190b88ec48dca0b3c194f11a4202def7cf8",
         "timestamp_utc": "2026-04-01T11:58:10Z",
-        "signature_hex": "5f945f7d86283bf96ec4d9562b19a6d470713bc74ce4d37935ac0f972dfdcc9177193f16d9cc58fad72b4d07630348b3f7382a1a4b5020290392abb7c247770e"
+        "signature_hex": "0e138c585ac558bcd704bbea86a8a7692b8cd764edcd361b021b587f642d8b65d0e12f327f21647997bd2bb2e50519350967a4b87c7578b621e4a24a49125d01"
       },
       {
         "witness_id": "witness-c2sp-ch",
-        "public_key_hex": "925535d2102e6131037ede85da7db604c256e4b548ce800decb16641b4d4a57e",
+        "public_key_hex": "87956c09051ee666997073f5236b95c48f943454b0bdb4235324ada1c71419c5",
         "timestamp_utc": "2026-04-01T11:58:24Z",
-        "signature_hex": "10da8360575d44225f3f857ba7c6b60c9c03cd18770b0a98b38ea8b1c8bbd695e9ce23462944582de66895bb63565cef808ce974698a2cb475bf3528ab622408"
+        "signature_hex": "bf6ff0bd319873b3f38c2e878ac052641b06d472e0f967c4217075f1f529e39e37e3c08493867a5bb37efc63ab172ac8575f348e0f3e6f658bdb0ba9cba3f108"
       }
     ]
   },
-  "l2_anchor": {
-    "contract_address": "0x4e313730566572696679416e63686f7256333031",
-    "tx_hash": "0x3c4e57a2aff05bd7388d359a6782052d28a9d984b9bd42152f3f85e962220048",
-    "batch_merkle_root": "a8d36748fbce742e848501da7fd49d7b6b21b1a177d5991886aeadf940fec4fa",
-    "chain_id": 8453,
-    "block_number": 28419022,
-    "anchored_at_utc": "2026-04-01T11:55:00Z"
-  },
+  "l2_anchor": null,
   "pinned_broker_keys": {
     "prime_custody_ed25519": {
-      "prime-custody-k1": "66bd4c45dcd977122a0667dd304f140570e6af266afa88ac575435396b5f4c67"
+      "prime-custody-k1": "2aac907b1515037bb3e516a636c0bb348430f2f5aa9859149813c9c531b7002e"
     }
   },
   "schema_version": "n170-verify-keys-v3"

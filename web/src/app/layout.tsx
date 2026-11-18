@@ -7,11 +7,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "N170 Verify v3 — Institutional Cryptographic Performance & Ledger Provenance",
-    template: "%s | N170 Verify v3",
+    default: "N170 Verify: Cryptographic Performance & Ledger Provenance",
+    template: "%s | N170 Verify",
   },
   description:
-    "Open-source Apache-2.0 brokerage performance verification with k>=2 org/ASN-disjoint MPC-TLS witnesses, salted RFC 8785 JCS Merkle selective disclosure, calibrated accounting reconciliation, and institutional coaching telemetry.",
+    "Open-source Apache-2.0 brokerage performance verification with k>=2 org/ASN-disjoint MPC-TLS witnesses, salted RFC 8785 JCS Merkle selective disclosure, calibrated accounting reconciliation, and independent coaching telemetry.",
 };
 
 const THEME_BOOT_SCRIPT = `(function(){try{var p=new URLSearchParams(window.location.search).get('theme');var s=window.localStorage.getItem('n170-verify-theme');var t=(p==='paper'||p==='obsidian')?p:((s==='paper'||s==='obsidian')?s:'obsidian');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','obsidian');}})();`;

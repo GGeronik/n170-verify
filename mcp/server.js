@@ -10,7 +10,7 @@
  *   - Salted 7-leaf Merkle tree selective disclosure (`0x00` leaf / `0x01` node)
  *   - C2SP `tlog-checkpoint` & publisher key registry trust evaluation
  *   - Dynamic k >= 2 org- & ASN-disjoint TLSNotary witness quorum verification
- *   - Five formal LP due-diligence prospective chain invariants
+ *   - Five formal prospective chain invariants
  *
  * Security invariants:
  *   - `additionalProperties: false` on every tool schema
@@ -59,7 +59,7 @@ const INDEX_CONTINUITY_TOLERANCE = 1e-4;
 const TRANSCRIPT_PRIVACY_NOTICE =
   "LLM TRANSCRIPT PRIVACY NOTICE: All MCP tool arguments and responses are visible to " +
   "your host LLM provider's conversation transcript. Pass ONLY selectively redacted " +
-  "public VerifyProofBundle JSON objects or public proof_id identifiers—NEVER pass " +
+  "public VerifyProofBundle JSON objects or public proof_id identifiers; NEVER pass " +
   "raw brokerage statements, unredacted account numbers, API keys, or session tokens.";
 
 const FORBIDDEN_TOP_OR_NESTED_CREDENTIAL_KEYS = new Set([

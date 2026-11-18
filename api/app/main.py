@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 from app import __version__
 from app.badges import handle_get_badge_svg
 from app.config import ApiConfig
+from app.privacy_scanner import OutboundPrivacyScanner
 from app.routes_keys import (
     handle_get_well_known_keys,
     handle_options_well_known_keys,
@@ -28,6 +29,14 @@ from app.routes_proofs import (
     handle_post_enroll_chain,
     handle_post_proof,
     handle_post_verify_proof,
+    refuse_caller_clock,
+)
+from app.routes_snaptrade import (
+    SnapTradeRelayCoordinator,
+    handle_get_snaptrade_status,
+    handle_post_snaptrade_portal,
+    handle_post_snaptrade_release,
+    handle_post_snaptrade_verify,
 )
 from app.routes_sync import (
     handle_delete_sync,
@@ -72,7 +81,7 @@ DEFAULT_JSON_HEADERS: dict[str, str] = {
     "X-Content-Type-Options": "nosniff",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type",
+    "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
 }
 
 
@@ -111,6 +120,11 @@ class ApiResponse:
     body: bytes
     headers: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        cookie_keys = [k for k in list(self.headers.keys()) if k.lower() == "set-cookie"]
+        for k in cookie_keys:
+            del self.headers[k]
+
     @classmethod
     def json_response(
         cls,
@@ -135,6 +149,34 @@ def _parse_json_body(raw_body: bytes) -> tuple[bool, Any]:
         return True, parsed
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return False, f"Malformed JSON request body: {exc}"
+    except (RecursionError, ValueError):
+        # Too deeply nested, or otherwise not parsable as JSON.
+        return False, "Malformed JSON request body"
+
+
+_ERROR_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _error_code_of(body: bytes) -> str:
+    """The route's own error code, when it is a plain code; otherwise a generic one."""
+    try:
+        code = json.loads(body.decode("utf-8")).get("error")
+    except Exception:
+        return "request_refused"
+    if isinstance(code, str) and _ERROR_CODE_RE.fullmatch(code):
+        return code
+    return "request_refused"
+
+
+def _retry_after_seconds_of(body: bytes) -> int | None:
+    """A refusal's own ``retry_after_seconds``, when it states a positive whole number."""
+    try:
+        value = json.loads(body.decode("utf-8")).get("retry_after_seconds")
+    except Exception:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
 
 
 def _flatten_query_params(query_string: str) -> dict[str, str]:
@@ -183,6 +225,9 @@ class VerifyApiApplication:
         sync_vault: SyncVault | None = None,
         pipeline_spec: WorkerPipelineSpec = None,
         oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
+        snaptrade_relay: SnapTradeRelayCoordinator | None = None,
+        snaptrade_http_transport: Any = None,
+        hyperliquid_http_transport: Any = None,
     ) -> None:
         self.config = config or ApiConfig()
         self.store = store or ProofStore(self.config)
@@ -196,6 +241,11 @@ class VerifyApiApplication:
             oauth_revocation_callbacks=oauth_revocation_callbacks,
         )
         self.pipeline_spec = pipeline_spec
+        self.snaptrade_relay = snaptrade_relay or SnapTradeRelayCoordinator(
+            http_transport=snaptrade_http_transport,
+            session_ttl_seconds=self.config.snaptrade_session_ttl_seconds,
+        )
+        self.hyperliquid_http_transport = hyperliquid_http_transport
 
     @property
     def verify_app(self) -> VerifyApiApplication:
@@ -215,6 +265,55 @@ class VerifyApiApplication:
         body: bytes = b"",
     ) -> ApiResponse:
         """Dispatch an HTTP request synchronously to N170 Verify route handlers."""
+        resp = self._dispatch_internal(
+            method, raw_path, query_string=query_string, headers=headers, body=body
+        )
+        for k in list(resp.headers.keys()):
+            if k.lower() == "set-cookie":
+                del resp.headers[k]
+        if resp.status_code == 503:
+            retry_after = _retry_after_seconds_of(resp.body)
+            if retry_after is not None:
+                resp.headers["Retry-After"] = str(retry_after)
+        path = raw_path or "/"
+        if not _is_sync_route(path) and (resp.status_code < 500 or resp.status_code == 502):
+            scanner = OutboundPrivacyScanner()
+            body_text = resp.body.decode("utf-8", errors="replace")
+            violations = scanner.scan_text(body_text)
+            if violations and (400 <= resp.status_code < 500 or resp.status_code == 502):
+                # An error that would repeat a caller's own text (a field name, a path
+                # id) in a form the scanner blocks keeps its status and names only the
+                # kind of problem.
+                return ApiResponse.json_response(
+                    resp.status_code,
+                    {
+                        "error": _error_code_of(resp.body),
+                        "detail": (
+                            "The request was refused. The details are not shown because they "
+                            "would repeat text that looks like an account number or a credential."
+                        ),
+                    },
+                )
+            if violations:
+                return ApiResponse.json_response(
+                    500,
+                    {
+                        "error": "privacy_leak_blocked",
+                        "detail": "Outbound privacy scanner blocked response containing sensitive data",
+                        "violations": violations,
+                    },
+                )
+        return resp
+
+    def _dispatch_internal(
+        self,
+        method: str,
+        raw_path: str,
+        *,
+        query_string: str = "",
+        headers: Mapping[str, str] | None = None,
+        body: bytes = b"",
+    ) -> ApiResponse:
         req_headers = CaseInsensitiveHeaders(headers)
         verb = method.strip().upper()
         path = raw_path or "/"
@@ -230,6 +329,7 @@ class VerifyApiApplication:
                     "version": __version__,
                     "schema_version": VERIFY_SCHEMA_VERSION,
                     "hosted_multi_user_mode": self.config.hosted_multi_user_mode,
+                    "allow_hosted_signing": self.config.allow_hosted_signing,
                     "ed25519_backend": active_ed25519_backend(),
                     "aes_gcm_backend": active_aes_gcm_backend(),
                 },
@@ -244,6 +344,30 @@ class VerifyApiApplication:
                 st, payload, hdrs = handle_get_well_known_keys(store=self.store)
                 return ApiResponse.json_response(st, payload, headers=hdrs)
             return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+
+        # Refusal of signing oracle in hosted mode (allow_hosted_signing=False by default)
+        if path in {"/api/v1/sign", "/api/v1/proofs/sign"}:
+            if verb == "OPTIONS":
+                return ApiResponse(
+                    status_code=204,
+                    body=b"",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Methods": "POST, OPTIONS",
+                        "Access-Control-Allow-Headers": "Accept, Content-Type",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            if self.config.hosted_multi_user_mode and not self.config.allow_hosted_signing:
+                return ApiResponse.json_response(
+                    403,
+                    {
+                        "error": "signing_oracle_disabled",
+                        "detail": "Hosted mode refuses to sign payloads with server private keys",
+                    },
+                )
 
         if verb == "OPTIONS" and _is_sync_route(path):
             return ApiResponse(
@@ -263,7 +387,7 @@ class VerifyApiApplication:
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Accept, Content-Type",
+                    "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
                     "X-Content-Type-Options": "nosniff",
                 },
             )
@@ -282,8 +406,9 @@ class VerifyApiApplication:
                 sync_vault=self.sync_vault,
                 pipeline_spec=self.pipeline_spec,
                 headers=req_headers,
+                hyperliquid_http_transport=self.hyperliquid_http_transport,
             )
-            if isinstance(parsed, Mapping) and bool(parsed.get("persist_sync", False)):
+            if isinstance(parsed, Mapping) and parsed.get("persist_sync") is True:
                 return _sync_json_response(st, resp)
             return ApiResponse.json_response(st, resp)
 
@@ -304,6 +429,60 @@ class VerifyApiApplication:
             if verb != "GET":
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             st, resp = handle_get_ibkr_flex_guide()
+            return ApiResponse.json_response(st, resp)
+
+        # 3a. Ephemeral 5-slot SnapTrade V1 developer/promo relay routes
+        if path == "/api/v1/connect/snaptrade/status":
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            st, resp = handle_get_snaptrade_status(
+                config=self.config,
+                relay=self.snaptrade_relay,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/portal":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_portal(
+                parsed,
+                config=self.config,
+                relay=self.snaptrade_relay,
+                headers=req_headers,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/verify":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_verify(
+                parsed,
+                config=self.config,
+                store=self.store,
+                relay=self.snaptrade_relay,
+                pipeline_spec=self.pipeline_spec,
+                headers=req_headers,
+            )
+            return ApiResponse.json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/release":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_release(
+                parsed,
+                config=self.config,
+                relay=self.snaptrade_relay,
+                headers=req_headers,
+            )
             return ApiResponse.json_response(st, resp)
 
         # 3b. Viral tools: Claim Plausibility, Challenge Card, and Head-to-Head Comparison
@@ -327,6 +506,9 @@ class VerifyApiApplication:
             proof_a = unquote(vs_match.group("proof_a"))
             proof_b = unquote(vs_match.group("proof_b"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp = handle_get_head_to_head(
                 proof_a,
                 proof_b,
@@ -407,6 +589,9 @@ class VerifyApiApplication:
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             proof_id = unquote(discord_embed_match.group("proof_id"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp, hdrs = handle_get_discord_embed(
                 proof_id,
                 store=self.store,
@@ -420,6 +605,9 @@ class VerifyApiApplication:
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             proof_id = unquote(qr_payload_match.group("proof_id"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp, hdrs = handle_get_qr_payload(
                 proof_id,
                 store=self.store,
@@ -462,6 +650,9 @@ class VerifyApiApplication:
             if verb != "GET":
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp = handle_get_chain(
                 chain_id, store=self.store, now_utc=q_map.get("now_utc")
             )
@@ -586,7 +777,9 @@ def _payload_too_large_response() -> ApiResponse:
 
 async def _send_asgi_response(send: Any, resp: ApiResponse) -> None:
     asgi_headers = [
-        (k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in resp.headers.items()
+        (k.lower().encode("latin-1"), v.encode("latin-1"))
+        for k, v in resp.headers.items()
+        if k.lower() != "set-cookie"
     ]
     asgi_headers.append((b"content-length", str(len(resp.body)).encode("ascii")))
     await send({"type": "http.response.start", "status": resp.status_code, "headers": asgi_headers})
@@ -598,20 +791,28 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     if not _HAS_FASTAPI:
         raise RuntimeError("fastapi package is not installed in this Python environment")
 
+    # A hosted deployment serves no interactive API documents (/docs, /redoc, /openapi.json).
+    hosted = bool(verify_app.config.hosted_multi_user_mode)
+    docs_kwargs: dict[str, Any] = (
+        {"docs_url": None, "redoc_url": None, "openapi_url": None} if hosted else {}
+    )
     fapp = _FastAPI(
         title="N170 Verify API",
         version=__version__,
         description="Cryptographic brokerage verification, isolated workers, and C2SP continuity log",
+        **docs_kwargs,
     )
     fapp.state.verify_app = verify_app
     fapp.verify_app = verify_app  # type: ignore[attr-defined]
     fapp.config = verify_app.config  # type: ignore[attr-defined]
     fapp.store = verify_app.store  # type: ignore[attr-defined]
     fapp.sync_vault = verify_app.sync_vault  # type: ignore[attr-defined]
+    fapp.snaptrade_relay = verify_app.snaptrade_relay  # type: ignore[attr-defined]
 
     def _to_fastapi_response(resp: ApiResponse) -> _FastAPIResponse:
+        sanitized = {k: v for k, v in resp.headers.items() if k.lower() != "set-cookie"}
         return _FastAPIResponse(
-            content=resp.body, status_code=resp.status_code, headers=resp.headers
+            content=resp.body, status_code=resp.status_code, headers=sanitized
         )
 
     async def _proxy(request: _FastAPIRequest) -> _FastAPIResponse:
@@ -652,9 +853,15 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     for route_path, methods in (
         ("/healthz", ["GET", "OPTIONS"]),
         ("/.well-known/n170-verify-keys.json", ["GET", "OPTIONS"]),
+        ("/api/v1/sign", ["POST", "OPTIONS"]),
+        ("/api/v1/proofs/sign", ["POST", "OPTIONS"]),
         ("/api/v1/verify", ["POST", "OPTIONS"]),
         ("/api/v1/verify/auto-detect", ["POST", "OPTIONS"]),
         ("/api/v1/connect/ibkr-flex-guide", ["GET", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/status", ["GET", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/portal", ["POST", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/verify", ["POST", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/release", ["POST", "OPTIONS"]),
         ("/api/v1/tools/plausibility", ["POST", "OPTIONS"]),
         ("/api/v1/challenge-card", ["GET", "OPTIONS"]),
         ("/api/v1/vs/{proof_a}/{proof_b}", ["GET", "OPTIONS"]),
@@ -685,6 +892,9 @@ def create_app(
     sync_vault: SyncVault | None = None,
     pipeline_spec: WorkerPipelineSpec = None,
     oauth_revocation_callbacks: Mapping[str, OAuthRevocationCallback] | None = None,
+    snaptrade_relay: SnapTradeRelayCoordinator | None = None,
+    snaptrade_http_transport: Any = None,
+    hyperliquid_http_transport: Any = None,
     prefer_fastapi: bool = True,
 ) -> Any:
     """Create the N170 Verify application (FastAPI when installed, zero-dep ASGI otherwise)."""
@@ -694,6 +904,9 @@ def create_app(
         sync_vault=sync_vault,
         pipeline_spec=pipeline_spec,
         oauth_revocation_callbacks=oauth_revocation_callbacks,
+        snaptrade_relay=snaptrade_relay,
+        snaptrade_http_transport=snaptrade_http_transport,
+        hyperliquid_http_transport=hyperliquid_http_transport,
     )
     if prefer_fastapi and _HAS_FASTAPI:
         return mount_onto_fastapi(core_app)
@@ -976,7 +1189,17 @@ def run_cli(argv: list[str] | None = None) -> int:
         return 0
 
 
-app = create_app()
+def __getattr__(name: str) -> Any:
+    """``app`` for ASGI servers (``uvicorn app.main:app``), built from the environment.
+
+    Nothing is built at import time. The application is built on first use through
+    ``ApiConfig.from_env()``, so every start-up check applies, as with ``python -m app.main``.
+    """
+    if name == "app":
+        built = create_app(ApiConfig.from_env())
+        globals()["app"] = built
+        return built
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
@@ -985,7 +1208,6 @@ __all__ = [
     "TestClientResponse",
     "VerifyApiApplication",
     "VerifyApiTestClient",
-    "app",
     "create_app",
     "create_stdlib_http_server",
     "mount_onto_fastapi",

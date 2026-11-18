@@ -188,7 +188,15 @@ def _cmd_verify_flex(args: argparse.Namespace) -> int:
         payload = result.proof_bundle.to_dict()
 
     _emit_json(payload, args.output)
-    return 0 if result.verification.valid else 1
+    valid_csv = (
+        result.verification.valid
+        or (
+            result.proof_bundle.environment_tier == EnvironmentTier.UNVERIFIED_OFFLINE
+            and result.verification.signature_valid
+            and result.verification.merkle_valid
+        )
+    )
+    return 0 if valid_csv else 1
 
 
 def _cmd_verify_csv(args: argparse.Namespace) -> int:
@@ -238,7 +246,15 @@ def _cmd_verify_csv(args: argparse.Namespace) -> int:
         payload = result.proof_bundle.to_dict()
 
     _emit_json(payload, args.output)
-    return 0 if result.verification.valid else 1
+    valid_csv = (
+        result.verification.valid
+        or (
+            result.proof_bundle.environment_tier == EnvironmentTier.UNVERIFIED_OFFLINE
+            and result.verification.signature_valid
+            and result.verification.merkle_valid
+        )
+    )
+    return 0 if valid_csv else 1
 
 
 def _cmd_check_bundle(args: argparse.Namespace) -> int:
@@ -321,7 +337,7 @@ def _cmd_capabilities(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="n170-verify",
-        description="N170 Verify v3 — Privacy-preserving brokerage performance proof generator & verifier",
+        description="N170 Verify - Privacy-preserving brokerage performance proof generator & verifier",
     )
     sub = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -387,7 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument(
         "--registry",
         default=None,
-        help="Optional path to n170-verify-keys.json publisher & notary registry",
+        help="Optional path to n170-specimen-keys.json publisher & notary registry",
     )
     p_check.add_argument(
         "--now-utc",
