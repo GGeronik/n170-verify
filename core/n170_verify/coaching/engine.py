@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -123,6 +124,9 @@ class TraderCoachingEngine:
             atr_14_series=atr_14_series,
             cost_drag=cost_drag,
         )
+        if performance_withheld:
+            # No figure derived from the valuation path is signed when the return is withheld.
+            behaviour = dataclasses.replace(behaviour, post_drawdown_sizing_discipline_atr=None)
 
         effective_as_of = as_of_utc if as_of_utc is not None else ledger.period_end_utc
         delayed_trades = extract_delayed_closed_trades(
@@ -200,7 +204,9 @@ class TraderCoachingEngine:
                 scored_period_returns=scored_period_returns,
             )
         )
-        quant_dna = compute_quant_dna_profile(
+        # The profile's consistency, drawdown-resilience, sizing and cost-efficiency axes read
+        # the valuations, and the contract has no partial profile, so a withheld return signs none.
+        quant_dna = None if performance_withheld else compute_quant_dna_profile(
             ledger,
             behaviour=behaviour,
             cost_drag=cost_drag,

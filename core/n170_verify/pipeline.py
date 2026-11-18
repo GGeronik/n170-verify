@@ -227,6 +227,61 @@ def _call_adapter_fetch(
     return ledger
 
 
+def _activity_inside_scored_span(
+    ledger: CanonicalPortfolioLedger, first_ts: str, last_ts: str
+) -> dict[str, Any]:
+    """Ledger updates that keep only activity inside the span of the scored valuations.
+
+    Activity dated outside the record's period is left out, so no trade, cost or behaviour
+    figure describes a time the record does not state. A position opened before the period
+    cannot be matched inside it, so every trade in an instrument that also traded before the
+    period is left out too.
+    """
+    start_dt, end_dt = parse_utc_timestamp(first_ts), parse_utc_timestamp(last_ts)
+
+    def _inside(ts: str) -> bool:
+        return start_dt <= parse_utc_timestamp(ts) <= end_dt
+
+    def _instrument(t: Any) -> tuple[Any, ...]:
+        return (t.symbol.strip().upper(), t.asset_class, t.option_right, t.strike, t.expiry)
+
+    held_into = {
+        _instrument(t) for t in ledger.trades if parse_utc_timestamp(t.timestamp_utc) < start_dt
+    }
+    in_span = [t for t in ledger.trades if _inside(t.timestamp_utc)]
+    kept_trades = [t for t in in_span if _instrument(t) not in held_into]
+    kept_flows = [f for f in ledger.flows if _inside(f.timestamp_utc)]
+    kept_actions = [c for c in ledger.corporate_actions if _inside(c.timestamp_utc)]
+
+    updates: dict[str, Any] = {}
+    warnings = list(ledger.parser_warnings)
+    if len(kept_trades) != len(ledger.trades):
+        updates["trades"] = [t.to_dict() for t in kept_trades]
+        if len(kept_trades) != len(in_span):
+            dropped = {_instrument(t) for t in in_span} & held_into
+            warnings.append(
+                f"Trades in {len(dropped)} instrument(s) held into the valuation series from "
+                "earlier are not in the ledger, so no round trip is matched against an opening "
+                "trade outside the record's period."
+            )
+        if len(in_span) != len(ledger.trades):
+            warnings.append(
+                f"{len(ledger.trades) - len(in_span)} trade(s) dated outside the record's period "
+                "are not in the ledger."
+            )
+    if len(kept_flows) != len(ledger.flows):
+        updates["flows"] = [f.to_dict() for f in kept_flows]
+        warnings.append(
+            f"{len(ledger.flows) - len(kept_flows)} cash or transfer flow(s) dated outside the "
+            "record's period are not in the ledger."
+        )
+    if len(kept_actions) != len(ledger.corporate_actions):
+        updates["corporate_actions"] = [c.to_dict() for c in kept_actions]
+    if warnings != list(ledger.parser_warnings):
+        updates["parser_warnings"] = warnings
+    return updates
+
+
 def ingest_portfolio_ledger(
     *,
     ledger: CanonicalPortfolioLedger | Mapping[str, Any] | None = None,
@@ -440,6 +495,7 @@ def ingest_portfolio_ledger(
             updates["period_start_utc"] = first_ts
         if resolved_ledger.period_end_utc != last_ts:
             updates["period_end_utc"] = last_ts
+        updates.update(_activity_inside_scored_span(resolved_ledger, first_ts, last_ts))
     else:
         if period_start_utc is not None:
             updates["period_start_utc"] = period_start_utc
@@ -459,7 +515,7 @@ def ingest_portfolio_ledger(
 def _compute_benchmark_beta_and_ir(
     indexed_curve: Sequence[IndexedCurvePoint],
     *,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = 252,
 ) -> tuple[float | None, float | None]:
     """Derive portfolio beta and annualized information ratio strictly from rebased-100 index points."""
     if len(indexed_curve) < 3:
@@ -499,7 +555,7 @@ def _compute_benchmark_beta_and_ir(
     active_rets = [p - b for p, b in zip(port_rets, bench_rets)]
     tracking_err = stdev(active_rets) if len(active_rets) >= 2 else 0.0
     ir: float | None = None
-    if tracking_err > 1e-12:
+    if tracking_err > 1e-12 and periods_per_year is not None:
         ir = round((mean(active_rets) / tracking_err) * math.sqrt(periods_per_year), 6)
 
     return beta, ir
@@ -552,7 +608,7 @@ def build_canonical_leaf_payloads(
     base_currency: str,
     embargo_days: int = 7,
     stripped_recent_closed_trades_count: int = 0,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = 252,
 ) -> dict[str, Any]:
     """Assemble the 7 canonical Merkle leaf payloads with strict zero-leakage leaf separation."""
     core_dict = performance.to_dict()
@@ -649,7 +705,7 @@ def verify_portfolio(
     eodhd_api_key: str | None = None,
     benchmark_symbol: str | None = None,
     annual_risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = None,
     cash_flow_timing: str | None = None,
     psr_benchmark_sr: float = 0.0,
     embargo_days: int = 7,
@@ -769,7 +825,10 @@ def verify_portfolio(
             if imported_journal_tags is not None
             else None
         ),
-        max_drawdown_decimal=performance_summary.max_drawdown_decimal,
+        # A withheld return has no drawdown: pass none rather than the 0.0 placeholder.
+        max_drawdown_decimal=(
+            None if perf_calc.withheld else performance_summary.max_drawdown_decimal
+        ),
         scored_period_returns=(
             None
             if perf_calc.withheld
@@ -789,7 +848,7 @@ def verify_portfolio(
         base_currency=canonical_ledger.base_currency,
         embargo_days=embargo_days,
         stripped_recent_closed_trades_count=stripped_recent_count,
-        periods_per_year=periods_per_year,
+        periods_per_year=perf_calc.annualization_periods_per_year,
     )
     merkle_tree = build_salted_merkle_tree(leaf_payloads, leaf_salts_hex=leaf_salts)
 
@@ -804,6 +863,9 @@ def verify_portfolio(
         if disclose_leaf_names is None
         else [str(name) for name in disclose_leaf_names]
     )
+    if perf_calc.withheld and "core_metrics" not in disclose_names:
+        # A withheld return is always stated: the leaf carrying the flag cannot be hidden.
+        disclose_names.append("core_metrics")
 
     bundle = create_signed_proof_bundle(
         proof_id=resolved_proof_id,
@@ -1025,11 +1087,9 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         if job_payload.get("period_end_utc_explicit") and job_payload.get("period_end_utc")
         else None
     )
-    base_ccy = (
-        str(job_payload["base_currency"]).strip().upper()
-        if job_payload.get("base_currency_explicit") and job_payload.get("base_currency")
-        else None
-    )
+    # The currency label comes from the input: the file, or the parser that read it. No
+    # request field (base_currency, broker_id) relabels a record.
+    base_ccy = None
 
     flex_xml: bytes | None = None
     if job_payload.get("flex_xml_b64"):
@@ -1082,13 +1142,9 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             }:
                 csv_source = raw_bytes
             else:
-                default_stmt_ccy = base_ccy or (
-                    "EUR" if broker_id in {"degiro", "degiro_csv"} else "USD"
-                )
                 det = detect_and_parse_statement(
                     raw_bytes,
                     blinding_salt_hex=salt_hex,
-                    base_currency=default_stmt_ccy,
                     reject_demo=True,
                     require_live=True,
                 )
@@ -1249,7 +1305,11 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         eodhd_api_key=job_payload.get("eodhd_api_key"),
         benchmark_symbol=job_payload.get("benchmark_symbol"),
         annual_risk_free_rate=float(job_payload.get("annual_risk_free_rate", 0.0)),
-        periods_per_year=int(job_payload.get("periods_per_year", 252)),
+        periods_per_year=(
+            float(job_payload["periods_per_year"])
+            if job_payload.get("periods_per_year") is not None
+            else None
+        ),
         cash_flow_timing=(
             str(job_payload["cash_flow_timing"])
             if job_payload.get("cash_flow_timing")

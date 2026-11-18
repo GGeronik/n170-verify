@@ -18,6 +18,8 @@ import unittest
 
 from n170_verify.coaching import simulate_counterfactual_twin
 from n170_verify.contracts import (
+    AssetClass,
+    NormalizedTrade,
     AccountScope,
     CanonicalPortfolioLedger,
     EnvironmentTier,
@@ -242,9 +244,7 @@ _TAG_SAMPLES = [
     "Momentum_Breakout",
 ]
 _TAG_EXPECTED = [
-    "Oversized Account",
     "ORB_5m",
-    "Size add",
     "HYPERLINK(x)",
     "alert",
     "Fade",
@@ -289,8 +289,204 @@ class SignedJournalTagTests(unittest.TestCase):
             leaf["payload"] for leaf in result["disclosed_leaves"] if leaf["leaf_name"] == "coaching_and_context"
         )
         tags = coaching["imported_journal_tags"]
-        self.assertIn("Oversized Account", tags)
-        self.assertFalse(any(any(ch.isdigit() for ch in t) and "99887766" in t for t in tags))
+        self.assertIn("ORB_5m", tags)
+        self.assertFalse(any("99887766" in t or t.startswith("Oversized") for t in tags))
+
+
+def _returns_of(ledger: CanonicalPortfolioLedger, **kw: Any) -> tuple[Any, list[float]]:
+    res = calculate_portfolio_performance_detailed(ledger, **kw)
+    return res, [obs.period_return for obs in res.return_observations]
+
+
+def _series(days: list[int], start: datetime = datetime(2023, 1, 2, 20, 0, tzinfo=timezone.utc)) -> list[NormalizedNavPoint]:
+    out, v = [], 10000.0
+    for i, d in enumerate(days):
+        out.append(NormalizedNavPoint(timestamp_utc=_iso(start + timedelta(days=d)), nav_base=round(v, 4)))
+        v *= 1.01 if i % 2 == 0 else 0.996
+    return out
+
+
+class AnnualisationFromTheSeriesTests(unittest.TestCase):
+    """The annualisation factor is the number of scored intervals per year of the series."""
+
+    def _check_factor(self, days: list[int]) -> float:
+        import math
+        from statistics import stdev
+
+        navs = _series(days)
+        res, rets = _returns_of(_ledger(navs))
+        self.assertFalse(res.withheld)
+        span_years = days[-1] / 365.0
+        factor = (len(days) - 1) / span_years
+        self.assertAlmostEqual(res.summary.annualized_volatility, stdev(rets) * math.sqrt(factor), places=9)
+        self.assertAlmostEqual(res.annualization_periods_per_year, factor, places=9)
+        return factor
+
+    def test_calendar_daily_series_annualise_at_365(self) -> None:
+        self.assertAlmostEqual(self._check_factor(list(range(60))), 365.0, places=6)
+
+    def test_business_daily_series_annualise_by_their_own_count(self) -> None:
+        days = [d for d in range(0, 120) if (d % 7) < 5]  # weekdays only, from a Monday
+        factor = self._check_factor(days)
+        self.assertTrue(255.0 < factor < 265.0, factor)
+
+    def test_weekly_and_monthly_series_annualise_by_their_own_count(self) -> None:
+        self.assertAlmostEqual(self._check_factor([7 * i for i in range(40)]), 365.0 / 7.0, places=6)
+        months = [0]
+        for i in range(1, 37):
+            months.append(months[-1] + (31 if i % 2 else 30))
+        factor = self._check_factor(months)
+        self.assertTrue(11.5 < factor < 12.5, factor)
+
+    def test_uneven_intervals_withhold_the_annualised_figures_not_the_return(self) -> None:
+        days = list(range(40)) + [40 + 45, 40 + 46, 40 + 47]
+        res, _ = _returns_of(_ledger(_series(days)))
+        self.assertFalse(res.withheld)
+        s = res.summary
+        for name in (
+            "annualized_volatility",
+            "sharpe_ratio",
+            "sortino_ratio",
+            "unsmoothed_volatility",
+            "unsmoothed_sharpe_ratio",
+            "probabilistic_sharpe_ratio",
+            "psr_glm_unsmoothed",
+            "min_track_record_length_periods",
+        ):
+            self.assertIsNone(getattr(s, name), name)
+        self.assertFalse(s.psr_sample_eligible)
+        self.assertIsNone(res.annualization_periods_per_year)
+        self.assertTrue(any("annualised figures are withheld" in w for w in s.warnings))
+        self.assertNotEqual(s.twr_decimal, 0.0)
+
+    def test_an_explicit_factor_from_a_library_caller_is_used_as_given(self) -> None:
+        import math
+        from statistics import stdev
+
+        res, rets = _returns_of(_ledger(_series(list(range(60)))), periods_per_year=252)
+        self.assertAlmostEqual(res.summary.annualized_volatility, stdev(rets) * math.sqrt(252), places=9)
+
+
+class WithheldRecordCarriesNoValuationScoresTests(unittest.TestCase):
+    def test_a_withheld_record_signs_no_drawdown_or_valuation_based_scores(self) -> None:
+        navs = _navs([10000.0, 10100.0, 0.0, 6000.0, 6100.0])
+        out = verify_portfolio(ledger=_ledger(navs), issued_at_utc=_ISSUED)
+        self.assertTrue(out.performance_withheld)
+        coaching = out.proof_bundle.get_disclosed_payload("coaching_and_context")
+        self.assertIsNone(coaching["quant_dna"])
+        self.assertIsNone(coaching["behaviour"]["post_drawdown_sizing_discipline_atr"])
+
+
+class JournalTagNumberTests(unittest.TestCase):
+    def test_tags_with_account_like_numbers_or_amounts_are_dropped(self) -> None:
+        from n170_verify.coaching import sanitize_journal_tags
+
+        dropped = [
+            "acct U12345678",
+            "U12345678",
+            "acct_987654321",
+            "x123456y",
+            "1234 5678 9012 3456",
+            "1234 5678 9012",
+            "12,345 profit",
+            "made 2500 usd",
+            "1 555 123 4567",
+            "50 dollars stop",
+            "EUR 25 add",
+            "lost 3 euros",
+        ]
+        kept = ["ORB_5m", "2R target", "ok tag", "1.2k win", "15m VWAP", "Top 10 gap"]
+        self.assertEqual(sanitize_journal_tags(dropped + kept), kept)
+
+
+def _trade(sym: str, side: str, ts: datetime, qty: float, px: float, tid: str) -> NormalizedTrade:
+    return NormalizedTrade(
+        venue="DUMMY", native_entry_id=tid, symbol=sym, asset_class=AssetClass.EQUITY,
+        side=side, quantity=qty, price=px, timestamp_utc=_iso(ts),
+    )
+
+
+class ActivityInsideTheSignedPeriodTests(unittest.TestCase):
+    def test_activity_outside_the_scored_span_is_not_in_the_ledger(self) -> None:
+        jan5 = datetime(2026, 1, 5, 20, 0, tzinfo=timezone.utc)
+        navs = _navs([10000.0, 10050.0, 10100.0, 10080.0, 10120.0], start=jan5)
+        trades = [
+            _trade("AAPL", "buy", datetime(2025, 11, 3, 14, 30, tzinfo=timezone.utc), 10, 200.0, "t1"),
+            _trade("AAPL", "sell", datetime(2025, 11, 20, 14, 30, tzinfo=timezone.utc), 10, 210.0, "t2"),
+            _trade("AAPL", "buy", jan5 + timedelta(days=1, hours=-3), 5, 205.0, "t3"),
+            _trade("AAPL", "sell", jan5 + timedelta(days=2, hours=-3), 5, 207.0, "t4"),
+            _trade("MSFT", "buy", jan5 + timedelta(days=1, hours=-2), 3, 400.0, "t5"),
+            _trade("MSFT", "sell", jan5 + timedelta(days=3, hours=-2), 3, 404.0, "t6"),
+        ]
+        flows = [_flow(datetime(2025, 12, 1, 12, 0, tzinfo=timezone.utc), FlowKind.DEPOSIT, 2000.0)]
+        ledger = ingest_portfolio_ledger(ledger=_ledger(navs, flows, trades=trades, period_start_utc="2025-11-01T00:00:00Z"))
+        self.assertEqual(sorted(t.native_entry_id for t in ledger.trades), ["t5", "t6"])
+        self.assertEqual(ledger.flows, [])
+        self.assertTrue(any("held into the valuation series" in w for w in ledger.parser_warnings))
+
+    def test_a_ledger_without_valuations_keeps_its_activity(self) -> None:
+        trades = [
+            _trade("AAPL", "buy", datetime(2025, 11, 3, 14, 30, tzinfo=timezone.utc), 10, 200.0, "t1"),
+            _trade("AAPL", "sell", datetime(2025, 11, 20, 14, 30, tzinfo=timezone.utc), 10, 210.0, "t2"),
+        ]
+        ledger = ingest_portfolio_ledger(
+            ledger=_ledger([], trades=trades, period_start_utc="2025-11-01T00:00:00Z", period_end_utc="2025-11-30T00:00:00Z")
+        )
+        self.assertEqual(len(ledger.trades), 2)
+
+
+class ZeroOpeningValueTests(unittest.TestCase):
+    def test_an_interval_opening_at_zero_withholds_in_every_timing_mode(self) -> None:
+        navs = _navs([0.0, 10500.0, 10600.0])
+        deposit = _flow(_DAY0 + timedelta(hours=12), FlowKind.DEPOSIT, 10000.0)
+        for timing in ("end_of_day", "start_of_day", "modified_dietz"):
+            with self.subTest(timing=timing):
+                res = calculate_portfolio_performance_detailed(_ledger(navs, [deposit]), cash_flow_timing=timing)
+                self.assertTrue(res.withheld)
+                out = verify_portfolio(ledger=_ledger(navs, [deposit]), cash_flow_timing=timing, issued_at_utc=_ISSUED)
+                self.assertTrue(out.performance_withheld)
+
+
+_MT5_NO_CURRENCY = "\n".join(
+    [
+        "<html><head><title>MetaTrader 5 Trade History Report</title></head>",
+        "<body><table>",
+        "<tr><th colspan='14'>Positions</th></tr>",
+        "<tr><th colspan='14'>Deals</th></tr>",
+        "<tr><td>Time</td><td>Deal</td><td>Symbol</td><td>Type</td><td>Direction</td><td>Volume</td><td>Price</td><td>Order</td><td>Commission</td><td>Fee</td><td>Swap</td><td>Profit</td><td>Balance</td><td>Comment</td></tr>",
+        "<tr><td>2026.02.02 08:00:00</td><td>8801001</td><td></td><td>balance</td><td></td><td></td><td></td><td></td><td>0.00</td><td>0.00</td><td>0.00</td><td>10000.00</td><td>10000.00</td><td>Initial funding</td></tr>",
+        "<tr><td>2026.02.05 09:30:00</td><td>8801010</td><td>EURUSD</td><td>buy</td><td>in</td><td>1.00</td><td>1.08000</td><td>9901010</td><td>-3.50</td><td>0.00</td><td>0.00</td><td>0.00</td><td>9996.50</td><td></td></tr>",
+        "<tr><td>2026.02.10 14:15:00</td><td>8801025</td><td>EURUSD</td><td>sell</td><td>out</td><td>1.00</td><td>1.08250</td><td>9901025</td><td>-3.50</td><td>0.00</td><td>-1.20</td><td>250.00</td><td>10241.80</td><td></td></tr>",
+        "</table></body></html>",
+    ]
+)
+
+
+class StatementCurrencyLabelTests(unittest.TestCase):
+    def test_the_currency_label_comes_from_the_parser_not_the_request(self) -> None:
+        from n170_verify.pipeline import api_worker_pipeline_entrypoint
+
+        baseline = api_worker_pipeline_entrypoint(
+            {"broker_id": "mt5_statement", "raw_statement": _MT5_NO_CURRENCY, "account_blinding_salt_hex": _SALT,
+             "issued_at_utc": "2026-04-15T12:00:00Z"}
+        )["base_currency"]
+        for extra in (
+            {"broker_id": "degiro"},
+            {"broker_id": "degiro_csv"},
+            {"broker_id": "mt5_statement", "base_currency": "EUR", "base_currency_explicit": True},
+        ):
+            with self.subTest(extra=sorted(extra.items())):
+                job = {"broker_id": "mt5_statement", "raw_statement": _MT5_NO_CURRENCY,
+                       "account_blinding_salt_hex": _SALT, "issued_at_utc": "2026-04-15T12:00:00Z", **extra}
+                self.assertEqual(api_worker_pipeline_entrypoint(job)["base_currency"], baseline)
+
+
+class WithheldRecordDisclosureTests(unittest.TestCase):
+    def test_a_withheld_record_always_discloses_its_core_metrics(self) -> None:
+        navs = _navs([10000.0, 10100.0, 0.0, 6000.0, 6100.0])
+        out = verify_portfolio(ledger=_ledger(navs), issued_at_utc=_ISSUED, disclose_leaf_names=["capital_bracket"])
+        self.assertTrue(out.performance_withheld)
+        self.assertIs(out.proof_bundle.get_disclosed_payload("core_metrics")["performance_withheld"], True)
 
 
 if __name__ == "__main__":
