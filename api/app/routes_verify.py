@@ -27,6 +27,8 @@ from app.worker_isolation import (
     WorkerIsolationError,
     WorkerPipelineSpec,
     WorkerValidationError,
+    _SYNTHETIC_SIGNING_ORACLE_KEYS,
+    enforce_hosted_signing_oracle_policy,
     run_isolated_one_shot_verification,
 )
 from n170_verify.contracts import (
@@ -87,6 +89,69 @@ _STATEMENT_OR_LEDGER_KEYS: tuple[str, ...] = (
     "degiro_transactions_csv",
     "degiro_portfolio_csv",
 )
+
+
+# Statement input fields a visitor may upload (a pre-built ``ledger`` is not one of them).
+_STATEMENT_INPUT_KEYS: frozenset[str] = frozenset(_STATEMENT_OR_LEDGER_KEYS) - {"ledger"}
+
+# Hosted mode: the worker job for this route is built from these request fields only.
+_HOSTED_WORKER_REQUEST_FIELDS: frozenset[str] = frozenset(
+    {
+        "broker_id",
+        "wallet_address",
+        "connector_kwargs",
+        "connector_fetch_kwargs",
+        "csv_format",
+        "disclose_leaf_names",
+        "issued_at_utc",
+        *_STATEMENT_INPUT_KEYS,
+    }
+)
+
+# Hosted mode: fields the route itself reads and does not forward to the worker.
+_HOSTED_ROUTE_ONLY_FIELDS: frozenset[str] = frozenset(
+    {
+        "publish_proof",
+        "opt_in_leaderboard",
+        "persist_sync",
+        "sync_credentials",
+        "capabilities",
+        "connection_id",
+        "environment_tier",
+    }
+)
+
+_HOSTED_BROKER_ID_RE = re.compile(r"[a-z0-9_]+")
+
+
+def _hosted_broker_id_refusal(raw: Any, config: ApiConfig) -> str | None:
+    """Hosted: a broker id is plain lower-case ASCII and one this host has configured."""
+    if not isinstance(raw, str):
+        return "broker_id must be a string"
+    norm = raw.strip()
+    if not norm.isascii() or _HOSTED_BROKER_ID_RE.fullmatch(norm.lower()) is None:
+        return "broker_id must contain only lower-case letters, digits and underscores"
+    if norm.lower() not in config.connector_approval_states:
+        return f"broker_id={norm.lower()!r} is not a broker this host supports"
+    return None
+
+
+def _hosted_unlisted_fields(payload: Mapping[str, Any]) -> list[str]:
+    """Request fields outside the hosted list; the oracle-policy keys keep their own refusal."""
+    accepted = _HOSTED_WORKER_REQUEST_FIELDS | _HOSTED_ROUTE_ONLY_FIELDS | _SYNTHETIC_SIGNING_ORACLE_KEYS
+    return sorted(str(k) for k in payload if str(k) not in accepted)
+
+
+def _hosted_worker_request(
+    payload: Mapping[str, Any], approval_state: ProviderApprovalState, env_tier: EnvironmentTier
+) -> dict[str, Any]:
+    """Build the hosted worker job from the listed fields and the route-resolved states."""
+    forwarded = _HOSTED_WORKER_REQUEST_FIELDS | _SYNTHETIC_SIGNING_ORACLE_KEYS
+    job = {str(k): v for k, v in payload.items() if str(k) in forwarded}
+    job["broker_id"] = str(payload["broker_id"]).strip().lower()
+    job["provider_approval_state"] = approval_state.value
+    job["environment_tier"] = env_tier.value
+    return job
 
 
 def _check_caller_fetch_kwargs(payload: Mapping[str, Any], broker_id: str) -> str | None:
@@ -228,14 +293,39 @@ def handle_post_verify(
         if not auth_ok:
             return auth_status, auth_err
 
+    if config.hosted_multi_user_mode:
+        broker_refusal = _hosted_broker_id_refusal(payload.get("broker_id"), config)
+        if broker_refusal is not None:
+            return 422, {"error": "validation_error", "detail": broker_refusal}
+        # Client-supplied series keep their own refusal ahead of the field list.
+        try:
+            enforce_hosted_signing_oracle_policy(
+                payload,
+                hosted_multi_user_mode=True,
+                allow_hosted_signing=config.allow_hosted_signing,
+                allow_client_supplied_series_for_tests=config.allow_client_supplied_series_for_tests,
+                has_custom_pipeline=(pipeline_spec is not None),
+            )
+        except GovernanceBlockedError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+        unlisted = _hosted_unlisted_fields(payload)
+        if unlisted:
+            return 422, {
+                "error": "validation_error",
+                "detail": f"request field(s) not accepted by this host: {', '.join(unlisted)}",
+            }
+
     publish_proof = bool(payload.get("publish_proof", False))
     opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
 
     retention_mode = "opt_in_encrypted_sync" if persist_sync else "no_persistent_storage"
 
-    normalized_payload = dict(payload)
-    normalized_payload["provider_approval_state"] = approval_state.value
-    normalized_payload["environment_tier"] = env_tier.value
+    if config.hosted_multi_user_mode:
+        normalized_payload = _hosted_worker_request(payload, approval_state, env_tier)
+    else:
+        normalized_payload = dict(payload)
+        normalized_payload["provider_approval_state"] = approval_state.value
+        normalized_payload["environment_tier"] = env_tier.value
 
     result_meta: dict[str, Any] = {}
     try:

@@ -579,6 +579,36 @@ _SYNTHETIC_SIGNING_ORACLE_KEYS: frozenset[str] = frozenset(
 )
 
 
+# Hosted: signed records never carry a chain link or attestation taken from the request.
+_HOSTED_REFUSED_ATTACHMENT_KEYS: frozenset[str] = frozenset(
+    {"prospective_chain_link", "witness_attestations", "broker_native_signature"}
+)
+
+# Offline id under which a statement-derived record is signed when the parser names a
+# broker id that this host serves as a live connector.
+_STATEMENT_OFFLINE_BROKER_IDS: dict[str, str] = {
+    "schwab": "schwab_csv",
+    "ibkr": "ibkr_flex_offline",
+}
+
+
+def _offline_broker_id_for_statement(
+    returned_broker_id: str, worker_reported_state: Any, config: ApiConfig
+) -> str:
+    """Hosted: a record whose input was a statement is signed under an offline broker id."""
+    offline = ProviderApprovalState.OFFLINE_EXPORT_ONLY
+    if not worker_reported_state or ProviderApprovalState(str(worker_reported_state)) != offline:
+        return returned_broker_id
+    if config.connector_approval_states.get(returned_broker_id, offline) == offline:
+        return returned_broker_id
+    mapped = _STATEMENT_OFFLINE_BROKER_IDS.get(returned_broker_id)
+    if mapped is not None and config.connector_approval_states.get(mapped, offline) == offline:
+        return mapped
+    raise WorkerValidationError(
+        f"statement input cannot be signed under live connector broker_id={returned_broker_id!r}"
+    )
+
+
 def enforce_hosted_signing_oracle_policy(
     request_payload: Mapping[str, Any],
     *,
@@ -904,8 +934,15 @@ def run_isolated_one_shot_verification(
         allow_trusted_internal_ledger=_trusted_internal_input,
     )
 
-    issued_at_utc = str(request_payload.get("issued_at_utc") or utc_now_iso())
-    parse_utc_timestamp(issued_at_utc, field_name="issued_at_utc")
+    if config.hosted_multi_user_mode:
+        # Hosted: chain links and attestations are never taken from the request into a record.
+        caller_attached = sorted(
+            key for key in _HOSTED_REFUSED_ATTACHMENT_KEYS if request_payload.get(key) is not None
+        )
+        if caller_attached:
+            raise WorkerValidationError(
+                f"request field(s) not accepted by this host: {', '.join(caller_attached)}"
+            )
 
     period_start_explicit = "period_start_utc" in request_payload
     period_end_explicit = "period_end_utc" in request_payload
@@ -913,62 +950,71 @@ def run_isolated_one_shot_verification(
     account_scope_explicit = "account_scope" in request_payload
     claimed_origin_explicit = "claimed_origin_assurance" in request_payload
 
-    period_start_utc = str(request_payload.get("period_start_utc", "2026-01-01T00:00:00Z"))
-    period_end_utc = str(request_payload.get("period_end_utc", "2026-01-31T00:00:00Z"))
-    parse_utc_timestamp(period_start_utc, field_name="period_start_utc")
-    parse_utc_timestamp(period_end_utc, field_name="period_end_utc")
+    try:
+        issued_at_utc = str(request_payload.get("issued_at_utc") or utc_now_iso())
+        parse_utc_timestamp(issued_at_utc, field_name="issued_at_utc")
 
-    account_scope = AccountScope(
-        str(
-            request_payload.get(
-                "account_scope", AccountScope.SINGLE_ACCOUNT_SURVIVORSHIP_UNVERIFIED.value
+        period_start_utc = str(request_payload.get("period_start_utc", "2026-01-01T00:00:00Z"))
+        period_end_utc = str(request_payload.get("period_end_utc", "2026-01-31T00:00:00Z"))
+        parse_utc_timestamp(period_start_utc, field_name="period_start_utc")
+        parse_utc_timestamp(period_end_utc, field_name="period_end_utc")
+
+        account_scope = AccountScope(
+            str(
+                request_payload.get(
+                    "account_scope", AccountScope.SINGLE_ACCOUNT_SURVIVORSHIP_UNVERIFIED.value
+                )
             )
         )
-    )
-    provider_approval = ProviderApprovalState(
-        str(
-            request_payload.get(
-                "provider_approval_state",
-                config.connector_approval_states.get(
-                    broker_id, ProviderApprovalState.OFFLINE_EXPORT_ONLY
-                ).value,
+        provider_approval = ProviderApprovalState(
+            str(
+                request_payload.get(
+                    "provider_approval_state",
+                    config.connector_approval_states.get(
+                        broker_id, ProviderApprovalState.OFFLINE_EXPORT_ONLY
+                    ).value,
+                )
             )
         )
-    )
-    environment_tier = EnvironmentTier(
-        str(request_payload.get("environment_tier", EnvironmentTier.LIVE_PRODUCTION.value))
-    )
-    claimed_origin = OriginAssurance(
-        str(request_payload.get("claimed_origin_assurance", OriginAssurance.SELF_REPORTED.value))
-    )
-
-    witness_raw = request_payload.get("witness_attestations") or []
-    witnesses = [
-        w if isinstance(w, WitnessAttestation) else WitnessAttestation.from_dict(w)
-        for w in witness_raw
-    ]
-
-    broker_sig_raw = request_payload.get("broker_native_signature")
-    broker_sig = (
-        None
-        if broker_sig_raw is None
-        else (
-            broker_sig_raw
-            if isinstance(broker_sig_raw, BrokerNativeSignature)
-            else BrokerNativeSignature.from_dict(broker_sig_raw)
+        environment_tier = EnvironmentTier(
+            str(request_payload.get("environment_tier", EnvironmentTier.LIVE_PRODUCTION.value))
         )
-    )
-
-    chain_link_raw = request_payload.get("prospective_chain_link")
-    chain_link = (
-        None
-        if chain_link_raw is None
-        else (
-            chain_link_raw
-            if isinstance(chain_link_raw, ProspectiveChainLink)
-            else ProspectiveChainLink.from_dict(chain_link_raw)
+        claimed_origin = OriginAssurance(
+            str(request_payload.get("claimed_origin_assurance", OriginAssurance.SELF_REPORTED.value))
         )
-    )
+
+        witness_raw = request_payload.get("witness_attestations") or []
+        witnesses = [
+            w if isinstance(w, WitnessAttestation) else WitnessAttestation.from_dict(w)
+            for w in witness_raw
+        ]
+
+        broker_sig_raw = request_payload.get("broker_native_signature")
+        broker_sig = (
+            None
+            if broker_sig_raw is None
+            else (
+                broker_sig_raw
+                if isinstance(broker_sig_raw, BrokerNativeSignature)
+                else BrokerNativeSignature.from_dict(broker_sig_raw)
+            )
+        )
+
+        chain_link_raw = request_payload.get("prospective_chain_link")
+        chain_link = (
+            None
+            if chain_link_raw is None
+            else (
+                chain_link_raw
+                if isinstance(chain_link_raw, ProspectiveChainLink)
+                else ProspectiveChainLink.from_dict(chain_link_raw)
+            )
+        )
+    except WorkerValidationError:
+        raise
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        # A malformed request value is the caller's input error, never a server fault.
+        raise WorkerValidationError(str(exc)) from exc
 
     # Assemble worker job WITHOUT publisher private signing key or vault master KEK
     worker_job: dict[str, Any] = {
@@ -1097,7 +1143,18 @@ def run_isolated_one_shot_verification(
         raise WorkerIsolationError("Isolation invariant violated: unsanitized child environment")
 
     redacted = worker_envelope["result"]
-    proof_id = str(request_payload.get("proof_id") or f"prf-{uuid.uuid4().hex[:20]}")
+    if config.hosted_multi_user_mode:
+        # Hosted: the host chooses the record id.
+        proof_id = f"prf-{uuid.uuid4().hex[:20]}"
+    else:
+        proof_id = str(request_payload.get("proof_id") or f"prf-{uuid.uuid4().hex[:20]}")
+    signed_broker_id = str(redacted["broker_id"])
+    if config.hosted_multi_user_mode:
+        signed_broker_id = _offline_broker_id_for_statement(
+            signed_broker_id.strip().lower(),
+            redacted.get("provider_approval_state"),
+            config,
+        )
     if config.hosted_multi_user_mode:
         # Hosted: the worker that read the input states scope and origin; request values never do.
         account_scope = (
@@ -1118,7 +1175,7 @@ def run_isolated_one_shot_verification(
 
     provider_approval = _clamp_approval_to_worker_origin(
         provider_approval,
-        returned_broker_id=str(redacted["broker_id"]).strip().lower(),
+        returned_broker_id=signed_broker_id.strip().lower(),
         worker_reported_state=redacted.get("provider_approval_state"),
         config=config,
     )
@@ -1133,7 +1190,7 @@ def run_isolated_one_shot_verification(
         issued_at_utc=issued_at_utc,
         publisher_kid=config.publisher_kid,
         publisher_public_key_hex=config.publisher_keypair.public_key_hex,
-        broker_id=str(redacted["broker_id"]),
+        broker_id=signed_broker_id,
         blinded_account_tag=str(redacted["blinded_account_tag"]),
         account_scope=account_scope,
         provider_approval_state=provider_approval,

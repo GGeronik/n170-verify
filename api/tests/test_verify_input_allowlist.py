@@ -6,8 +6,8 @@ Rules covered here:
   blinding salt and the queried wallet are never caller-controlled;
 - statement or ledger input is accepted only under an offline broker id, and the
   approval state signed into a bundle never exceeds what the worker's input supports;
-- in hosted mode the account scope and origin assurance come from the worker, not the
-  request.
+- in hosted mode the account scope and origin assurance come from the worker; a request
+  that names them is refused.
 """
 
 from __future__ import annotations
@@ -285,7 +285,7 @@ class VerifyInputAllowlistTests(unittest.TestCase):
 
     # O6 -------------------------------------------------------------------------------
     def test_hosted_bundle_scope_and_origin_come_from_the_worker(self) -> None:
-        resp = self.client.post(
+        refused = self.client.post(
             "/api/v1/verify",
             json={
                 **self.base,
@@ -293,6 +293,11 @@ class VerifyInputAllowlistTests(unittest.TestCase):
                 "claimed_origin_assurance": OriginAssurance.BROKER_SIGNED.value,
             },
         )
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertIn("account_scope", refused.json()["detail"])
+        self.assertIn("claimed_origin_assurance", refused.json()["detail"])
+
+        resp = self.client.post("/api/v1/verify", json=self.base)
         self.assertEqual(resp.status_code, 200, resp.text)
         bundle = VerifyProofBundle.from_dict(resp.json()["proof_bundle"])
         self.assertEqual(bundle.account_scope, AccountScope.SINGLE_ACCOUNT_SURVIVORSHIP_UNVERIFIED)
