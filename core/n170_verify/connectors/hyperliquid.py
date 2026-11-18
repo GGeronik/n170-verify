@@ -62,6 +62,9 @@ MAX_HYPERLIQUID_FILL_PAGES: int = 10
 _USD_EQUIVALENT_TOKENS: frozenset[str] = frozenset(
     {"", "USD", "USDC", "USDH", "USDE", "USDT", "USDT0"}
 )
+# Ledger delta fields that carry a moved amount; an unknown entry type with any of them
+# non-zero withholds the record.
+_VALUE_MOVING_DELTA_FIELDS: tuple[str, ...] = ("usdc", "usdcValue", "amount", "netWithdrawnUsd")
 
 HYPERLIQUID_ALLOWED_INFO_TYPES: frozenset[str] = frozenset(
     {
@@ -322,16 +325,63 @@ def _extract_nav_points_from_history(
                 kept_indices.append(trough_idx)
             kept_indices.append(last_pos_idx)
 
-    # Preserve the first terminal transition to <= 0.0 after positive equity so a 100%
-    # liquidation wipeout cannot be hidden behind the prior positive snapshot, while a
-    # clean 100% withdrawal reconciles against its outflow without trailing 0/0 intervals.
-    if last_pos_idx + 1 < len(ordered_ts):
-        kept_indices.append(last_pos_idx + 1)
+    # Keep every transition from positive equity to <= 0.0, not only a final one, so a 100%
+    # wipe-out stays a -100% interval (and withholds the record) even when a later deposit
+    # brings equity back. A clean 100% withdrawal still reconciles against its outflow.
+    for idx in range(first_pos_idx + 1, len(ordered_ts)):
+        if all_by_ts[ordered_ts[idx]] <= 0.0 and all_by_ts[ordered_ts[idx - 1]] > 0.0:
+            kept_indices.append(idx)
 
     return [
         NormalizedNavPoint(timestamp_utc=ordered_ts[idx], nav_base=all_by_ts[ordered_ts[idx]])
-        for idx in kept_indices
+        for idx in sorted(set(kept_indices))
     ]
+
+
+def _unvalued_inbound_warning(token_name: str) -> str:
+    return (
+        f"An unvalued inbound {token_name or 'token'} transfer from another address (no USD value "
+        "reported) was recorded at $0 because the perp-only return series does not hold spot tokens."
+    )
+
+
+def _restrict_to_daily_closes(
+    points: list[NormalizedNavPoint],
+) -> tuple[list[NormalizedNavPoint], bool, str | None]:
+    """Return the NAV points to score, whether earlier points were dropped, and a warning.
+
+    Every return interval is scored as one daily period, so a step spanning several UTC
+    dates must not be mixed into the series. When the series ends in a run of closes on
+    consecutive UTC dates, only that run is kept. When no such run exists, or when the
+    series contains a non-positive point (which withholds the record on its own), the
+    series is kept and the multi-day intervals are named in a parser warning.
+    """
+    if len(points) < 3:
+        return points, False, None
+    dates = [datetime.fromisoformat(p.timestamp_utc[:10]).date() for p in points]
+    multi_day = [i for i in range(1, len(points)) if (dates[i] - dates[i - 1]).days > 1]
+    if not multi_day:
+        return points, False, None
+    run_start = multi_day[-1]
+    has_non_positive = any(p.nav_base <= 0.0 for p in points)
+    if len(points) - run_start >= 2 and not has_non_positive:
+        return (
+            points[run_start:],
+            True,
+            (
+                f"Hyperliquid return series starts at {points[run_start].timestamp_utc}: "
+                f"{run_start} earlier snapshot(s) are not daily closes (spaced more than one day "
+                "apart) and were excluded so every scored interval is one day."
+            ),
+        )
+    return (
+        points,
+        False,
+        (
+            f"{len(multi_day)} of {len(points) - 1} Hyperliquid NAV intervals span more than one "
+            "day; per-period volatility, Sharpe and PSR count each of them as one period."
+        ),
+    )
 
 
 class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
@@ -684,6 +734,11 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 "Hyperliquid wallet has fewer than 2 positive accountValueHistory snapshots in the requested window"
             )
 
+        parser_warnings: list[str] = []
+        nav_points, series_truncated, spacing_warning = _restrict_to_daily_closes(nav_points)
+        if spacing_warning:
+            parser_warnings.append(spacing_warning)
+
         perp_only_window = selected_window.startswith("perp")
 
         # 2. Separate non-funding ledger cash flows from trading PnL
@@ -735,6 +790,18 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             sender = str(delta.get("user") or "").strip().lower()
             destination = str(delta.get("destination") or "").strip().lower()
             is_self_transfer = bool(sender and destination and sender == norm_address and destination == norm_address)
+            # An unvalued token that another address sends into spot is outside a perp-only
+            # return series, so it is recorded at $0 with a warning instead of withholding.
+            # On the combined window the token is part of NAV and its value is unknown, so it
+            # stays an unvalued in-kind flow and the record is withheld.
+            dst_dex_raw = delta.get("destinationDex")
+            unvalued_inbound_outside_series = bool(
+                perp_only_window
+                and sender
+                and sender != norm_address
+                and destination == norm_address
+                and (dst_dex_raw is None or str(dst_dex_raw).strip().lower() == "spot")
+            )
 
             if lower_type == "deposit":
                 if abs(usdc_val) > 0.0:
@@ -895,6 +962,20 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                 description="Hyperliquid zero-USD dust token transfer",
                             )
                         )
+                    elif unvalued_inbound_outside_series:
+                        parser_warnings.append(_unvalued_inbound_warning(token_name))
+                        flows.append(
+                            NormalizedFlow(
+                                timestamp_utc=ts_iso,
+                                kind=FlowKind.OTHER_INTERNAL,
+                                amount=0.0,
+                                currency="USD",
+                                symbol=token_name,
+                                quantity=abs(token_amt),
+                                transfer_type="internalTransfer",
+                                description="Hyperliquid unvalued inbound token outside perp series",
+                            )
+                        )
                     else:
                         inbound = (destination == norm_address and sender != norm_address) or (
                             not sender and not destination and token_amt >= 0.0
@@ -988,6 +1069,20 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                     description="Hyperliquid zero-USD dust spot transfer",
                                 )
                             )
+                        elif unvalued_inbound_outside_series:
+                            parser_warnings.append(_unvalued_inbound_warning(token_name))
+                            flows.append(
+                                NormalizedFlow(
+                                    timestamp_utc=ts_iso,
+                                    kind=FlowKind.OTHER_INTERNAL,
+                                    amount=0.0,
+                                    currency="USD",
+                                    symbol=token_name,
+                                    quantity=abs(token_amt),
+                                    transfer_type="spotTransfer",
+                                    description="Hyperliquid unvalued inbound token outside perp series",
+                                )
+                            )
                         else:
                             flows.append(
                                 NormalizedFlow(
@@ -1046,6 +1141,25 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                             transfer_type="rewardsClaim",
                             description="Hyperliquid protocol rewards claim",
                         )
+                    )
+            else:
+                # A ledger entry type this parser does not know, and that moves value, has an
+                # effect on returns that cannot be computed, so the record is withheld.
+                moves_value = any(
+                    abs(
+                        _parse_finite_float(
+                            delta.get(value_key),
+                            field_name=f"delta.{delta_type}.{value_key}",
+                            default=0.0,
+                        )
+                    )
+                    > 0.0
+                    for value_key in _VALUE_MOVING_DELTA_FIELDS
+                )
+                if moves_value:
+                    raise HyperliquidValidationError(
+                        f"Hyperliquid ledger entry type {delta_type!r} is not recognised and moves value; "
+                        "the record is withheld because its effect on returns cannot be computed"
                     )
 
         # 3. Normalize `userFills` into `NormalizedTrade` records (7-day embargo enforced downstream)
@@ -1186,9 +1300,10 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         )
                     )
 
+        # A record whose earlier snapshots were excluded covers only the scored series.
         period_start_utc = (
             start_bound.strftime("%Y-%m-%dT%H:%M:%SZ")
-            if start_bound is not None
+            if start_bound is not None and not series_truncated
             else nav_points[0].timestamp_utc
         )
         period_end_utc = (
@@ -1216,6 +1331,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             flows=sorted(flows, key=lambda f: f.timestamp_utc),
             conversion_rates={"USDC/USD": 1.0},
             enabled_sections=enabled_sections,
+            parser_warnings=list(dict.fromkeys(parser_warnings)),
         )
 
     def fetch_canonical_ledger(
@@ -1293,12 +1409,24 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 else:
                     ledger_updates_data.append(entry)
                     new_unique_count += 1
-            if len(page_items) < HYPERLIQUID_LEDGER_PAGE_SIZE or new_unique_count == 0:
+            if len(page_items) < HYPERLIQUID_LEDGER_PAGE_SIZE:
                 break
+            if new_unique_count == 0:
+                # A full page of entries already seen means more entries share the cursor's
+                # millisecond than one page holds; the rest cannot be reached.
+                raise HyperliquidValidationError(
+                    "Hyperliquid ledger history could not be paged past a full page of entries "
+                    "sharing one timestamp; the record is withheld because the ledger is incomplete"
+                )
             if max_page_ms > cursor_ms:
                 cursor_ms = max_page_ms
             else:
                 cursor_ms = max_page_ms + 1
+        else:
+            raise HyperliquidValidationError(
+                f"Hyperliquid ledger history fills all {MAX_HYPERLIQUID_LEDGER_PAGES} pages of "
+                f"{HYPERLIQUID_LEDGER_PAGE_SIZE} entries; the record is withheld because the ledger is incomplete"
+            )
 
         fills_data = self._execute_bounded_post(
             HYPERLIQUID_INFO_PATH,
@@ -1332,61 +1460,70 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             seen_fill_keys: set[tuple[str, str, str, str, str, str, int]] = set()
             base_counts: dict[tuple[str, str, str, str, str, str], int] = {}
             paged_fills: list[Any] = []
-            try:
-                for _ in range(MAX_HYPERLIQUID_FILL_PAGES):
-                    fill_query: dict[str, Any] = {
-                        "type": "userFillsByTime",
-                        "user": norm_address,
-                        "startTime": fill_cursor_ms,
-                        "aggregateByTime": False,
-                    }
-                    if end_ms is not None:
-                        fill_query["endTime"] = end_ms
-                    fill_page_raw = self._execute_bounded_post(
-                        HYPERLIQUID_INFO_PATH,
-                        fill_query,
-                        redact_tokens=redact_list,
+            # A failed fills page propagates as HyperliquidServiceError: a record is never
+            # built from the most recent fills alone.
+            for _ in range(MAX_HYPERLIQUID_FILL_PAGES):
+                fill_query: dict[str, Any] = {
+                    "type": "userFillsByTime",
+                    "user": norm_address,
+                    "startTime": fill_cursor_ms,
+                    "aggregateByTime": False,
+                }
+                if end_ms is not None:
+                    fill_query["endTime"] = end_ms
+                fill_page_raw = self._execute_bounded_post(
+                    HYPERLIQUID_INFO_PATH,
+                    fill_query,
+                    redact_tokens=redact_list,
+                )
+                fill_page = fill_page_raw if isinstance(fill_page_raw, list) else []
+                max_fill_ms = fill_cursor_ms
+                page_counts: dict[tuple[str, str, str, str, str, str], int] = {}
+                new_fills = 0
+                for f_entry in fill_page:
+                    if not isinstance(f_entry, Mapping):
+                        continue
+                    t_raw = f_entry.get("time")
+                    t_ms: int | None = None
+                    if not isinstance(t_raw, bool) and isinstance(t_raw, (int, float)):
+                        t_ms = int(t_raw)
+                    elif isinstance(t_raw, str) and t_raw.strip().isdigit():
+                        t_ms = int(t_raw.strip())
+                    ffp = _fill_fp(f_entry)
+                    occ = page_counts.get(ffp, 0)
+                    page_counts[ffp] = occ + 1
+                    dkey = (*ffp, occ)
+                    if dkey not in seen_fill_keys:
+                        seen_fill_keys.add(dkey)
+                        paged_fills.append(f_entry)
+                        new_fills += 1
+                    if t_ms is not None and t_ms > max_fill_ms:
+                        max_fill_ms = t_ms
+                if len(fill_page) < HYPERLIQUID_FILLS_PAGE_SIZE:
+                    break
+                if new_fills == 0:
+                    raise HyperliquidValidationError(
+                        "Hyperliquid fill history could not be paged past a full page of fills "
+                        "sharing one timestamp; the record is withheld because the fills are incomplete"
                     )
-                    fill_page = fill_page_raw if isinstance(fill_page_raw, list) else []
-                    max_fill_ms = fill_cursor_ms
-                    page_counts: dict[tuple[str, str, str, str, str, str], int] = {}
-                    new_fills = 0
-                    for f_entry in fill_page:
-                        if not isinstance(f_entry, Mapping):
-                            continue
-                        t_raw = f_entry.get("time")
-                        t_ms: int | None = None
-                        if not isinstance(t_raw, bool) and isinstance(t_raw, (int, float)):
-                            t_ms = int(t_raw)
-                        elif isinstance(t_raw, str) and t_raw.strip().isdigit():
-                            t_ms = int(t_raw.strip())
+                fill_cursor_ms = max_fill_ms if max_fill_ms > fill_cursor_ms else max_fill_ms + 1
+            else:
+                raise HyperliquidValidationError(
+                    f"Hyperliquid fill history fills all {MAX_HYPERLIQUID_FILL_PAGES} pages of "
+                    f"{HYPERLIQUID_FILLS_PAGE_SIZE} fills; the record is withheld because the fills are incomplete"
+                )
+
+            if paged_fills:
+                for f_entry in merged_fills:
+                    if isinstance(f_entry, Mapping):
                         ffp = _fill_fp(f_entry)
-                        occ = page_counts.get(ffp, 0)
-                        page_counts[ffp] = occ + 1
+                        occ = base_counts.get(ffp, 0)
+                        base_counts[ffp] = occ + 1
                         dkey = (*ffp, occ)
                         if dkey not in seen_fill_keys:
                             seen_fill_keys.add(dkey)
                             paged_fills.append(f_entry)
-                            new_fills += 1
-                        if t_ms is not None and t_ms > max_fill_ms:
-                            max_fill_ms = t_ms
-                    if len(fill_page) < HYPERLIQUID_FILLS_PAGE_SIZE or new_fills == 0:
-                        break
-                    fill_cursor_ms = max_fill_ms if max_fill_ms > fill_cursor_ms else max_fill_ms + 1
-
-                if paged_fills:
-                    for f_entry in merged_fills:
-                        if isinstance(f_entry, Mapping):
-                            ffp = _fill_fp(f_entry)
-                            occ = base_counts.get(ffp, 0)
-                            base_counts[ffp] = occ + 1
-                            dkey = (*ffp, occ)
-                            if dkey not in seen_fill_keys:
-                                seen_fill_keys.add(dkey)
-                                paged_fills.append(f_entry)
-                    merged_fills = paged_fills
-            except HyperliquidServiceError:
-                pass
+                merged_fills = paged_fills
 
         return self.parse_payload(
             {
