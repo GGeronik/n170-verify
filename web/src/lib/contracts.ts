@@ -444,13 +444,14 @@ export const AssetClass = {
 } as const;
 export type AssetClass = (typeof AssetClass)[keyof typeof AssetClass];
 
+/** Each ratio is null when the record states it was not computed (e.g. a withheld return). */
 export interface CostAndDragBreakdown {
-  commission_and_fee_drag_bps: number;
-  margin_and_funding_drag_bps: number;
-  fx_conversion_drag_bps: number;
-  withholding_tax_drag_bps: number;
-  total_friction_drag_bps: number;
-  annualized_total_drag_bps: number;
+  commission_and_fee_drag_bps: number | null;
+  margin_and_funding_drag_bps: number | null;
+  fx_conversion_drag_bps: number | null;
+  withholding_tax_drag_bps: number | null;
+  total_friction_drag_bps: number | null;
+  annualized_total_drag_bps: number | null;
 }
 
 export interface BehaviouralCoachingMetrics {

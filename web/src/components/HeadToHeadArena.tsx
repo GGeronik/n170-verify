@@ -23,6 +23,7 @@ import {
   type PublisherKeyRegistryDocument,
   type VerifyProofBundle,
 } from "@/lib/contracts.ts";
+import { formatDragBps, lowerDragSide } from "@/lib/costDrag.ts";
 import { ARENA_PRESET_MATCHUPS } from "@/lib/demoFixtures.ts";
 import { extractVerifiedCardSummary } from "@/lib/viralShareBuilders.ts";
 import { fmtNum, fmtPct } from "@/lib/wave4Analytics.ts";
@@ -247,18 +248,15 @@ export function HeadToHeadArena({
     {
       metric: "Annualized Friction Drag (bps/yr)",
       valA: leavesA.coaching
-        ? `-${leavesA.coaching.cost_drag.annualized_total_drag_bps.toFixed(1)} bps`
+        ? formatDragBps(leavesA.coaching.cost_drag.annualized_total_drag_bps)
         : "-",
       valB: leavesB.coaching
-        ? `-${leavesB.coaching.cost_drag.annualized_total_drag_bps.toFixed(1)} bps`
+        ? formatDragBps(leavesB.coaching.cost_drag.annualized_total_drag_bps)
         : "-",
-      winner:
-        leavesA.coaching && leavesB.coaching
-          ? leavesA.coaching.cost_drag.annualized_total_drag_bps <
-            leavesB.coaching.cost_drag.annualized_total_drag_bps
-            ? "A"
-            : "B"
-          : null,
+      winner: lowerDragSide(
+        leavesA.coaching?.cost_drag.annualized_total_drag_bps,
+        leavesB.coaching?.cost_drag.annualized_total_drag_bps,
+      ),
     },
     {
       metric: "01 Verified Origin Assurance",
