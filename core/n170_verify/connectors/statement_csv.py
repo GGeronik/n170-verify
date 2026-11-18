@@ -353,7 +353,9 @@ def _parse_multi_format_timestamp(date_str: str, time_str: str = "") -> str | No
 
 
 def _read_csv_rows(text: str) -> list[list[str]]:
-    stripped = text.strip()
+    # A carriage return alone (a spreadsheet's "Macintosh CSV") and a carriage return plus
+    # line feed both end a line, exactly as a line feed does.
+    stripped = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not stripped:
         return []
     first_line = stripped.splitlines()[0]
@@ -367,7 +369,14 @@ def _read_csv_rows(text: str) -> list[list[str]]:
     else:
         delimiter = ","
     reader = csv.reader(StringIO(stripped), delimiter=delimiter)
-    return [row for row in reader if any(cell.strip() for cell in row)]
+    try:
+        return [row for row in reader if any(cell.strip() for cell in row)]
+    except csv.Error as exc:
+        raise ValueError(
+            f"This file cannot be read as CSV (problem near line {reader.line_num}): a field is "
+            "too long or its quoting is broken. Upload the statement exactly as the broker "
+            "exported it."
+        ) from exc
 
 
 def _find_col(headers_lower: list[str], aliases: tuple[str, ...]) -> int | None:

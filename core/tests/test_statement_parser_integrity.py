@@ -354,6 +354,7 @@ class TestMetaTraderEquityTimestamp(unittest.TestCase):
         tsv = (
             "Time\tDeal\tSymbol\tType\tDirection\tVolume\tPrice\tOrder\tCommission\tFee\tSwap\tProfit\tBalance\tComment\n"
             "2026.01.02 08:00:00\t1\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t15000.00\t15000.00\tDeposit\n"
+            "2026.01.03 09:00:00\t2\tMESZ5\tbuy\tin\t2\t5800.00\t10\t0\t0\t0.00\t0.00\t15000.00\tOpen\n"
             "2026.01.03 11:00:00\t3\tMESZ5\tsell\tout\t2\t5810.00\t11\t0\t0\t0.00\t100.00\t15100.00\tClose\n"
             "Equity:\t12000.00\n"
         )
@@ -364,11 +365,138 @@ class TestMetaTraderEquityTimestamp(unittest.TestCase):
         tsv = (
             "Time\tDeal\tSymbol\tType\tDirection\tVolume\tPrice\tOrder\tCommission\tFee\tSwap\tProfit\tBalance\tComment\n"
             "2026.01.02 08:00:00\t1\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t1000.00\t1000.00\tDeposit\n"
+            "2026.01.03 09:00:00\t2\tMESZ5\tbuy\tin\t2\t5800.00\t10\t0\t0\t0.00\t0.00\t1000.00\tOpen\n"
             "2026.01.03 11:00:00\t3\tMESZ5\tsell\tout\t2\t5810.00\t11\t0\t0\t0.00\t-1000.00\t0.00\tClose\n"
         )
         ledger = parse_mt5_statement(tsv, blinding_salt_hex=_SALT)
         self.assertEqual([p.nav_base for p in ledger.nav_points], [1000.0, 0.0])
         self.assertTrue(_verify(ledger).performance_withheld)
+
+
+# --------------------------------------------------------------------------- open positions
+
+
+class TestMetaTraderBalanceOnlyWhileFlat(unittest.TestCase):
+    """A balance is the account's value only at an instant when no position is open."""
+
+    def test_mt4_balance_while_a_position_is_open_is_not_a_valuation(self) -> None:
+        open_since_day_two = _MT4_OPEN.replace("2026.02.20 12:00:00", "2026.02.03 09:00:00")
+        html = _mt4(
+            _MT4_WITH_DEPOSIT + open_since_day_two,
+            "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>8000.00</td>",
+        )
+        ledger = parse_mt4_statement(html, blinding_salt_hex=_SALT)
+        self.assertEqual([p.timestamp_utc for p in ledger.nav_points], ["2026-02-02T08:00:00Z"])
+        self.assertTrue(_verify(ledger).performance_withheld)
+
+    def test_mt4_balance_inside_an_overlapping_trade_is_not_a_valuation(self) -> None:
+        body = (
+            _mt4_dep(1, "2026.02.02 08:00:00", "10 000.00")
+            + _mt4_trade(2, "2026.02.04 08:00:00", "2026.02.05 10:00:00", "100.00")
+            + _mt4_trade(3, "2026.02.06 08:00:00", "2026.02.07 10:00:00", "100.00")
+            + _mt4_trade(4, "2026.02.03 08:00:00", "2026.02.10 10:00:00", "200.00")
+        )
+        html = _mt4(body, "<td>Balance:</td><td>10 400.00</td><td>Equity:</td><td>10 400.00</td>")
+        ledger = parse_mt4_statement(html, blinding_salt_hex=_SALT)
+        self.assertEqual(
+            [(p.timestamp_utc, p.nav_base) for p in ledger.nav_points],
+            [("2026-02-02T08:00:00Z", 10000.0), ("2026-02-10T10:00:00Z", 10400.0)],
+        )
+
+    def test_mt4_trader_flat_between_trades_is_scored(self) -> None:
+        html = _mt4(_MT4_WITH_DEPOSIT, "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>11 000.00</td>")
+        out = _verify(parse_mt4_statement(html, blinding_salt_hex=_SALT))
+        self.assertFalse(out.performance_withheld)
+        self.assertAlmostEqual(out.performance.twr_decimal, 0.10, places=9)
+
+    def test_mt5_deal_balance_while_a_position_is_open_is_not_a_valuation(self) -> None:
+        tsv = (
+            "Time\tDeal\tSymbol\tType\tDirection\tVolume\tPrice\tOrder\tCommission\tFee\tSwap\tProfit\tBalance\tComment\n"
+            "2026.01.02 09:00:00\t9000\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t10000.00\t10000.00\tFunding\n"
+            "2026.01.03 09:00:00\t9001\tGBPUSD\tbuy\tin\t1.00\t1.26000\t1\t0.00\t0.00\t0.00\t0.00\t10000.00\t\n"
+            "2026.01.04 08:00:00\t9002\tEURUSD\tbuy\tin\t1.00\t1.08000\t2\t0.00\t0.00\t0.00\t0.00\t10000.00\t\n"
+            "2026.01.04 10:00:00\t9003\tEURUSD\tsell\tout\t1.00\t1.08500\t3\t0.00\t0.00\t0.00\t500.00\t10500.00\t\n"
+            "2026.01.06 10:00:00\t9005\tEURUSD\tbuy\tin\t1.00\t1.08000\t4\t0.00\t0.00\t0.00\t0.00\t10500.00\t\n"
+            "2026.01.06 12:00:00\t9006\tEURUSD\tsell\tout\t1.00\t1.08500\t5\t0.00\t0.00\t0.00\t500.00\t11000.00\t\n"
+        )
+        ledger = parse_mt5_statement(tsv, blinding_salt_hex=_SALT)
+        self.assertEqual([p.timestamp_utc for p in ledger.nav_points], ["2026-01-02T09:00:00Z"])
+        self.assertTrue(_verify(ledger).performance_withheld)
+
+    def test_mt5_position_open_before_the_first_deal_drops_earlier_points(self) -> None:
+        tsv = (
+            "Time\tDeal\tSymbol\tType\tDirection\tVolume\tPrice\tOrder\tCommission\tFee\tSwap\tProfit\tBalance\tComment\n"
+            "2026.01.02 09:00:00\t9000\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t10000.00\t10000.00\tFunding\n"
+            "2026.01.03 10:00:00\t9003\tEURUSD\tsell\tout\t1.00\t1.08500\t3\t0.00\t0.00\t0.00\t500.00\t10500.00\t\n"
+            "2026.01.05 10:00:00\t9004\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t100.00\t10600.00\tFunding\n"
+        )
+        ledger = parse_mt5_statement(tsv, blinding_salt_hex=_SALT)
+        self.assertEqual(
+            [p.timestamp_utc for p in ledger.nav_points],
+            ["2026-01-03T10:00:00Z", "2026-01-05T10:00:00Z"],
+        )
+
+
+# --------------------------------------------------------------------------- CSV shapes
+
+_TV_CASH_OK = (
+    _TV_HEADER
+    + "\nACCTX01,2026-01-02 08:00:00,USD,Deposit,25000.00,25000.00,Wire In"
+    + "\nACCTX01,2026-01-05 08:00:00,USD,Trade Paired,10.00,25010.00,R\n"
+)
+_ROBINHOOD_OK = (
+    "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
+    "01/03/2026,01/03/2026,01/05/2026,,ACH Deposit,ACH,,,$5000.00\n"
+    "01/06/2026,01/06/2026,01/07/2026,NVDA,NVIDIA Corp,Buy,20,$135.00,-$2700.00\n"
+    "01/14/2026,01/14/2026,01/15/2026,NVDA,NVIDIA Corp,Sell,20,$148.50,$2970.00\n"
+)
+_TRADERSYNC_OK = (
+    "Status,Symbol,Size,Open Date,Open Time,Close Date,Close Time,Entry Price,Exit Price,Return $,Side,Setups,Mistakes,Commission,Notes\n"
+    "WIN,NVDA,50,2026-01-08,09:35:00,2026-01-08,10:20:00,140.00,145.00,248.00,LONG,ORB,,2.00,\n"
+)
+_MT4_CSV_OK = (
+    "Ticket,Open Time,Type,Size,Item,Price,S / L,T / P,Close Time,Price,Commission,Taxes,Swap,Profit\n"
+    "2002,2026.01.04 10:00:00,buy,0.50,EURUSD,1.1000,1.0950,1.1100,2026.01.04 15:00:00,1.1040,-3.50,0.00,0.00,200.00\n"
+)
+_DEGIRO_OK = (
+    "Date,Time,Value date,Product,ISIN,Description,FX,Change,,Balance,,Order Id\n"
+    "02-01-2026,09:00,02-01-2026,,,Deposit,,EUR,10000.00,EUR,10000.00,\n"
+    "09-01-2026,09:00,09-01-2026,,,Deposit,,EUR,100.00,EUR,10100.00,\n"
+)
+
+
+def _shape(text: str):
+    from n170_verify.connectors.statement_csv import detect_and_parse_statement
+
+    res = detect_and_parse_statement(text, blinding_salt_hex=_SALT)
+    led = res.ledger
+    return (
+        res.detected_format,
+        [(p.timestamp_utc, p.nav_base) for p in led.nav_points],
+        [(t.timestamp_utc, t.symbol, t.side) for t in led.trades],
+        [(f.timestamp_utc, f.amount) for f in led.flows],
+    )
+
+
+class TestCsvLineEndingsAndLimits(unittest.TestCase):
+    def test_carriage_return_line_endings_read_like_line_feeds(self) -> None:
+        for name, text in (
+            ("tradovate", _TV_CASH_OK),
+            ("robinhood", _ROBINHOOD_OK),
+            ("tradersync", _TRADERSYNC_OK),
+            ("mt4 csv", _MT4_CSV_OK),
+            ("degiro", _DEGIRO_OK),
+        ):
+            with self.subTest(fmt=name):
+                expected = _shape(text)
+                self.assertEqual(_shape(text.replace("\n", "\r")), expected)
+                self.assertEqual(_shape(text.replace("\n", "\r\n")), expected)
+
+    def test_field_longer_than_the_reader_allows_is_refused_with_a_plain_reason(self) -> None:
+        text = _TV_HEADER + "\nACCTX01,2026-01-02 08:00:00,USD,Deposit,25000.00,25000.00," + "x" * 200_000 + "\n"
+        with self.assertRaises(ValueError) as ctx:
+            _shape(text)
+        self.assertIn("cannot be read as CSV", str(ctx.exception))
 
 
 if __name__ == "__main__":

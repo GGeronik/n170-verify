@@ -379,6 +379,26 @@ def _detect_mt_report_time(rows: list[list[str]]) -> str | None:
     return None
 
 
+_MT_STILL_OPEN = "9999-12-31T23:59:59Z"
+
+
+def _points_while_flat(
+    points: dict[str, NormalizedNavPoint],
+    open_intervals: list[tuple[str, str]],
+) -> dict[str, NormalizedNavPoint]:
+    """Keep only balances stamped at an instant when no position is open.
+
+    A balance is realised cash: while a position is open the account's value also holds
+    that position's unrealised result, which the balance leaves out. A position counts as
+    open from its open time up to, but not including, its close time.
+    """
+    return {
+        ts: pt
+        for ts, pt in points.items()
+        if not any(opened <= ts < closed for opened, closed in open_intervals)
+    }
+
+
 def _reconciled_running_balance_points(
     cash_deltas: list[tuple[str, float]],
     *,
@@ -461,6 +481,8 @@ def parse_mt4_statement(
     summary_equity: float | None = None
     summary_balance: float | None = None
     report_ts = _detect_mt_report_time(rows)
+    open_intervals: list[tuple[str, str]] = []
+    open_times_unknown = False
 
     section = "closed_transactions" if not is_html else "header"
     col_map: dict[str, int] = {}
@@ -569,7 +591,12 @@ def parse_mt4_statement(
             lots = _parse_mt_volume(_cell(row, col_map.get("size", 3)))
             raw_sym = _cell(row, col_map.get("item", 4))
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price", 5)))
-            close_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("close_time", 8))) or open_ts
+            stated_close_ts = _parse_multi_format_timestamp(_cell(row, col_map.get("close_time", 8)))
+            if stated_close_ts is None:
+                open_times_unknown = True
+            else:
+                open_intervals.append((open_ts, stated_close_ts))
+            close_ts = stated_close_ts or open_ts
             close_px = _parse_localized_float(_cell(row, col_map.get("close_price", 9)))
             comm = _parse_localized_float(_cell(row, col_map.get("commission", 10)), default=0.0) or 0.0
             taxes = _parse_localized_float(_cell(row, col_map.get("taxes", 11)), default=0.0) or 0.0
@@ -638,6 +665,7 @@ def parse_mt4_statement(
             cash_deltas.append((close_ts, net_trade_delta))
 
         elif section == "open_trades" and row_type in {"buy", "sell"}:
+            open_intervals.append((open_ts, _MT_STILL_OPEN))
             lots = _parse_mt_volume(_cell(row, col_map.get("size", 3)))
             raw_sym = _cell(row, col_map.get("item", 4))
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price", 5)))
@@ -681,6 +709,9 @@ def parse_mt4_statement(
     nav_by_ts, running_bal = _reconciled_running_balance_points(
         cash_deltas, reference_balance=reference_balance, platform="MetaTrader 4"
     )
+    # A balance is the account's value only while no position is open; when a trade's
+    # close time is missing the statement cannot tell, and no balance is a valuation.
+    nav_by_ts = {} if open_times_unknown else _points_while_flat(nav_by_ts, open_intervals)
 
     source_sha = hashlib.sha256(raw_bytes).hexdigest()
     all_ts = [t.timestamp_utc for t in trades] + [f.timestamp_utc for f in flows] + list(nav_by_ts)
@@ -769,6 +800,13 @@ def parse_mt5_statement(
     summary_equity: float | None = None
     summary_balance: float | None = None
     report_ts = _detect_mt_report_time(rows)
+    # Open volume per symbol from the deals' in/out direction, and whether the account was
+    # flat after the last deal at each instant. Once a deal's direction cannot be read the
+    # statement no longer tells whether a position is open, and later instants are not flat.
+    open_volume: dict[str, float] = {}
+    flat_after: dict[str, bool] = {}
+    flatness_unknown = False
+    open_position_times: list[str | None] = []
 
     section = "auto"
     col_map: dict[str, int] = {}
@@ -885,6 +923,23 @@ def parse_mt5_statement(
             profit = _parse_localized_float(_cell(row, col_map.get("profit")), default=0.0) or 0.0
             bal = _parse_localized_float(_cell(row, col_map.get("balance")))
             comment = sanitize_csv_text_field(_cell(row, col_map.get("comment")))
+
+            if deal_type in {"buy", "sell"}:
+                direction = sanitize_csv_text_field(_cell(row, col_map.get("direction"))).lower()
+                sym_key = sanitize_csv_text_field(raw_sym)
+                if direction not in {"in", "out"} or not sym_key or not vol or vol <= 0.0:
+                    flatness_unknown = True
+                else:
+                    held = open_volume.get(sym_key, 0.0) + (vol if direction == "in" else -vol)
+                    if held < -1e-9:
+                        # This closes a position opened before the statement: every earlier
+                        # instant had that position open.
+                        flat_after = {k: False for k in flat_after}
+                        held = 0.0
+                    open_volume[sym_key] = held
+            flat_after[ts] = not flatness_unknown and all(
+                abs(v) <= 1e-9 for v in open_volume.values()
+            )
 
             if deal_type in {"balance", "credit", "bonus"}:
                 if profit != 0.0:
@@ -1063,6 +1118,8 @@ def parse_mt5_statement(
             open_px = _parse_localized_float(_cell(row, col_map.get("open_price")))
             mkt_px = _parse_localized_float(_cell(row, col_map.get("close_price"))) or open_px
             floating_pl = _parse_localized_float(_cell(row, col_map.get("profit")), default=0.0) or 0.0
+            if pos_type in {"buy", "sell"}:
+                open_position_times.append(open_ts)
             if open_ts is None or pos_type not in {"buy", "sell"} or not raw_sym or not vol or open_px is None:
                 continue
             sym, ac, trade_ccy, mult, fx_to_base = _infer_mt_instrument_spec(
@@ -1105,6 +1162,17 @@ def parse_mt5_statement(
         nav_by_ts, _ = _reconciled_running_balance_points(
             fallback_cash_deltas, reference_balance=reference_balance, platform="MetaTrader 5"
         )
+    # A balance is the account's value only at an instant when no position is open: flat
+    # after that instant's deals and before any position still listed as open.
+    if any(t is None for t in open_position_times):
+        nav_by_ts = {}
+    else:
+        first_still_open = min(open_position_times, default=_MT_STILL_OPEN)
+        nav_by_ts = {
+            ts: pt
+            for ts, pt in nav_by_ts.items()
+            if flat_after.get(ts, False) and ts < first_still_open
+        }
 
     source_sha = hashlib.sha256(raw_bytes).hexdigest()
     all_ts = (
