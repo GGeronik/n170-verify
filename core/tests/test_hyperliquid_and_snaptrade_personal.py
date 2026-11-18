@@ -531,6 +531,19 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
                         },
                     ],
                 )
+            if method == "GET" and parsed.path == "/api/v1/performance/custom":
+                # A valuation series covering the BUY keeps it inside the record's period (the opening
+                # DEPOSIT, dated before the first close, stays outside it).
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {
+                        "totalEquityTimeframe": [
+                            {"date": "2026-01-05", "value": 81000.0},
+                            {"date": "2026-02-20", "value": 85000.0},
+                        ]
+                    },
+                )
             return (404, {"Content-Type": "application/json"}, {"error": "not_found"})
 
         adapter = SnapTradeReadOnlyAdapter(
@@ -986,9 +999,10 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
 
             deposits = [f for f in ledger.flows if f.kind == FlowKind.DEPOSIT]
             withdrawals = [f for f in ledger.flows if f.kind == FlowKind.WITHDRAWAL]
-            self.assertEqual(len(deposits), 1)
-            self.assertEqual(deposits[0].amount, 20000.0)
-            self.assertEqual(deposits[0].timestamp_utc, "2026-01-10T00:00:00Z")
+            # The initial funding (2026-01-10 00:00) precedes the first valuation (that date's close),
+            # so it lies outside the record's period and is not in the ledger.
+            self.assertEqual(ledger.period_start_utc, "2026-01-10T23:59:59Z")
+            self.assertEqual(deposits, [])
             self.assertEqual(len(withdrawals), 1)
             self.assertEqual(withdrawals[0].amount, -1000.0)
             self.assertEqual(withdrawals[0].timestamp_utc, "2026-01-20T00:00:00Z")
