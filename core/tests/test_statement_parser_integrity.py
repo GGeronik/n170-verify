@@ -209,6 +209,17 @@ class TestDegiroAccountOnlyValuation(unittest.TestCase):
         self.assertAlmostEqual(out.performance.twr_decimal, -0.00045, places=6)
         self.assertGreater(out.performance.max_drawdown_decimal, -0.001)
 
+    def test_newest_first_and_oldest_first_exports_give_the_same_series(self) -> None:
+        oldest_first = _degiro(_DG_ROWS + _DG_CLOSE_USD)
+        newest_first = _degiro(list(reversed(_DG_ROWS + _DG_CLOSE_USD)))
+        self.assertEqual(
+            [(p.timestamp_utc, p.nav_base) for p in newest_first.nav_points],
+            [(p.timestamp_utc, p.nav_base) for p in oldest_first.nav_points],
+        )
+        self.assertEqual(
+            _verify(newest_first).performance_withheld, _verify(oldest_first).performance_withheld
+        )
+
     def test_statement_that_ends_holding_foreign_cash_withholds(self) -> None:
         ledger = _degiro(_DG_ROWS)
         self.assertEqual([p.nav_base for p in ledger.nav_points], [10000.0])

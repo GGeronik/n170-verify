@@ -643,7 +643,10 @@ def parse_degiro_csv_bundle(
             ts_val = _parse_multi_format_timestamp(_cell(row, c_date), _cell(row, c_time))
             if ts_val is not None:
                 parsed_acct_rows.append((ts_val, a_idx, row))
-        parsed_acct_rows.sort(key=lambda item: (item[0], item[1]))
+        # Rows that share a timestamp keep the file's own chronological order: a file whose
+        # first row is later than its last is newest-first, so its ties run bottom-up.
+        newest_first = len(parsed_acct_rows) >= 2 and parsed_acct_rows[0][0] > parsed_acct_rows[-1][0]
+        parsed_acct_rows.sort(key=lambda item: (item[0], -item[1] if newest_first else item[1]))
         open_qty_by_sym: dict[str, float] = {}
         cash_bal_by_ccy: dict[str, float] = {}
 
