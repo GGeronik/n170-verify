@@ -1765,13 +1765,9 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 has_snapshot_row = True
             if has_snapshot_row:
                 b_ts = max(snap_ts_values) if snap_ts_values else _parse_iso_ts(None)
-                prev_nav, prev_cash = nav_by_ts.get(b_ts, (0.0, None))
-                merged_cash = (
-                    (prev_cash or 0.0) + snap_cash
-                    if (prev_cash is not None or snap_cash is not None)
-                    else None
-                )
-                nav_by_ts[b_ts] = (prev_nav + snap_total, merged_cash)
+                # Explicit points that do not form a curve are never combined with the
+                # snapshot: values from two sources never make one return series.
+                nav_by_ts = {b_ts: (snap_total, snap_cash)}
 
         nav_points = [
             NormalizedNavPoint(timestamp_utc=ts_key, nav_base=vals[0], cash_base=vals[1])

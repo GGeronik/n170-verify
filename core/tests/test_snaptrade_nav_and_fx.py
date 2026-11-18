@@ -120,6 +120,55 @@ def test_explicit_nav_curve_is_unchanged_by_snapshot_rule() -> None:
     assert [p.nav_base for p in ledger.nav_points] == [100000.0, 120000.0]
 
 
+def test_one_explicit_nav_point_is_never_paired_with_a_balances_snapshot() -> None:
+    payload = {
+        "base_currency": "USD",
+        "nav_points": [{"date": "2026-01-02", "value": 100000.0}],
+        "balances": [{"account_id": "acct-dummy-a1", "total": 150000.0, "updated_at": "2026-02-05T16:00:00Z"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 1
+    perf = calculate_portfolio_performance_detailed(ledger)
+    assert perf.withheld is True
+    assert perf.summary.twr_decimal == 0.0
+
+
+def test_explicit_points_that_make_no_curve_are_never_paired_with_a_snapshot() -> None:
+    # Two explicit entries on one date merge into one point: still not a curve of two.
+    payload = {
+        "base_currency": "USD",
+        "nav_points": [
+            {"date": "2026-01-02", "value": 60000.0},
+            {"date": "2026-01-02", "value": 40000.0},
+        ],
+        "balances": [{"account_id": "acct-dummy-a1", "total": 150000.0, "updated_at": "2026-02-05T16:00:00Z"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 1
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_explicit_curve_of_three_points_is_unchanged_when_a_snapshot_is_present() -> None:
+    payload = {
+        "base_currency": "USD",
+        "nav_points": [
+            {"date": "2026-01-02", "value": 100000.0},
+            {"date": "2026-01-05", "value": 110000.0},
+            {"date": "2026-01-09", "value": 120000.0},
+        ],
+        "balances": [{"account_id": "acct-dummy-a1", "total": 999999.0, "updated_at": "2026-02-05T16:00:00Z"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert [(p.timestamp_utc, p.nav_base) for p in ledger.nav_points] == [
+        ("2026-01-02T23:59:59Z", 100000.0),
+        ("2026-01-05T23:59:59Z", 110000.0),
+        ("2026-01-09T23:59:59Z", 120000.0),
+    ]
+    perf = calculate_portfolio_performance_detailed(ledger)
+    assert perf.withheld is False
+    assert perf.summary.twr_decimal == pytest.approx(0.20)
+
+
 # ---------------------------------------------------------------------------
 # Missing conversion rate raises
 # ---------------------------------------------------------------------------
