@@ -91,6 +91,10 @@ class ApiConfig:
     hosted_multi_user_mode: bool = True
     allow_hosted_signing: bool = False
     allow_client_supplied_series_for_tests: bool = False
+    # The host sets the verification clock itself. Only test configurations may let a
+    # request carry ``now_utc`` (or an issue time on the statement upload). This is
+    # deliberately never read from the environment.
+    allow_caller_clock_for_tests: bool = False
     connector_approval_states: dict[str, ProviderApprovalState] = field(
         default_factory=lambda: dict(DEFAULT_CONNECTOR_APPROVAL_STATES)
     )
@@ -155,6 +159,13 @@ class ApiConfig:
                             f"Cannot read N170_VERIFY_SIGNING_SEED_FILE {seed_file!r} (UID={os.getuid()}): "
                             "fix the file ownership so this user can read it"
                         ) from exc
+                if not seed_hex:
+                    # A configured seed file that yields no seed stops start-up: the
+                    # host never signs with a key nobody can find again.
+                    raise RuntimeError(
+                        f"N170_VERIFY_SIGNING_SEED_FILE {seed_file!r} is set but no signing seed "
+                        "was loaded from it (file missing or empty)"
+                    )
         if seed_hex:
             norm_seed = validate_hex_digest(
                 seed_hex, field_name="N170_VERIFY_SIGNING_SEED_HEX", num_bytes=32
@@ -164,11 +175,18 @@ class ApiConfig:
             keypair = generate_ed25519_keypair()
 
         kek_hex = os.environ.get("N170_VERIFY_VAULT_KEK_HEX", "").strip() or secrets.token_hex(32)
-        salt_hex = (
-            os.environ.get("N170_VERIFY_ACCOUNT_SALT_HEX", "").strip() or secrets.token_hex(32)
-        )
         hosted_raw = os.environ.get("N170_VERIFY_HOSTED_MODE", "true").strip().lower()
         hosted = hosted_raw in {"1", "true", "yes", "on"}
+        salt_hex = os.environ.get("N170_VERIFY_ACCOUNT_SALT_HEX", "").strip()
+        if not salt_hex:
+            if hosted:
+                # Hosted mode needs a stable account salt so the same account keeps
+                # the same blinded tag across restarts.
+                raise RuntimeError(
+                    "N170_VERIFY_ACCOUNT_SALT_HEX is required in hosted mode "
+                    "(N170_VERIFY_HOSTED_MODE is true or unset)"
+                )
+            salt_hex = secrets.token_hex(32)
         hosted_signing_raw = (
             os.environ.get("N170_VERIFY_ALLOW_HOSTED_SIGNING", "false").strip().lower()
         )

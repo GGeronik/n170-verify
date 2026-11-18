@@ -1440,7 +1440,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
     def test_from_env_defaults_zero_demo_notaries_and_parses_env_notaries_and_sync_token(self) -> None:
         from unittest import mock
 
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {"N170_VERIFY_ACCOUNT_SALT_HEX": "ab" * 32}, clear=True):
             cfg_default = ApiConfig.from_env()
         self.assertEqual(cfg_default.trusted_notaries, [])
         self.assertEqual(ApiConfig().trusted_notaries, [])
@@ -1458,6 +1458,7 @@ class TestN170VerifyApiLifecycleAndSecurity(unittest.TestCase):
             {
                 "N170_VERIFY_TRUSTED_NOTARIES_JSON": json.dumps(env_notaries),
                 "N170_VERIFY_SYNC_API_TOKEN": "prod-sync-secret-99",
+                "N170_VERIFY_ACCOUNT_SALT_HEX": "ab" * 32,
             },
             clear=True,
         ):

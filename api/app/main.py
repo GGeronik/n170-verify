@@ -29,6 +29,7 @@ from app.routes_proofs import (
     handle_post_enroll_chain,
     handle_post_proof,
     handle_post_verify_proof,
+    refuse_caller_clock,
 )
 from app.routes_snaptrade import (
     SnapTradeRelayCoordinator,
@@ -458,6 +459,9 @@ class VerifyApiApplication:
             proof_a = unquote(vs_match.group("proof_a"))
             proof_b = unquote(vs_match.group("proof_b"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp = handle_get_head_to_head(
                 proof_a,
                 proof_b,
@@ -538,6 +542,9 @@ class VerifyApiApplication:
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             proof_id = unquote(discord_embed_match.group("proof_id"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp, hdrs = handle_get_discord_embed(
                 proof_id,
                 store=self.store,
@@ -551,6 +558,9 @@ class VerifyApiApplication:
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             proof_id = unquote(qr_payload_match.group("proof_id"))
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp, hdrs = handle_get_qr_payload(
                 proof_id,
                 store=self.store,
@@ -593,6 +603,9 @@ class VerifyApiApplication:
             if verb != "GET":
                 return ApiResponse.json_response(405, {"error": "method_not_allowed"})
             q_map = _flatten_query_params(query_string)
+            clock_refusal = refuse_caller_clock(self.config, q_map)
+            if clock_refusal is not None:
+                return ApiResponse.json_response(*clock_refusal)
             st, resp = handle_get_chain(
                 chain_id, store=self.store, now_utc=q_map.get("now_utc")
             )

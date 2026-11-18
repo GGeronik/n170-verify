@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from app.config import ApiConfig
 from app.store import (
     ChainResetConflictError,
     ChainViolationError,
@@ -17,6 +18,22 @@ from app.store import (
 )
 from n170_verify.contracts import VerifyProofBundle, validate_hex_digest
 from n170_verify.crypto import verify_prospective_chain
+
+
+def refuse_caller_clock(
+    config: ApiConfig, carried: Mapping[str, Any], *, field_name: str = "now_utc"
+) -> tuple[int, dict[str, Any]] | None:
+    """Return a 400 response when a request carries a clock the host does not accept.
+
+    The host sets the verification clock itself. Only a configuration with the
+    test-only setting ``allow_caller_clock_for_tests`` accepts ``field_name``.
+    """
+    if config.allow_caller_clock_for_tests or field_name not in carried:
+        return None
+    return 400, {
+        "error": "caller_clock_not_accepted",
+        "detail": f"This host sets the time itself; the request field {field_name!r} is not accepted",
+    }
 
 
 def _parse_bundle_from_payload(payload: Mapping[str, Any]) -> VerifyProofBundle:
@@ -34,6 +51,9 @@ def handle_post_proof(
     """Publish an opt-in redacted ``VerifyProofBundle`` via ``POST /api/v1/proofs``."""
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
+    clock_refusal = refuse_caller_clock(store.config, payload)
+    if clock_refusal is not None:
+        return clock_refusal
     try:
         bundle = _parse_bundle_from_payload(payload)
     except (ValueError, TypeError) as exc:
@@ -93,6 +113,9 @@ def handle_post_verify_proof(
     """Dynamically verify a ``VerifyProofBundle`` against registry & continuity log via ``POST /api/v1/proofs/verify``."""
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
+    clock_refusal = refuse_caller_clock(store.config, payload)
+    if clock_refusal is not None:
+        return clock_refusal
 
     try:
         bundle = _parse_bundle_from_payload(payload)
@@ -122,6 +145,9 @@ def handle_post_enroll_chain(
     """Enroll genesis prospective chain link via ``POST /api/v1/chains``."""
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
+    clock_refusal = refuse_caller_clock(store.config, payload)
+    if clock_refusal is not None:
+        return clock_refusal
 
     try:
         bundle = _parse_bundle_from_payload(payload)
@@ -182,6 +208,9 @@ def handle_post_append_chain(
     """Append next link to an enrolled chain via ``POST /api/v1/chains/{chain_id}/append``."""
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
+    clock_refusal = refuse_caller_clock(store.config, payload)
+    if clock_refusal is not None:
+        return clock_refusal
 
     try:
         bundle = _parse_bundle_from_payload(payload)
@@ -293,4 +322,5 @@ __all__ = [
     "handle_post_enroll_chain",
     "handle_post_proof",
     "handle_post_verify_proof",
+    "refuse_caller_clock",
 ]

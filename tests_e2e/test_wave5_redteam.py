@@ -910,6 +910,7 @@ class TestWave5CryptographicAndDowngradeAttacks(unittest.TestCase):
                     sync_db_path=str(tmp_p / "s.sqlite3"),
                     publisher_keypair=self.kp,
                     publisher_kid=self.kid,
+                    allow_caller_clock_for_tests=True,
                 ),
                 prefer_fastapi=False,
             )
@@ -1031,6 +1032,7 @@ class TestWave5ParserXxeSsrfFormulaInjectionAndDos(unittest.TestCase):
             sync_db_path=str(tmp_p / "s.sqlite3"),
             publisher_keypair=self.kp,
             publisher_kid="kid-w5-parser",
+            allow_caller_clock_for_tests=True,
         )
         self.app = create_app(self.cfg, prefer_fastapi=False)
         self.client = VerifyApiTestClient(self.app)

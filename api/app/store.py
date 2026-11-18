@@ -32,6 +32,7 @@ from n170_verify.crypto import (
     PublisherKeyRegistryDocument,
     compute_merkle_root_from_leaf_hashes,
     create_signed_c2sp_checkpoint,
+    evaluate_signer_trust,
     jcs_canonicalize_str,
     jcs_sha256_hex,
     verify_prospective_chain,
@@ -67,6 +68,24 @@ class PaperOrSandboxRejectedError(GovernanceBlockedError):
 
     error_code = "paper_or_sandbox_rejected"
     http_status = 422
+
+
+class PublisherKeyNotInRegistryError(GovernanceBlockedError):
+    """Raised when the hosted store is asked to publish a record whose signing key is not in its registry."""
+
+    error_code = "publisher_key_not_in_registry"
+    http_status = 403
+
+
+# Keys found in the registry. A revoked key is in the registry too; its records
+# are refused by verification as invalid (422), as before.
+_REGISTRY_SIGNER_STATUSES = frozenset(
+    {
+        SignerTrustStatus.OFFICIAL_N170_HOSTED,
+        SignerTrustStatus.RETIRED_HISTORICAL_VALID,
+        SignerTrustStatus.REVOKED_KEY,
+    }
+)
 
 
 class ProofNotFoundError(KeyError):
@@ -373,6 +392,21 @@ class ProofStore:
             pinned_broker_keys=dict(self._config.pinned_broker_keys),
         )
 
+    def require_registry_signer(self, bundle: VerifyProofBundle) -> None:
+        """In hosted mode, publish only records signed by a key in this host's registry.
+
+        A self-hosted store (hosted mode off) keeps accepting other signers; their
+        records are still marked ``unrecognized_self_hosted_signer`` on verification.
+        """
+        if not self._config.hosted_multi_user_mode:
+            return
+        status = evaluate_signer_trust(bundle, self.build_registry_document())
+        if status not in _REGISTRY_SIGNER_STATUSES:
+            raise PublisherKeyNotInRegistryError(
+                f"This host publishes only records signed by a key in its own registry; "
+                f"publisher key {bundle.publisher_kid!r} is {status.value}"
+            )
+
     def get_chain_bundles(self, chain_id: str) -> list[VerifyProofBundle]:
         """Return ordered ``VerifyProofBundle`` sequence for ``chain_id``."""
         with self._lock:
@@ -450,6 +484,7 @@ class ProofStore:
             environment_tier=bundle.environment_tier,
             hosted_multi_user_mode=self._config.hosted_multi_user_mode,
         )
+        self.require_registry_signer(bundle)
         sanitized_bundle, _ = enforce_bundle_seven_day_trade_guard(
             bundle,
             min_delay_days=self._config.delayed_trade_guard_days,
@@ -606,6 +641,7 @@ class ProofStore:
             environment_tier=genesis_bundle.environment_tier,
             hosted_multi_user_mode=self._config.hosted_multi_user_mode,
         )
+        self.require_registry_signer(genesis_bundle)
 
         sanitized_bundle, _ = enforce_bundle_seven_day_trade_guard(
             genesis_bundle,
@@ -809,6 +845,7 @@ class ProofStore:
             environment_tier=next_bundle.environment_tier,
             hosted_multi_user_mode=self._config.hosted_multi_user_mode,
         )
+        self.require_registry_signer(next_bundle)
         sanitized_bundle, _ = enforce_bundle_seven_day_trade_guard(
             next_bundle,
             min_delay_days=self._config.delayed_trade_guard_days,
@@ -995,6 +1032,7 @@ __all__ = [
     "ProofNotFoundError",
     "ProofStore",
     "ProviderApprovalPendingError",
+    "PublisherKeyNotInRegistryError",
     "StoredProofEntry",
     "enforce_bundle_governance",
     "enforce_bundle_seven_day_trade_guard",

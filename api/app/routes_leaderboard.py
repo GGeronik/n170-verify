@@ -11,6 +11,7 @@ from app.badges import (
     finite_real_number,
     verified_leaf_payload,
 )
+from app.routes_proofs import refuse_caller_clock
 from app.store import ProofStore
 from n170_verify.contracts import (
     AccountScope,
@@ -59,6 +60,9 @@ def handle_get_leaderboard(
     store: ProofStore,
 ) -> tuple[int, dict[str, Any]]:
     """Serve ``GET /api/v1/leaderboard`` filtered by verifier-computed assurance & Merkle-proven capital bracket."""
+    clock_refusal = refuse_caller_clock(store.config, query_params)
+    if clock_refusal is not None:
+        return clock_refusal
     min_bracket_str = query_params.get(
         "min_capital_bracket", CapitalBracket.BRACKET_10K_100K.value
     ).strip()

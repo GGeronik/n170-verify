@@ -1501,6 +1501,14 @@ def handle_post_verify_auto_detect(
     else:
         stmt_bytes = bytes(raw_body)
 
+    # The host sets the issue time of the records it signs; only a test
+    # configuration accepts one from the caller.
+    if issued_at_utc and not config.allow_caller_clock_for_tests:
+        return 400, {
+            "error": "caller_clock_not_accepted",
+            "detail": "This host sets the time itself; the request field 'issued_at_utc' is not accepted",
+        }
+
     if stmt_bytes is None or not stmt_bytes.strip():
         return 422, {
             "error": "validation_error",

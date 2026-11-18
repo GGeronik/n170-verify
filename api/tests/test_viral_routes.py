@@ -319,6 +319,7 @@ class TestViralDistributionAndComparisonRoutes(unittest.TestCase):
                 )
             ],
             hosted_multi_user_mode=True,
+            allow_caller_clock_for_tests=True,
             account_blinding_salt_hex="ab" * 32,
             vault_master_kek_hex="cd" * 32,
             sync_backup_retention_hours=0,
