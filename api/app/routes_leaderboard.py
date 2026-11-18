@@ -9,15 +9,18 @@ from app.badges import (
     extract_verified_capital_bracket,
     extract_verified_reconciliation_status,
     finite_real_number,
+    return_not_computed,
     verified_leaf_payload,
 )
-from app.store import ProofStore
+from app.routes_proofs import refuse_caller_clock
+from app.store import CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE, ProofStore
 from n170_verify.contracts import (
     AccountScope,
     CapitalBracket,
     ChainContinuityMode,
     OriginAssurance,
     ReconciliationStatus,
+    SignerTrustStatus,
     VerifyProofBundle,
 )
 
@@ -44,6 +47,30 @@ def _extract_merkle_proven_core_metrics(bundle: VerifyProofBundle) -> dict[str, 
     return {k: v for k, v in payload.items() if k not in _EXCLUDED_SIMULATION_METRIC_KEYS}
 
 
+_LISTED_SIGNER_STATUSES = frozenset(
+    {SignerTrustStatus.OFFICIAL_N170_HOSTED, SignerTrustStatus.RETIRED_HISTORICAL_VALID}
+)
+
+
+def has_rankable_return(bundle: VerifyProofBundle) -> bool:
+    """True only when the record has a computed return the cohort list may rank.
+
+    The ``core_metrics`` leaf must be disclosed and Merkle-proven, its return
+    must be a finite number, ``observation_count`` must be an integer above 0,
+    and the return must not be withheld. Anything else is not listed.
+    """
+    payload = verified_leaf_payload(bundle, "core_metrics")
+    if not isinstance(payload, Mapping) or return_not_computed(payload):
+        return False
+    obs = payload.get("observation_count")
+    if not isinstance(obs, int) or isinstance(obs, bool) or obs <= 0:
+        return False
+    twr = finite_real_number(payload.get("twr_decimal"))
+    if twr is None:
+        twr = finite_real_number(payload.get("twr_pct"))
+    return twr is not None
+
+
 def _parse_enum_csv_filter(
     query_params: Mapping[str, str], key: str, enum_cls: type[_EnumT]
 ) -> set[_EnumT] | None:
@@ -59,6 +86,9 @@ def handle_get_leaderboard(
     store: ProofStore,
 ) -> tuple[int, dict[str, Any]]:
     """Serve ``GET /api/v1/leaderboard`` filtered by verifier-computed assurance & Merkle-proven capital bracket."""
+    clock_refusal = refuse_caller_clock(store.config, query_params)
+    if clock_refusal is not None:
+        return clock_refusal
     min_bracket_str = query_params.get(
         "min_capital_bracket", CapitalBracket.BRACKET_10K_100K.value
     ).strip()
@@ -91,16 +121,37 @@ def handle_get_leaderboard(
 
     candidates = store.list_leaderboard_candidates()
     entries: list[dict[str, Any]] = []
+    # One registry document and one copy of the continuity log for the whole request.
+    registry_doc = store.build_registry_document()
+    continuity_leaves = store.list_all_continuity_leaves()
 
     for cand in candidates:
         bundle = cand.bundle
+        if (
+            store.config.hosted_multi_user_mode
+            and bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+        ):
+            continue
         if broker_filter and bundle.broker_id != broker_filter:
             continue
 
-        verification = store.verify_bundle_against_live_state(bundle, now_utc=now_utc)
+        if not has_rankable_return(bundle):
+            continue
+        verification = store.verify_bundle_against_live_state(
+            bundle,
+            now_utc=now_utc,
+            registry_doc=registry_doc,
+            continuity_leaves=continuity_leaves,
+        )
         if not verification.valid:
             continue
-
+        # The hosted list shows only records whose signer this host's registry
+        # recognises, including rows stored before that rule or while self-hosted.
+        if (
+            store.config.hosted_multi_user_mode
+            and verification.signer_trust_status not in _LISTED_SIGNER_STATUSES
+        ):
+            continue
         # Filter strictly on verifier-computed assurance axes (never raw claimed_origin_assurance)
         if origin_filter and verification.effective_origin_assurance not in origin_filter:
             continue
@@ -112,10 +163,16 @@ def handle_get_leaderboard(
         ):
             continue
 
+        include_private = query_params.get("include_private_bracket", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         proven_bracket = extract_verified_capital_bracket(bundle)
         if proven_bracket is None:
-            continue
-        if CAPITAL_BRACKET_RANK[proven_bracket] < CAPITAL_BRACKET_RANK[min_bracket]:
+            if not include_private:
+                continue
+        elif CAPITAL_BRACKET_RANK[proven_bracket] < CAPITAL_BRACKET_RANK[min_bracket]:
             continue
 
         recon_str = extract_verified_reconciliation_status(bundle)
@@ -167,7 +224,7 @@ def handle_get_leaderboard(
                 ),
                 "signer_trust_status": verification.signer_trust_status.value,
                 "reconciliation_status": recon_status.value if recon_status is not None else None,
-                "capital_bracket": proven_bracket.value,
+                "capital_bracket": proven_bracket.value if proven_bracket is not None else "undisclosed",
                 "twr_decimal": twr_dec,
                 "twr_pct": twr_pct,
                 "probabilistic_sharpe_ratio": psr_val,

@@ -20,23 +20,26 @@ from app.badges import (
     extract_verified_reconciliation_status,
     finite_real_number,
     is_safe_xml_char,
+    return_not_computed,
     verified_leaf_payload,
 )
 from app.config import ApiConfig, utc_now_iso
+from app.privacy_scanner import OutboundPrivacyScanner
+from app.routes_proofs import parse_strict_bool, refuse_caller_clock
 from app.store import (
     GovernanceBlockedError,
-    PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
     ProofConflictError,
     ProofNotFoundError,
     ProofStore,
 )
 from app.worker_isolation import (
+    WORKER_LIMIT_ERRORS,
     WorkerIsolationError,
     WorkerValidationError,
     run_isolated_one_shot_verification,
+    worker_limit_response,
 )
-from n170_verify.coaching import TraderCoachingEngine, match_fifo_round_trips
 from n170_verify.connectors import (
     PaperOrSandboxAccountRejectedError,
     detect_and_parse_statement,
@@ -62,13 +65,8 @@ from n170_verify.crypto import (
     build_salted_merkle_tree,
     generate_ed25519_keypair,
 )
-from n170_verify.performance import (
-    calculate_portfolio_performance_detailed,
-    evaluate_claim_plausibility,
-)
-from n170_verify.pipeline import build_canonical_leaf_payloads
-from n170_verify.reconciliation import reconcile_portfolio_ledger
-from n170_verify.reference import build_reference_provider
+from n170_verify.performance import evaluate_claim_plausibility
+from n170_verify.pipeline import build_canonical_leaf_payloads, verify_portfolio
 
 
 MAX_PLAUSIBILITY_BODY_BYTES = 65_536
@@ -83,15 +81,10 @@ EMBED_METADATA_HEADERS: dict[str, str] = {
 }
 
 _VALID_VS_PROOF_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s*:", re.IGNORECASE)
-_DANGEROUS_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]+\s*=", re.IGNORECASE)
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
-_DISCORD_MASS_MENTION_RE = re.compile(r"@(everyone|here)\b", re.IGNORECASE)
-_CURRENCY_AMOUNT_TOKEN_RE = re.compile(
-    r"(?:[$€£¥]\s*[-+]?\d[\d,.]*|\b(?:USD|EUR|GBP|CAD|CHF|JPY|AUD)\s*[-+]?\d[\d,.]*)",
-    re.IGNORECASE,
-)
-_LONG_DIGIT_RUN_RE = re.compile(r"\b\d{5,}\b")
+_DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s{0,16}:", re.IGNORECASE)
+_DANGEROUS_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]{1,64}\s{0,16}=", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^<>]*>")
+_DISCORD_MASS_MENTION_RE = re.compile(r"@(everyone|here\b)", re.IGNORECASE)
 
 
 class _PlausibilityInputError(ValueError):
@@ -102,17 +95,28 @@ class _PlausibilityInputError(ValueError):
         self.status_code = status_code
 
 
+def _strip_dangerous_tokens_until_fixed(text: str) -> str:
+    cleaned = text
+    for _ in range(16):
+        prev = cleaned
+        cleaned = _DANGEROUS_SCHEME_RE.sub("", cleaned)
+        cleaned = _DANGEROUS_EVENT_ATTR_RE.sub("", cleaned)
+        cleaned = _DISCORD_MASS_MENTION_RE.sub(r"\1", cleaned)
+        if cleaned == prev:
+            break
+    return cleaned
+
+
 def sanitize_public_label(raw: Any, *, max_len: int = 64) -> str:
     """Strip XSS vectors, HTML delimiters, quotes, and control chars, then HTML-escape."""
     if raw is None:
         return ""
-    cleaned = "".join(ch for ch in str(raw) if is_safe_xml_char(ch))
+    bounded = str(raw)[: max_len * 8]
+    cleaned = "".join(ch for ch in bounded if is_safe_xml_char(ch))
     cleaned = _HTML_TAG_RE.sub(" ", cleaned)
-    cleaned = _DANGEROUS_SCHEME_RE.sub("", cleaned)
-    cleaned = _DANGEROUS_EVENT_ATTR_RE.sub("", cleaned)
-    cleaned = _DISCORD_MASS_MENTION_RE.sub(r"\1", cleaned)
     for forbidden_ch in ("<", ">", '"', "'", "`", "\\"):
         cleaned = cleaned.replace(forbidden_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) > max_len:
         cleaned = cleaned[:max_len].rstrip()
@@ -121,23 +125,21 @@ def sanitize_public_label(raw: Any, *, max_len: int = 64) -> str:
 
 def sanitize_markdown_text(raw: Any, *, max_len: int = 96) -> str:
     """Sanitize free-text strings for Discord/Telegram embeds (zero XSS or link injection)."""
-    base = sanitize_public_label(raw, max_len=max_len)
-    for md_ch in ("[", "]", "(", ")", "*", "_", "~", "|"):
-        base = base.replace(md_ch, "")
-    return base.strip()
-
-
-def sanitize_journal_tag(raw: Any, *, max_len: int = 48) -> str | None:
-    """Sanitize an imported trade-journal setup/mistake tag (zero $ amounts or account IDs)."""
     if raw is None:
-        return None
-    text = "".join(ch for ch in str(raw) if is_safe_xml_char(ch))
-    text = _CURRENCY_AMOUNT_TOKEN_RE.sub("", text)
-    text = _LONG_DIGIT_RUN_RE.sub("", text)
-    text = text.replace("$", "").replace("€", "").replace("£", "")
-    safe = sanitize_public_label(text, max_len=max_len)
-    safe = safe.lstrip("=+-@'| \t\r\n").strip()
-    return safe if safe else None
+        return ""
+    bounded = str(raw)[: max_len * 8]
+    cleaned = "".join(ch for ch in bounded if is_safe_xml_char(ch))
+    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
+    for forbidden_ch in ("<", ">", '"', "'", "`", "\\"):
+        cleaned = cleaned.replace(forbidden_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
+    for md_ch in ("[", "]", "(", ")", "*", "_", "~", "|"):
+        cleaned = cleaned.replace(md_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip()
+    return html.escape(cleaned, quote=True)
 
 
 def _reject_json_nonfinite_constant(token: str) -> Any:
@@ -257,6 +259,8 @@ def handle_post_plausibility(
             return exc.status_code, {"error": "validation_error", "detail": str(exc)}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return 400, {"error": "invalid_json", "detail": f"Malformed JSON body: {exc}"}
+        except (RecursionError, ValueError):
+            return 400, {"error": "invalid_json", "detail": "Malformed JSON body"}
     else:
         parsed = raw_body_or_payload
 
@@ -367,6 +371,30 @@ def _extract_realized_metrics_strict(bundle: VerifyProofBundle) -> dict[str, Any
             "psr_display": "Undisclosed",
             "psr_sample_eligible": False,
             "observation_count": 0,
+            "performance_withheld": False,
+        }
+
+    if return_not_computed(payload):
+        # No return was computed for this record: no number is shown for it.
+        return {
+            "disclosed": True,
+            "twr": None,
+            "twr_decimal": None,
+            "twr_pct": None,
+            "xirr": None,
+            "xirr_decimal": None,
+            "cagr": None,
+            "cagr_decimal": None,
+            "cagr_pct": None,
+            "max_drawdown": None,
+            "max_drawdown_decimal": None,
+            "max_drawdown_pct": None,
+            "sharpe_ratio": None,
+            "psr": None,
+            "psr_display": "Withheld",
+            "psr_sample_eligible": False,
+            "observation_count": 0,
+            "performance_withheld": True,
         }
 
     # Guard: strip/ignore any hypothetical or bootstrap sub-objects if present in leaf dict
@@ -439,6 +467,7 @@ def _extract_realized_metrics_strict(bundle: VerifyProofBundle) -> dict[str, Any
         "psr_display": psr_display,
         "psr_sample_eligible": psr_eligible,
         "observation_count": obs_count,
+        "performance_withheld": False,
     }
 
 
@@ -637,6 +666,7 @@ def _build_vs_summary_card(
         "psr_display": metrics["psr_display"],
         "psr_sample_eligible": metrics["psr_sample_eligible"],
         "observation_count": metrics["observation_count"],
+        "performance_withheld": metrics["performance_withheld"],
         "wealth_series": [pt.to_dict() for pt in curve_pts] if curve_pts else None,
     }
     return card, curve_pts
@@ -708,6 +738,13 @@ def handle_get_head_to_head(
 
     card_a, curve_a = _build_vs_summary_card(entry_a.bundle, ver_a)
     card_b, curve_b = _build_vs_summary_card(entry_b.bundle, ver_b)
+    withheld_ids = [c["proof_id"] for c in (card_a, card_b) if c["performance_withheld"]]
+    if withheld_ids:
+        return 422, {
+            "error": "performance_withheld",
+            "detail": "No return was computed for one or both records, so they cannot be compared",
+            "withheld_proof_ids": withheld_ids,
+        }
     sync_series = _build_synchronized_series(curve_a, curve_b)
 
     warnings: list[str] = []
@@ -804,8 +841,29 @@ def handle_get_challenge_card(
     except _PlausibilityInputError as exc:
         return exc.status_code, {"error": "validation_error", "detail": str(exc)}, dict(EMBED_METADATA_HEADERS)
 
-    safe_handle = sanitize_public_label(query_params.get("handle"), max_len=64)
-    safe_period = sanitize_public_label(query_params.get("period_label"), max_len=64)
+    raw_handle = query_params.get("handle")
+    raw_period = query_params.get("period_label")
+    safe_handle = sanitize_public_label(raw_handle, max_len=64)
+    safe_period = sanitize_public_label(raw_period, max_len=64)
+    scanner = OutboundPrivacyScanner()
+    for field_label, candidate in (
+        ("handle", raw_handle),
+        ("handle", safe_handle),
+        ("period_label", raw_period),
+        ("period_label", safe_period),
+    ):
+        if candidate and scanner.scan_text(str(candidate)):
+            return (
+                422,
+                {
+                    "error": "validation_error",
+                    "detail": (
+                        f"{field_label} contains text that looks like an account number or a "
+                        "credential and cannot be included in a challenge card"
+                    ),
+                },
+                dict(EMBED_METADATA_HEADERS),
+            )
 
     display_target = safe_handle if safe_handle else "Trader"
     claim_fragments: list[str] = []
@@ -930,10 +988,11 @@ def handle_get_discord_embed(
     recon_status = extract_verified_reconciliation_status(bundle)
     metrics = _extract_realized_metrics_strict(bundle)
 
+    withheld = bool(metrics["performance_withheld"])
     twr_str = (
-        f"{metrics['twr_pct']:+.2f}%"
-        if metrics["twr_pct"] is not None
-        else "Undisclosed"
+        "Withheld"
+        if withheld
+        else (f"{metrics['twr_pct']:+.2f}%" if metrics["twr_pct"] is not None else "Undisclosed")
     )
     psr_str = str(metrics["psr_display"])
 
@@ -960,11 +1019,15 @@ def handle_get_discord_embed(
         "url": proof_url,
         "color": _embed_color_int(verification.effective_origin_assurance),
         "description": (
-            f"Cryptographically verified realized TWR **{twr_str}** | PSR **{psr_str}** "
-            f"({bundle.period_start_utc[:10]} to {bundle.period_end_utc[:10]})"
+            (
+                "Return withheld: no return was computed for this record "
+                if withheld
+                else f"Cryptographically verified realized TWR **{twr_str}** | PSR **{psr_str}** "
+            )
+            + f"({bundle.period_start_utc[:10]} to {bundle.period_end_utc[:10]})"
         ),
         "fields": [
-            {"name": "Realized TWR", "value": twr_str, "inline": True},
+            {"name": "Return" if withheld else "Realized TWR", "value": twr_str, "inline": True},
             {"name": "Probabilistic Sharpe (PSR)", "value": psr_str, "inline": True},
             {"name": "OriginAssurance", "value": origin_val, "inline": True},
             {"name": "SignerTrust", "value": signer_val, "inline": True},
@@ -979,10 +1042,13 @@ def handle_get_discord_embed(
 
     telegram_markdown = (
         f"*N170 Verified Performance* ({safe_broker_label})\n"
-        f"• Realized TWR: `{twr_str}`\n"
-        f"• PSR: `{psr_str}`\n"
-        f"• OriginAssurance: `{origin_val}`\n"
-        f"• SignerTrust: `{signer_val}`\n"
+        + (
+            "• Return: withheld (not computed)\n"
+            if withheld
+            else f"• Realized TWR: `{twr_str}`\n• PSR: `{psr_str}`\n"
+        )
+        + f"• OriginAssurance: `{origin_val}`\n"
+        + f"• SignerTrust: `{signer_val}`\n"
         f"• ReconciliationStatus: `{recon_status}`\n"
         f"• AccountScope: `{scope_val}`\n"
         f"• Verify: {proof_url}"
@@ -1003,6 +1069,7 @@ def handle_get_discord_embed(
                 "psr_numeric": metrics["psr"],
                 "observation_count": metrics["observation_count"],
                 "psr_sample_eligible": metrics["psr_sample_eligible"],
+                "performance_withheld": withheld,
             },
             "embeds": [discord_embed],
             "allowed_mentions": {"parse": []},
@@ -1056,9 +1123,9 @@ def handle_get_qr_payload(
     }
 
     twr_str = (
-        f"{metrics['twr_pct']:+.2f}%"
-        if metrics["twr_pct"] is not None
-        else "Undisclosed"
+        "Withheld"
+        if metrics["performance_withheld"]
+        else (f"{metrics['twr_pct']:+.2f}%" if metrics["twr_pct"] is not None else "Undisclosed")
     )
     psr_str = str(metrics["psr_display"])
     safe_broker = sanitize_public_label(bundle.broker_id, max_len=32)
@@ -1069,6 +1136,7 @@ def handle_get_qr_payload(
         "period_end_utc": bundle.period_end_utc,
         "twr": twr_str,
         "psr": psr_str,
+        "performance_withheld": bool(metrics["performance_withheld"]),
         "merkle_root": bundle.merkle_root,
         "ed25519_key_id": bundle.publisher_kid,
         "signature_fingerprint": sig_fp,
@@ -1129,25 +1197,31 @@ def build_and_sign_proof_bundle(
     reconciliation_status_override: ReconciliationStatus | None = None,
     origin_assurance: OriginAssurance = OriginAssurance.SELF_REPORTED,
     imported_journal_tags: Sequence[str] = (),
-    include_journal_tags: bool = True,
     disclose_leaf_names: Sequence[str] | None = None,
     publisher_kid: str = "ephemeral-worker-auto-detect",
     publisher_private_key_hex: str | None = None,
 ) -> tuple[VerifyProofBundle, dict[str, Any], int]:
-    """Compute performance/reconciliation/coaching leaves and sign a redacted ``VerifyProofBundle``."""
-    ref_provider = build_reference_provider(api_key=eodhd_api_key)
-    perf_calc = calculate_portfolio_performance_detailed(
-        ledger,
-        reference_provider=ref_provider,
-    )
-    perf_summary = perf_calc.summary
+    """Sign the statement upload's record from the shared pipeline's own results.
 
-    recon_report = reconcile_portfolio_ledger(
-        ledger,
-        reference_provider=ref_provider,
-        performance_summary=perf_summary,
-        reference_now_utc=issued_at_utc,
+    The ledger goes through ``verify_portfolio``: the same ingest (the signed period
+    is the span of the scored valuations), calculator, reconciliation and coaching
+    (whose actual path is the calculator's scored path, and absent when the return
+    is withheld) as POST /api/v1/verify. The upload then adds only two things to
+    the leaves: the parser label in the reconciliation leaf, and journal tags
+    cleaned of amounts and account-like digit runs.
+    """
+    pipeline_out = verify_portfolio(
+        ledger=ledger,
+        require_live=True,
+        allow_filesystem_paths=False,
+        eodhd_api_key=eodhd_api_key,
+        embargo_days=embargo_days,
+        issued_at_utc=issued_at_utc,
+        enable_llm_narrative=False,
+        imported_journal_tags=list(imported_journal_tags) or None,
     )
+    perf_summary = pipeline_out.performance
+    recon_report = pipeline_out.reconciliation
     if reconciliation_status_override is not None:
         recon_dict = recon_report.to_dict()
         recon_dict["status"] = reconciliation_status_override.value
@@ -1155,37 +1229,18 @@ def build_and_sign_proof_bundle(
             recon_dict["ledger_completeness_ok"] = False
         recon_report = ReconciliationReport.from_dict(recon_dict)
 
-    all_trips = match_fifo_round_trips(ledger)
-    coaching_engine = TraderCoachingEngine(
-        min_trade_disclosure_delay_days=float(embargo_days),
-    )
-    coaching_out = coaching_engine.evaluate(
-        ledger,
-        as_of_utc=issued_at_utc,
-        enable_llm_narrative=False,
-    )
-    delayed_trades = coaching_out.delayed_closed_trades
-    stripped_count = max(0, len(all_trips) - len(delayed_trades))
+    delayed_trades = pipeline_out.delayed_closed_trades
+    stripped_count = pipeline_out.stripped_recent_closed_trades_count
 
-    sanitized_tags: list[str] = []
-    if include_journal_tags:
-        existing_tags = list(coaching_out.report.imported_journal_tags or [])
-        for raw_t in [*existing_tags, *imported_journal_tags]:
-            clean_t = sanitize_journal_tag(raw_t)
-            if clean_t and clean_t not in sanitized_tags and len(sanitized_tags) < 50:
-                sanitized_tags.append(clean_t)
-
-    coaching_report = coaching_out.report
-    coaching_dict = coaching_report.to_dict()
-    coaching_dict["imported_journal_tags"] = sanitized_tags
-    coaching_report = coaching_report.from_dict(coaching_dict)
+    # Journal tags are cleaned once, by the shared pipeline; the upload signs them as returned.
+    coaching_report = pipeline_out.coaching
 
     leaf_payloads = build_canonical_leaf_payloads(
         performance=perf_summary,
         reconciliation=recon_report,
         coaching=coaching_report,
         delayed_closed_trades=delayed_trades,
-        base_currency=ledger.base_currency,
+        base_currency=pipeline_out.base_currency,
         embargo_days=embargo_days,
         stripped_recent_closed_trades_count=stripped_count,
     )
@@ -1212,15 +1267,16 @@ def build_and_sign_proof_bundle(
         publisher_kid=publisher_kid,
         publisher_private_key_hex=priv_hex,
         broker_id=ledger.broker_id,
-        blinded_account_tag=ledger.blinded_account_tag,
+        blinded_account_tag=pipeline_out.blinded_account_tag,
         account_scope=ledger.account_scope,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
         environment_tier=ledger.environment_tier,
         claimed_origin_assurance=origin_assurance,
-        source_body_sha256=ledger.source_body_sha256,
-        period_start_utc=ledger.period_start_utc,
-        period_end_utc=ledger.period_end_utc,
-        base_currency=ledger.base_currency,
+        source_body_sha256=pipeline_out.source_body_sha256,
+        # The signed period is the one the shared pipeline scored.
+        period_start_utc=pipeline_out.period_start_utc,
+        period_end_utc=pipeline_out.period_end_utc,
+        base_currency=pipeline_out.base_currency,
         merkle_tree=merkle_tree,
         disclose_leaf_names=disclose_list,
         retention_mode="no_persistent_storage",
@@ -1251,16 +1307,13 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
 
     filename = str(job["filename"]).strip() if job.get("filename") else None
     blinding_salt_hex = str(job["account_blinding_salt_hex"])
-    base_currency = str(job.get("base_currency") or "USD").strip().upper()
     issued_at_utc = str(job.get("issued_at_utc") or utc_now_iso())
     embargo_days = int(job.get("delayed_trade_guard_days", 7))
-    include_journal_tags = bool(job.get("include_journal_tags", True))
 
     det = detect_and_parse_statement(
         raw_bytes,
         filename=filename,
         blinding_salt_hex=blinding_salt_hex,
-        base_currency=base_currency,
         require_live=True,
     )
     ledger = det.ledger
@@ -1286,10 +1339,11 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
         reconciliation_status_override=recon_override,
         origin_assurance=OriginAssurance.SELF_REPORTED,
         imported_journal_tags=det.imported_journal_tags,
-        include_journal_tags=include_journal_tags,
         disclose_leaf_names=job.get("disclose_leaf_names"),
     )
 
+    core_leaf = leaf_payloads.get("core_metrics") or {}
+    performance_withheld = core_leaf.get("performance_withheld") is True
     final_recon_status = str(leaf_payloads["reconciliation"]["status"])
     final_tags = list(leaf_payloads["coaching_and_context"].get("imported_journal_tags") or [])
     safe_format = sanitize_public_label(detected_format, max_len=64)
@@ -1313,6 +1367,10 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
         "disclosed_leaves": [leaf.to_dict() for leaf in bundle.disclosed_leaves],
         "undisclosed_leaf_hashes": dict(bundle.undisclosed_leaf_hashes),
         "stripped_recent_closed_trades_count": stripped_count,
+        "performance_withheld": performance_withheld,
+        "withheld_reasons": (
+            [str(r) for r in core_leaf.get("withheld_reasons") or []] if performance_withheld else []
+        ),
         "bundle": bundle.to_dict(),
     }
 
@@ -1362,6 +1420,29 @@ def _extract_multipart_upload(
     return file_bytes, fields_map
 
 
+# Choices the statement upload does not take from a caller: the currency label
+# comes from the file or the parser that read it, and the signed journal tags are
+# the shared pipeline's.
+_UPLOAD_REFUSED_FIELDS: tuple[str, ...] = (
+    "base_currency",
+    "include_journal_tags",
+    "forward_journal_tags",
+)
+
+
+def _refuse_upload_choice_fields(carried: Mapping[str, Any]) -> tuple[int, dict[str, Any]] | None:
+    present = [name for name in _UPLOAD_REFUSED_FIELDS if name in carried]
+    if not present:
+        return None
+    return 400, {
+        "error": "field_not_accepted",
+        "detail": (
+            f"The statement upload does not accept {', '.join(present)}: the currency label "
+            "comes from the statement and the journal tags are the ones the host signs"
+        ),
+    }
+
+
 def handle_post_verify_auto_detect(
     raw_body: bytes,
     *,
@@ -1389,12 +1470,9 @@ def handle_post_verify_auto_detect(
 
     stmt_bytes: bytes | None = None
     filename: str | None = q_map.get("filename") or hdrs.get("X-Filename") or hdrs.get("x-filename")
-    base_currency = (q_map.get("base_currency") or "USD").strip().upper()
-    include_journal_tags = q_map.get("include_journal_tags", "true").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-    }
+    refusal = _refuse_upload_choice_fields(q_map)
+    if refusal is not None:
+        return refusal
     publish_proof = q_map.get("publish_proof", "false").strip().lower() in {"1", "true", "yes"}
     opt_in_leaderboard = q_map.get("opt_in_leaderboard", "false").strip().lower() in {
         "1",
@@ -1412,16 +1490,11 @@ def handle_post_verify_auto_detect(
         except ValueError as exc:
             return 400, {"error": "invalid_multipart", "detail": str(exc)}
 
+        refusal = _refuse_upload_choice_fields(form_fields)
+        if refusal is not None:
+            return refusal
         if form_fields.get("filename"):
             filename = form_fields["filename"]
-        if form_fields.get("base_currency"):
-            base_currency = form_fields["base_currency"].upper()
-        if "include_journal_tags" in form_fields:
-            include_journal_tags = form_fields["include_journal_tags"].lower() not in {
-                "0",
-                "false",
-                "no",
-            }
         if "publish_proof" in form_fields:
             publish_proof = form_fields["publish_proof"].lower() in {"1", "true", "yes"}
         if "opt_in_leaderboard" in form_fields:
@@ -1433,8 +1506,13 @@ def handle_post_verify_auto_detect(
             parsed_json = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return 400, {"error": "invalid_json", "detail": f"Malformed JSON body: {exc}"}
+        except (RecursionError, ValueError):
+            return 400, {"error": "invalid_json", "detail": "Malformed JSON body"}
         if not isinstance(parsed_json, Mapping):
             return 400, {"error": "invalid_request", "detail": "JSON body must be an object"}
+        refusal = _refuse_upload_choice_fields(parsed_json)
+        if refusal is not None:
+            return refusal
 
         if bool(parsed_json.get("is_paper", False)) or bool(parsed_json.get("is_sandbox", False)):
             return 422, {
@@ -1455,16 +1533,18 @@ def handle_post_verify_auto_detect(
 
         if parsed_json.get("filename"):
             filename = str(parsed_json["filename"])
-        if parsed_json.get("base_currency"):
-            base_currency = str(parsed_json["base_currency"]).strip().upper()
-        if "include_journal_tags" in parsed_json:
-            include_journal_tags = bool(parsed_json["include_journal_tags"])
-        elif "forward_journal_tags" in parsed_json:
-            include_journal_tags = bool(parsed_json["forward_journal_tags"])
         if "publish_proof" in parsed_json:
-            publish_proof = bool(parsed_json["publish_proof"])
+            publish_proof, pub_err = parse_strict_bool(
+                parsed_json, "publish_proof", default=False
+            )
+            if pub_err is not None:
+                return pub_err
         if "opt_in_leaderboard" in parsed_json:
-            opt_in_leaderboard = bool(parsed_json["opt_in_leaderboard"])
+            opt_in_leaderboard, opt_err = parse_strict_bool(
+                parsed_json, "opt_in_leaderboard", default=False
+            )
+            if opt_err is not None:
+                return opt_err
         if parsed_json.get("issued_at_utc"):
             issued_at_utc = str(parsed_json["issued_at_utc"])
         if isinstance(parsed_json.get("disclose_leaf_names"), list):
@@ -1501,6 +1581,14 @@ def handle_post_verify_auto_detect(
     else:
         stmt_bytes = bytes(raw_body)
 
+    # The host sets the issue time of the records it signs; only a test
+    # configuration accepts one from the caller.
+    clock_refusal = refuse_caller_clock(
+        config, {"issued_at_utc": issued_at_utc} if issued_at_utc else {}, field_name="issued_at_utc"
+    )
+    if clock_refusal is not None:
+        return clock_refusal
+
     if stmt_bytes is None or not stmt_bytes.strip():
         return 422, {
             "error": "validation_error",
@@ -1511,26 +1599,19 @@ def handle_post_verify_auto_detect(
             "error": "payload_too_large",
             "detail": f"Decoded statement exceeds maximum 25 MB ({MAX_STATEMENT_UPLOAD_BYTES} bytes) limit",
         }
-    if not (2 <= len(base_currency) <= 12) or not base_currency.isalnum():
-        return 422, {
-            "error": "validation_error",
-            "detail": "base_currency must be a 2-12 character alphanumeric currency code",
-        }
-
     worker_request: dict[str, Any] = {
         "broker_id": "auto_detect",
         "provider_approval_state": ProviderApprovalState.OFFLINE_EXPORT_ONLY.value,
         "environment_tier": EnvironmentTier.LIVE_PRODUCTION.value,
         "raw_statement_b64": base64.b64encode(stmt_bytes).decode("ascii"),
         "filename": sanitize_public_label(filename, max_len=128) if filename else None,
-        "base_currency": base_currency,
-        "include_journal_tags": include_journal_tags,
     }
     if issued_at_utc:
         worker_request["issued_at_utc"] = issued_at_utc
     if disclose_leaf_names is not None:
         worker_request["disclose_leaf_names"] = list(disclose_leaf_names)
 
+    result_meta: dict[str, Any] = {}
     try:
         bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
             worker_request,
@@ -1538,13 +1619,14 @@ def handle_post_verify_auto_detect(
             pipeline_spec="app.routes_viral:auto_detect_worker_pipeline",
             retention_mode="no_persistent_storage",
             persistent_rows_written=0,
+            result_meta=result_meta,
         )
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ReadOnlyCapabilityViolationError as exc:
         return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
+    except WORKER_LIMIT_ERRORS as exc:
+        return worker_limit_response(exc)
     except (WorkerValidationError, ValueError) as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
     except WorkerIsolationError as exc:
@@ -1558,6 +1640,8 @@ def handle_post_verify_auto_detect(
             )
             rows_written = 1
         except ProofConflictError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+        except GovernanceBlockedError as exc:
             return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except ProofBundleInvalidError as exc:
             return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
@@ -1577,13 +1661,11 @@ def handle_post_verify_auto_detect(
     if isinstance(coaching_payload, Mapping) and isinstance(
         coaching_payload.get("imported_journal_tags"), list
     ):
-        for t in coaching_payload["imported_journal_tags"]:
-            clean_t = sanitize_journal_tag(t)
-            if clean_t:
-                imported_tags.append(clean_t)
+        # The signed tags, exactly as the shared pipeline cleaned them.
+        imported_tags = [str(t) for t in coaching_payload["imported_journal_tags"]]
 
     bundle_dict = bundle.to_dict()
-    return 200, {
+    response_body: dict[str, Any] = {
         "detected_format": detected_format,
         "broker_id": bundle.broker_id,
         "origin_assurance": verification.effective_origin_assurance.value,
@@ -1594,7 +1676,14 @@ def handle_post_verify_auto_detect(
         "verification": verification.to_dict(),
         "isolation_receipt": receipt.to_dict(),
         "stripped_recent_closed_trades_count": stripped_trades,
+        # Whether a return was computed, as POST /api/v1/verify states it.
+        "performance_withheld": bool(result_meta.get("performance_withheld", False)),
     }
+    if response_body["performance_withheld"]:
+        response_body["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
+    if result_meta.get("record_warnings"):
+        response_body["record_warnings"] = list(result_meta["record_warnings"])
+    return 200, response_body
 
 
 def handle_get_ibkr_flex_guide() -> tuple[int, dict[str, Any]]:
@@ -1615,7 +1704,6 @@ __all__ = [
     "handle_get_qr_payload",
     "handle_post_plausibility",
     "handle_post_verify_auto_detect",
-    "sanitize_journal_tag",
     "sanitize_markdown_text",
     "sanitize_public_label",
     "validate_comparison_proof_id",

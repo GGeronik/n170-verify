@@ -7,7 +7,9 @@ import html
 import math
 import re
 from typing import Any
+import unicodedata
 
+from app.privacy_scanner import OutboundPrivacyScanner
 from app.store import ProofNotFoundError, ProofStore
 from n170_verify.contracts import (
     BundleVerificationResult,
@@ -30,14 +32,19 @@ SVG_RESPONSE_HEADERS: dict[str, str] = {
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
+_UNSAFE_UNICODE_CATEGORIES = frozenset({"Cf", "Cc", "Cs", "Co", "Cn", "Zl", "Zp"})
+
+
 def is_safe_xml_char(ch: str) -> bool:
     code = ord(ch)
-    return not (
+    if (
         code < 0x20
         or 0x7F <= code <= 0x9F
         or 0xD800 <= code <= 0xDFFF
         or code in {0x2028, 0x2029, 0xFFFE, 0xFFFF}
-    )
+    ):
+        return False
+    return unicodedata.category(ch) not in _UNSAFE_UNICODE_CATEGORIES
 
 
 def svg_escape(value: Any) -> str:
@@ -83,6 +90,21 @@ def verified_leaf_payload(bundle: VerifyProofBundle, leaf_name: str) -> Any | No
     return None
 
 
+def return_not_computed(core_metrics_payload: Any) -> bool:
+    """True when a proven ``core_metrics`` payload says no return was computed.
+
+    That is the case when the calculator withheld the return
+    (``performance_withheld`` is true) or the section has zero observations.
+    Every surface that renders a return, and the cohort list, uses this one test.
+    """
+    if not isinstance(core_metrics_payload, Mapping):
+        return False
+    if core_metrics_payload.get("performance_withheld") is True:
+        return True
+    obs = core_metrics_payload.get("observation_count")
+    return isinstance(obs, (int, float)) and not isinstance(obs, bool) and obs == 0
+
+
 def extract_verified_capital_bracket(bundle: VerifyProofBundle) -> CapitalBracket | None:
     """Verify the disclosed ``capital_bracket`` Merkle leaf against ``bundle.merkle_root``."""
     payload = verified_leaf_payload(bundle, "capital_bracket")
@@ -126,6 +148,8 @@ def _extract_twr_and_psr_labels(
     payload = verified_leaf_payload(bundle, "core_metrics")
     if not isinstance(payload, Mapping):
         return "undisclosed", "undisclosed"
+    if return_not_computed(payload):
+        return "withheld", "withheld"
     twr_label = "undisclosed"
     twr_pct_val = _safe_finite_float(payload.get("twr_pct"))
     twr_dec_val = _safe_finite_float(payload.get("twr_decimal"))
@@ -244,6 +268,8 @@ def handle_get_badge_svg(
 ) -> tuple[int, bytes, dict[str, str]]:
     """HTTP handler logic for ``GET /api/v1/badges/{proof_id}.svg``."""
     raw_label = query_params.get("label") if query_params else None
+    if raw_label and OutboundPrivacyScanner().scan_text(str(raw_label)):
+        raw_label = None
     try:
         entry = store.get_proof_entry(proof_id)
     except ProofNotFoundError:
@@ -273,6 +299,7 @@ __all__ = [
     "handle_get_badge_svg",
     "is_safe_xml_char",
     "render_proof_badge_svg",
+    "return_not_computed",
     "svg_escape",
     "verified_leaf_payload",
 ]

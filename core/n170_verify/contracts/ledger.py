@@ -184,6 +184,7 @@ class NormalizedTrade(ContractModelMixin):
     strike: float | None = None
     expiry: str | None = None
     underlying_symbol: str | None = None
+    position_id: str | None = None
 
     def _validate(self) -> None:
         if not self.venue.strip():
@@ -214,6 +215,9 @@ class NormalizedTrade(ContractModelMixin):
                 object.__setattr__(self, "option_right", "P")
             else:
                 raise ValueError("NormalizedTrade.option_right must be 'C'/'CALL' or 'P'/'PUT'")
+        if self.position_id is not None:
+            clean_pos_id = self.position_id.strip()
+            object.__setattr__(self, "position_id", clean_pos_id or None)
 
     @property
     def notional_base(self) -> float:

@@ -9,6 +9,7 @@
  * Wave-1..3 bundles without mutating their Ed25519/Merkle leaf digests.
  */
 
+import { isComputedDrag } from "./costDrag.ts";
 import {
   DEFAULT_COUNTERFACTUAL_DISCLAIMER,
   type BootstrapConePoint,
@@ -410,7 +411,10 @@ export function resolveCounterfactualTwin(
   const coaching = leaves.coaching;
   if (!coaching || curve.length < 2) return null;
 
-  const totalDragIndexPts = (coaching.cost_drag.total_friction_drag_bps / 10000) * 100;
+  // A record that states its friction drag as not computed has no counterfactual twin.
+  const totalDragBps = coaching.cost_drag.total_friction_drag_bps;
+  if (!isComputedDrag(totalDragBps)) return null;
+  const totalDragIndexPts = (totalDragBps / 10000) * 100;
   const sdiExcess = Math.max(
     (coaching.behaviour.post_drawdown_sizing_discipline_atr ?? 1.0) - 1.0,
     0.04,
@@ -483,7 +487,9 @@ export function resolveQuantDnaProfile(
   const psr = perf?.psr_glm_unsmoothed ?? perf?.probabilistic_sharpe_ratio ?? 0.72;
   const sr = perf?.unsmoothed_sharpe_ratio ?? perf?.sharpe_ratio ?? 1.4;
   const maxDdAbs = Math.abs(perf?.max_drawdown_decimal ?? 0.08);
-  const annDragBps = coaching?.cost_drag.annualized_total_drag_bps ?? 65;
+  // No profile is derived without a stated cost drag: no default number stands in for it.
+  const annDragBps = coaching?.cost_drag.annualized_total_drag_bps;
+  if (!isComputedDrag(annDragBps)) return null;
   const sdiAtr = coaching?.behaviour.post_drawdown_sizing_discipline_atr ?? 1.05;
   const odean = coaching?.behaviour.odean_pgr_plr_spread ?? 0.0;
   const holdRatio = coaching?.behaviour.winner_vs_loser_hold_ratio ?? 1.3;

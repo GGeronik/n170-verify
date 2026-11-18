@@ -732,9 +732,11 @@ import fs from "node:fs";
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const { verifyProofBundle } = await import(input.verify_ts_url);
 const clientMod = await import(input.api_client_url);
+// A web client that still merges extra registries is given the chance to; one that
+// checks against the service's own registry only uses that registry as it is.
 const mergeFn = clientMod.combineRegistryDocuments || clientMod.mergeWithDemoRegistry;
-const mergedReg = mergeFn(input.registry);
-const webRes = await verifyProofBundle(input.bundle, { registryDoc: mergedReg });
+const registryDoc = mergeFn ? mergeFn(input.registry) : input.registry;
+const webRes = await verifyProofBundle(input.bundle, { registryDoc });
 process.stdout.write(JSON.stringify(webRes));
 """
                 web_cp = subprocess.run(

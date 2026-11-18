@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
-    "test": "node --test tests/browserVerify.test.ts tests/ceremonyAndShare.test.ts tests/wave4ViralAndMath.test.ts"
+    "test": "node --test tests/browserVerify.test.ts tests/ceremonyAndShare.test.ts tests/wave4ViralAndMath.test.ts tests/costDrag.test.ts"
   },
   "dependencies": {
     "lucide-react": "^0.475.0",

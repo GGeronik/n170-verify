@@ -3,6 +3,7 @@
 import { AlertTriangle, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SessionExpectancyMatrix } from "@/components/SessionExpectancyMatrix.tsx";
+import { dragBarGeometry, formatDragBps, sumDragBps } from "@/lib/costDrag.ts";
 import {
   CatalystAlignmentClass,
   DEFAULT_COUNTERFACTUAL_DISCLAIMER,
@@ -135,7 +136,7 @@ export function CoachingStudioTab({
   }
 
   const { cost_drag: drag, behaviour: beh } = coaching;
-  const totalBps = Math.max(drag.total_friction_drag_bps, 0.1);
+  const totalBps = drag.total_friction_drag_bps;
 
   const waterfallSteps = [
     {
@@ -149,24 +150,25 @@ export function CoachingStudioTab({
       code: "MARG",
       name: "2. Margin Borrow & Funding Carry",
       bps: drag.margin_and_funding_drag_bps,
-      startBps: drag.commission_and_fee_drag_bps,
+      startBps: sumDragBps([drag.commission_and_fee_drag_bps]),
       tone: "var(--signal-ochre)",
     },
     {
       code: "FX",
       name: "3. Multi-Currency FX Spread",
       bps: drag.fx_conversion_drag_bps,
-      startBps: drag.commission_and_fee_drag_bps + drag.margin_and_funding_drag_bps,
+      startBps: sumDragBps([drag.commission_and_fee_drag_bps, drag.margin_and_funding_drag_bps]),
       tone: "var(--text-secondary)",
     },
     {
       code: "WHT",
       name: "4. Dividend Withholding Tax",
       bps: drag.withholding_tax_drag_bps,
-      startBps:
-        drag.commission_and_fee_drag_bps +
-        drag.margin_and_funding_drag_bps +
+      startBps: sumDragBps([
+        drag.commission_and_fee_drag_bps,
+        drag.margin_and_funding_drag_bps,
         drag.fx_conversion_drag_bps,
+      ]),
       tone: "var(--text-muted)",
     },
   ];
@@ -405,34 +407,32 @@ export function CoachingStudioTab({
                 </h3>
               </div>
               <span className="badge-vermilion rounded px-2.5 py-1 font-mono text-xs font-semibold tabular-nums">
-                -{drag.annualized_total_drag_bps.toFixed(1)} bps / yr
+                {formatDragBps(drag.annualized_total_drag_bps, "bps / yr")}
               </span>
             </div>
 
             <div className="mt-4 space-y-3 font-mono text-xs tabular-nums">
               {waterfallSteps.map((step) => {
-                const offsetPct = Math.min((step.startBps / totalBps) * 100, 96);
-                const widthPct = Math.max(
-                  (step.bps / totalBps) * 100,
-                  step.bps > 0 ? 3 : 0,
-                );
+                const bar = dragBarGeometry(step.startBps, step.bps, totalBps);
                 return (
                   <div key={step.code} className="space-y-1">
                     <div className="flex items-center justify-between text-[11.5px]">
                       <span className="font-sans text-ink-secondary">{step.name}</span>
                       <span className="font-semibold text-ink">
-                        -{step.bps.toFixed(1)} bps
+                        {formatDragBps(step.bps)}
                       </span>
                     </div>
                     <div className="relative h-2.5 w-full overflow-hidden rounded-sm bg-elevated">
-                      <div
-                        className="absolute top-0 bottom-0 rounded-sm transition-all duration-500 ease-out"
-                        style={{
-                          left: `${offsetPct}%`,
-                          width: `${Math.min(widthPct, 100 - offsetPct)}%`,
-                          backgroundColor: step.tone,
-                        }}
-                      />
+                      {bar ? (
+                        <div
+                          className="absolute top-0 bottom-0 rounded-sm transition-all duration-500 ease-out"
+                          style={{
+                            left: `${bar.offsetPct}%`,
+                            width: `${bar.widthPct}%`,
+                            backgroundColor: step.tone,
+                          }}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -445,11 +445,11 @@ export function CoachingStudioTab({
                     5. Cumulative Period Friction Drag
                   </span>
                   <span className="font-bold text-signal-vermilion">
-                    -{drag.total_friction_drag_bps.toFixed(1)} bps
+                    {formatDragBps(drag.total_friction_drag_bps)}
                   </span>
                 </div>
                 <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-sm bg-subtle">
-                  <div className="h-full w-full bg-signal-vermilion" />
+                  {totalBps !== null ? <div className="h-full w-full bg-signal-vermilion" /> : null}
                 </div>
               </div>
             </div>

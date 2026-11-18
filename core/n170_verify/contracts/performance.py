@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date as date_type
 from enum import Enum
 import math
+from typing import Any
 
 from n170_verify.contracts.assurance import ContractModelMixin, parse_utc_timestamp
 
@@ -227,8 +228,23 @@ class PerformanceSummary(ContractModelMixin):
     warnings: list[str] = field(default_factory=list)
     daily_calendar_cells: list[DailyCalendarCell] = field(default_factory=list)
     bootstrap_summary: BootstrapRiskSummary | None = None
+    # True when no return could be computed; the numeric fields are then placeholders.
+    # Serialized only when True, so computed records keep their existing leaf bytes.
+    performance_withheld: bool = False
+    withheld_reasons: list[str] = field(default_factory=list)
+
+    def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
+        out = ContractModelMixin.to_dict(self, exclude_none=exclude_none)
+        if not self.performance_withheld:
+            out.pop("performance_withheld", None)
+            out.pop("withheld_reasons", None)
+        return out
 
     def _validate(self) -> None:
+        if self.performance_withheld and not self.withheld_reasons:
+            raise ValueError("PerformanceSummary.performance_withheld requires withheld_reasons")
+        if self.withheld_reasons and not self.performance_withheld:
+            raise ValueError("PerformanceSummary.withheld_reasons requires performance_withheld=True")
         if self.twr_pct is None:
             val = round(self.twr_decimal * 100.0, 8)
             object.__setattr__(self, "twr_pct", 0.0 if val == 0.0 else val)

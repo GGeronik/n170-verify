@@ -3,6 +3,24 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  async rewrites() {
+    const internalApi = (process.env.N170_VERIFY_INTERNAL_API_URL ?? "")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!internalApi) {
+      return [];
+    }
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: `${internalApi}/api/v1/:path*`,
+      },
+      {
+        source: "/healthz",
+        destination: `${internalApi}/healthz`,
+      },
+    ];
+  },
   async headers() {
     return [
       {

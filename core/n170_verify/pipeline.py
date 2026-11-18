@@ -46,7 +46,9 @@ from n170_verify.coaching import (
     SmallLlmCoachClient,
     TraderCoachingEngine,
     match_fifo_round_trips,
+    sanitize_journal_tags,
 )
+from n170_verify.coaching.behaviour_metrics import instruments_held_before_the_ledger
 from n170_verify.connectors import (
     CONNECTOR_CLASS_MAP,
     PaperOrSandboxAccountRejectedError,
@@ -56,11 +58,11 @@ from n170_verify.connectors import (
     parse_robinhood_csv,
     parse_schwab_csv,
 )
+from n170_verify.connectors.statement_csv import detect_and_parse_statement
 from n170_verify.contracts import (
     ALLOWED_RETENTION_MODES,
     BundleVerificationResult,
     CanonicalPortfolioLedger,
-    CapitalBracket,
     ContractModelMixin,
     EnvironmentTier,
     IndexedCurvePoint,
@@ -73,6 +75,8 @@ from n170_verify.contracts import (
     VerifyProofBundle,
     compute_blinded_account_tag,
     create_signed_proof_bundle,
+    format_utc_timestamp,
+    parse_utc_timestamp,
     verify_proof_bundle,
 )
 from n170_verify.crypto import (
@@ -181,18 +185,36 @@ def _call_adapter_fetch(
     if "blinding_salt_hex" in params or accepts_var_kw:
         call_kwargs["blinding_salt_hex"] = blinding_salt_hex
 
-    default_start = period_start_utc or "2026-01-01T00:00:00Z"
-    default_end = period_end_utc or _utc_now_iso()
-    if "period_start_utc" in params:
-        call_kwargs["period_start_utc"] = default_start
-    if "period_end_utc" in params:
-        call_kwargs["period_end_utc"] = default_end
+    if period_start_utc is not None:
+        if "period_start_utc" in params:
+            call_kwargs["period_start_utc"] = period_start_utc
+        elif "start_date" in params:
+            call_kwargs["start_date"] = period_start_utc
+    elif (
+        "period_start_utc" in params
+        and params["period_start_utc"].default is inspect.Parameter.empty
+    ):
+        call_kwargs["period_start_utc"] = "2026-01-01T00:00:00Z"
+
+    if period_end_utc is not None:
+        if "period_end_utc" in params:
+            call_kwargs["period_end_utc"] = period_end_utc
+        elif "end_date" in params:
+            call_kwargs["end_date"] = period_end_utc
+    elif (
+        "period_end_utc" in params
+        and params["period_end_utc"].default is inspect.Parameter.empty
+    ):
+        call_kwargs["period_end_utc"] = _utc_now_iso()
     if base_currency is not None and "base_currency" in params:
         call_kwargs["base_currency"] = base_currency
     if "require_live" in params:
         call_kwargs["require_live"] = require_live
 
     if extra_fetch_kwargs:
+        if any(str(key).strip().lower() == "blinding_salt_hex" for key in extra_fetch_kwargs):
+            # The account-tag salt is chosen by the operator, never by fetch options.
+            raise ValueError("connector_fetch_kwargs may not set blinding_salt_hex")
         for key, value in extra_fetch_kwargs.items():
             if key == "require_live" and require_live:
                 continue
@@ -205,6 +227,169 @@ def _call_adapter_fetch(
             f"Connector {type(adapter).__name__}.fetch_canonical_ledger() must return CanonicalPortfolioLedger"
         )
     return ledger
+
+
+# The earliest date a valuation, trade or flow may carry. Electronic brokerage statements and
+# exchange histories that any supported source exports start well after this; a date before it
+# is a placeholder or a damaged row, not activity.
+EARLIEST_ACTIVITY_DATE_UTC = "1980-01-01T00:00:00Z"
+
+
+def _clamp_same_day_eod_valuations(
+    ledger: CanonicalPortfolioLedger, issued_at_utc: str
+) -> CanonicalPortfolioLedger:
+    """Clamp date-only 23:59:59Z valuations on the exact UTC issue date to ``issued_at_utc``."""
+    if not ledger.nav_points:
+        return ledger
+    issued_dt = parse_utc_timestamp(issued_at_utc)
+    if any(
+        parse_utc_timestamp(ts) > issued_dt
+        for ts in (
+            [t.timestamp_utc for t in ledger.trades]
+            + [f.timestamp_utc for f in ledger.flows]
+            + [c.timestamp_utc for c in ledger.corporate_actions]
+        )
+    ):
+        return ledger
+
+    future_navs = [
+        (idx, pt, parse_utc_timestamp(pt.timestamp_utc))
+        for idx, pt in enumerate(ledger.nav_points)
+        if parse_utc_timestamp(pt.timestamp_utc) > issued_dt
+    ]
+    if not future_navs:
+        return ledger
+    if not all(
+        dt.date() == issued_dt.date()
+        and dt.hour == 23
+        and dt.minute == 59
+        and dt.second == 59
+        and dt.microsecond == 0
+        for _, _, dt in future_navs
+    ):
+        return ledger
+
+    issued_norm = format_utc_timestamp(issued_dt)
+    clamped_stamps = {pt.timestamp_utc for _, pt, _ in future_navs}
+    ledger_dict = ledger.to_dict()
+    for idx, _, _ in future_navs:
+        ledger_dict["nav_points"][idx]["timestamp_utc"] = issued_norm
+    if ledger.period_end_utc in clamped_stamps:
+        ledger_dict["period_end_utc"] = issued_norm
+    if ledger.period_start_utc in clamped_stamps:
+        ledger_dict["period_start_utc"] = issued_norm
+    return CanonicalPortfolioLedger.from_dict(ledger_dict)
+
+
+def _refuse_activity_outside_issue_window(
+    ledger: CanonicalPortfolioLedger, issued_at_utc: str
+) -> None:
+    """Refuse a record holding activity dated after its issue time or before the floor."""
+    issued_dt = parse_utc_timestamp(issued_at_utc)
+    floor_dt = parse_utc_timestamp(EARLIEST_ACTIVITY_DATE_UTC)
+    dated: list[tuple[str, str]] = (
+        [("valuation", pt.timestamp_utc) for pt in ledger.nav_points]
+        + [("trade", t.timestamp_utc) for t in ledger.trades]
+        + [("cash or transfer flow", f.timestamp_utc) for f in ledger.flows]
+        + [("corporate action", c.timestamp_utc) for c in ledger.corporate_actions]
+    )
+    for label, ts in dated:
+        when = parse_utc_timestamp(ts)
+        if when > issued_dt:
+            ahead_sec = (when - issued_dt).total_seconds()
+            tz_hint = (
+                " (broker-local server timestamps ahead of UTC cannot be signed before that UTC instant has passed)"
+                if 0.0 < ahead_sec <= 14 * 3600.0
+                else ""
+            )
+            raise ValueError(
+                f"The input holds a {label} dated {ts}, after the record's issue time "
+                f"{issued_at_utc}; a record cannot describe activity that has not happened{tz_hint}"
+            )
+        if when < floor_dt:
+            raise ValueError(
+                f"The input holds a {label} dated {ts}, before {EARLIEST_ACTIVITY_DATE_UTC[:10]}, "
+                "the earliest date this service accepts"
+            )
+
+
+def _warn_positions_opened_before_the_ledger(
+    ledger: CanonicalPortfolioLedger,
+) -> CanonicalPortfolioLedger:
+    """State which instruments round-trip matching leaves out (see ``instruments_held_before_the_ledger``)."""
+    held_before = instruments_held_before_the_ledger(ledger)
+    if not held_before:
+        return ledger
+    ledger_dict = ledger.to_dict()
+    ledger_dict["parser_warnings"] = list(ledger.parser_warnings) + [
+        f"Trades in {len(held_before)} instrument(s) whose first trade in the ledger closes or "
+        "reduces a position held from before the input, or that the input states as an "
+        "opening position, are not matched into round trips, so no round trip is signed "
+        "against an opening trade outside the input."
+    ]
+    return CanonicalPortfolioLedger.from_dict(ledger_dict)
+
+
+def _activity_inside_scored_span(
+    ledger: CanonicalPortfolioLedger, first_ts: str, last_ts: str
+) -> dict[str, Any]:
+    """Ledger updates that keep only activity inside the span of the scored valuations.
+
+    Activity dated outside the record's period is left out, so no trade, cost or behaviour
+    figure describes a time the record does not state. A position opened before the period
+    cannot be matched inside it, so every trade in an instrument that also traded before the
+    period is left out too.
+    """
+    start_dt, end_dt = parse_utc_timestamp(first_ts), parse_utc_timestamp(last_ts)
+
+    def _inside(ts: str) -> bool:
+        return start_dt <= parse_utc_timestamp(ts) <= end_dt
+
+    def _instrument(t: Any) -> tuple[Any, ...]:
+        return (
+            t.symbol.strip().upper(),
+            t.asset_class,
+            t.option_right,
+            t.strike,
+            t.expiry,
+            getattr(t, "position_id", None),
+        )
+
+    held_into = {
+        _instrument(t) for t in ledger.trades if parse_utc_timestamp(t.timestamp_utc) < start_dt
+    }
+    in_span = [t for t in ledger.trades if _inside(t.timestamp_utc)]
+    kept_trades = [t for t in in_span if _instrument(t) not in held_into]
+    kept_flows = [f for f in ledger.flows if _inside(f.timestamp_utc)]
+    kept_actions = [c for c in ledger.corporate_actions if _inside(c.timestamp_utc)]
+
+    updates: dict[str, Any] = {}
+    warnings = list(ledger.parser_warnings)
+    if len(kept_trades) != len(ledger.trades):
+        updates["trades"] = [t.to_dict() for t in kept_trades]
+        if len(kept_trades) != len(in_span):
+            dropped = {_instrument(t) for t in in_span} & held_into
+            warnings.append(
+                f"Trades in {len(dropped)} instrument(s) held into the valuation series from "
+                "earlier are not in the ledger, so no round trip is matched against an opening "
+                "trade outside the record's period."
+            )
+        if len(in_span) != len(ledger.trades):
+            warnings.append(
+                f"{len(ledger.trades) - len(in_span)} trade(s) dated outside the record's period "
+                "are not in the ledger."
+            )
+    if len(kept_flows) != len(ledger.flows):
+        updates["flows"] = [f.to_dict() for f in kept_flows]
+        warnings.append(
+            f"{len(ledger.flows) - len(kept_flows)} cash or transfer flow(s) dated outside the "
+            "record's period are not in the ledger."
+        )
+    if len(kept_actions) != len(ledger.corporate_actions):
+        updates["corporate_actions"] = [c.to_dict() for c in kept_actions]
+    if warnings != list(ledger.parser_warnings):
+        updates["parser_warnings"] = warnings
+    return updates
 
 
 def ingest_portfolio_ledger(
@@ -297,17 +482,56 @@ def ingest_portfolio_ledger(
             raw_csv = _coerce_source_bytes(
                 csv_source, allow_filesystem_paths=allow_filesystem_paths
             )
-            detected = _detect_csv_format(raw_csv, broker_id, csv_format)
-            if detected == "degiro":
-                resolved_ledger = parse_degiro_csv_bundle(
-                    account_csv=raw_csv,
+            norm_cf = (csv_format or "").strip().lower()
+            norm_bid_hint = (broker_id or "").strip().lower()
+            extended_offline_hints = {
+                "mt4",
+                "mt4_statement",
+                "mt5",
+                "mt5_statement",
+                "tradovate",
+                "tradovate_csv",
+                "tradersync",
+                "tradersync_journal",
+                "tradezella",
+                "tradezella_journal",
+                "journal_migration",
+                "auto_detect",
+            }
+            if norm_cf in extended_offline_hints or (
+                not norm_cf and norm_bid_hint in extended_offline_hints
+            ):
+                resolved_ledger = detect_and_parse_statement(
+                    raw_csv,
                     blinding_salt_hex=salt_hex,
-                    base_currency=base_currency or "EUR",
-                )
-            elif detected == "robinhood":
-                resolved_ledger = parse_robinhood_csv(raw_csv, blinding_salt_hex=salt_hex)
+                    base_currency=base_currency or "USD",
+                    reject_demo=require_live,
+                    require_live=require_live,
+                ).ledger
             else:
-                resolved_ledger = parse_schwab_csv(raw_csv, blinding_salt_hex=salt_hex)
+                try:
+                    detected = _detect_csv_format(raw_csv, broker_id, csv_format)
+                except ValueError:
+                    if norm_cf:
+                        raise
+                    resolved_ledger = detect_and_parse_statement(
+                        raw_csv,
+                        blinding_salt_hex=salt_hex,
+                        base_currency=base_currency or "USD",
+                        reject_demo=require_live,
+                        require_live=require_live,
+                    ).ledger
+                else:
+                    if detected == "degiro":
+                        resolved_ledger = parse_degiro_csv_bundle(
+                            account_csv=raw_csv,
+                            blinding_salt_hex=salt_hex,
+                            base_currency=base_currency or "EUR",
+                        )
+                    elif detected == "robinhood":
+                        resolved_ledger = parse_robinhood_csv(raw_csv, blinding_salt_hex=salt_hex)
+                    else:
+                        resolved_ledger = parse_schwab_csv(raw_csv, blinding_salt_hex=salt_hex)
     elif broker_id is not None:
         init_kw = dict(connector_kwargs or {})
         norm_bid = broker_id.strip().lower()
@@ -347,6 +571,8 @@ def ingest_portfolio_ledger(
             f"Paper, demo, or sandbox account rejected for live verification (broker_id={resolved_ledger.broker_id!r})"
         )
 
+    resolved_ledger = _warn_positions_opened_before_the_ledger(resolved_ledger)
+
     # Apply optional non-secret metadata overrides without mutating original input instance.
     updates: dict[str, Any] = {}
     if broker_id and resolved_ledger.broker_id != broker_id.strip().lower():
@@ -358,10 +584,35 @@ def ingest_portfolio_ledger(
             raw_account_id_override,
             salt_hex,
         )
-    if period_start_utc is not None:
-        updates["period_start_utc"] = period_start_utc
-    if period_end_utc is not None:
-        updates["period_end_utc"] = period_end_utc
+    # Whenever the ledger has valuations, the signed period is exactly the span of the
+    # valuations that are scored, whatever the request or the connector stated. A requested
+    # period that would leave out a scored valuation is refused: the caller must supply input
+    # for that period instead. A ledger without valuations keeps its stated period.
+    if resolved_ledger.nav_points:
+        nav_sorted = sorted(
+            resolved_ledger.nav_points, key=lambda pt: parse_utc_timestamp(pt.timestamp_utc)
+        )
+        first_ts, last_ts = nav_sorted[0].timestamp_utc, nav_sorted[-1].timestamp_utc
+        if period_start_utc is not None and parse_utc_timestamp(period_start_utc) > parse_utc_timestamp(first_ts):
+            raise ValueError(
+                f"The requested period starts at {period_start_utc}, after the first scored valuation "
+                f"({first_ts}); supply input for the requested period instead"
+            )
+        if period_end_utc is not None and parse_utc_timestamp(period_end_utc) < parse_utc_timestamp(last_ts):
+            raise ValueError(
+                f"The requested period ends at {period_end_utc}, before the last scored valuation "
+                f"({last_ts}); supply input for the requested period instead"
+            )
+        if resolved_ledger.period_start_utc != first_ts:
+            updates["period_start_utc"] = first_ts
+        if resolved_ledger.period_end_utc != last_ts:
+            updates["period_end_utc"] = last_ts
+        updates.update(_activity_inside_scored_span(resolved_ledger, first_ts, last_ts))
+    else:
+        if period_start_utc is not None:
+            updates["period_start_utc"] = period_start_utc
+        if period_end_utc is not None:
+            updates["period_end_utc"] = period_end_utc
     if base_currency is not None:
         updates["base_currency"] = base_currency.strip().upper()
 
@@ -376,7 +627,7 @@ def ingest_portfolio_ledger(
 def _compute_benchmark_beta_and_ir(
     indexed_curve: Sequence[IndexedCurvePoint],
     *,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = 252,
 ) -> tuple[float | None, float | None]:
     """Derive portfolio beta and annualized information ratio strictly from rebased-100 index points."""
     if len(indexed_curve) < 3:
@@ -416,7 +667,7 @@ def _compute_benchmark_beta_and_ir(
     active_rets = [p - b for p, b in zip(port_rets, bench_rets)]
     tracking_err = stdev(active_rets) if len(active_rets) >= 2 else 0.0
     ir: float | None = None
-    if tracking_err > 1e-12:
+    if tracking_err > 1e-12 and periods_per_year is not None:
         ir = round((mean(active_rets) / tracking_err) * math.sqrt(periods_per_year), 6)
 
     return beta, ir
@@ -469,7 +720,7 @@ def build_canonical_leaf_payloads(
     base_currency: str,
     embargo_days: int = 7,
     stripped_recent_closed_trades_count: int = 0,
-    periods_per_year: int = 252,
+    periods_per_year: float | None = 252,
 ) -> dict[str, Any]:
     """Assemble the 7 canonical Merkle leaf payloads with strict zero-leakage leaf separation."""
     core_dict = performance.to_dict()
@@ -486,10 +737,11 @@ def build_canonical_leaf_payloads(
         periods_per_year=periods_per_year,
     )
 
+    # A bracket is signed only when it was measured; otherwise the leaf states null.
     bracket_value = (
         performance.capital_bracket.value
         if performance.capital_bracket is not None
-        else CapitalBracket.UNDER_1K.value
+        else None
     )
 
     return {
@@ -537,6 +789,8 @@ class PortfolioVerificationOutput(ContractModelMixin):
     period_end_utc: str = ""
     source_body_sha256: str = ""
     parser_warnings: list[str] = field(default_factory=list)
+    performance_withheld: bool = False
+    withheld_reasons: list[str] = field(default_factory=list)
 
 
 def verify_portfolio(
@@ -563,8 +817,8 @@ def verify_portfolio(
     eodhd_api_key: str | None = None,
     benchmark_symbol: str | None = None,
     annual_risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
-    cash_flow_timing: str = "end_of_day",
+    periods_per_year: float | None = None,
+    cash_flow_timing: str | None = None,
     psr_benchmark_sr: float = 0.0,
     embargo_days: int = 7,
     catalyst_intervals: Sequence[CatalystAvailabilityInterval] | None = None,
@@ -625,6 +879,9 @@ def verify_portfolio(
         allow_filesystem_paths=allow_filesystem_paths,
     )
 
+    canonical_ledger = _clamp_same_day_eod_valuations(canonical_ledger, issued_iso)
+    _refuse_activity_outside_issue_window(canonical_ledger, issued_iso)
+
     # 2. Resolve optional market reference provider (EODHD when configured, else NullReferenceProvider)
     ref_provider = (
         reference_provider
@@ -633,13 +890,18 @@ def verify_portfolio(
     )
 
     # 3. Compute flow-adjusted performance, GLM AR(1) unsmoothing, and sample-gated PSR (T >= 30)
+    resolved_cash_flow_timing = (
+        cash_flow_timing
+        if cash_flow_timing is not None
+        else ("modified_dietz" if canonical_ledger.broker_id == "hyperliquid" else "end_of_day")
+    )
     perf_calc = calculate_portfolio_performance_detailed(
         canonical_ledger,
         reference_provider=ref_provider,
         benchmark_symbol=benchmark_symbol,
         annual_risk_free_rate=annual_risk_free_rate,
         periods_per_year=periods_per_year,
-        cash_flow_timing=cash_flow_timing,
+        cash_flow_timing=resolved_cash_flow_timing,
         psr_benchmark_sr=psr_benchmark_sr,
     )
     performance_summary = perf_calc.summary
@@ -672,8 +934,23 @@ def verify_portfolio(
         eodhd_macro_events=eodhd_macro_events,
         alfred_macro_releases=alfred_macro_releases,
         enable_llm_narrative=enable_llm_narrative,
-        imported_journal_tags=imported_journal_tags,
-        max_drawdown_decimal=performance_summary.max_drawdown_decimal,
+        # Journal tags are cleaned once here, so every route signs the same cleaned tags.
+        imported_journal_tags=(
+            sanitize_journal_tags(imported_journal_tags)
+            if imported_journal_tags is not None
+            else None
+        ),
+        # A withheld return has no drawdown: pass none rather than the 0.0 placeholder.
+        max_drawdown_decimal=(
+            None if perf_calc.withheld else performance_summary.max_drawdown_decimal
+        ),
+        scored_period_returns=(
+            None
+            if perf_calc.withheld
+            else [obs.period_return for obs in perf_calc.return_observations]
+        ),
+        performance_withheld=perf_calc.withheld,
+        annualization_allowed=(perf_calc.annualization_periods_per_year is not None),
     )
     delayed_trades = coaching_out.delayed_closed_trades
     stripped_recent_count = max(0, len(all_round_trips) - len(delayed_trades))
@@ -687,7 +964,7 @@ def verify_portfolio(
         base_currency=canonical_ledger.base_currency,
         embargo_days=embargo_days,
         stripped_recent_closed_trades_count=stripped_recent_count,
-        periods_per_year=periods_per_year,
+        periods_per_year=perf_calc.annualization_periods_per_year,
     )
     merkle_tree = build_salted_merkle_tree(leaf_payloads, leaf_salts_hex=leaf_salts)
 
@@ -702,6 +979,9 @@ def verify_portfolio(
         if disclose_leaf_names is None
         else [str(name) for name in disclose_leaf_names]
     )
+    if perf_calc.withheld and "core_metrics" not in disclose_names:
+        # A withheld return is always stated: the leaf carrying the flag cannot be hidden.
+        disclose_names.append("core_metrics")
 
     bundle = create_signed_proof_bundle(
         proof_id=resolved_proof_id,
@@ -750,7 +1030,35 @@ def verify_portfolio(
         period_end_utc=canonical_ledger.period_end_utc,
         source_body_sha256=canonical_ledger.source_body_sha256,
         parser_warnings=list(canonical_ledger.parser_warnings),
+        performance_withheld=bool(performance_summary.performance_withheld),
+        withheld_reasons=list(performance_summary.withheld_reasons),
     )
+
+
+_OFFLINE_STATEMENT_BROKER_IDS: frozenset[str] = frozenset(
+    {
+        "ibkr_flex",
+        "ibkr_flex_offline",
+        "degiro",
+        "degiro_csv",
+        "robinhood",
+        "robinhood_csv",
+        "schwab",
+        "schwab_csv",
+        "mt4",
+        "mt4_statement",
+        "mt5",
+        "mt5_statement",
+        "tradovate",
+        "tradovate_csv",
+        "tradersync",
+        "tradersync_journal",
+        "tradezella",
+        "tradezella_journal",
+        "journal_migration",
+        "auto_detect",
+    }
+)
 
 
 def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
@@ -776,6 +1084,13 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
     if job_payload.get("leaf_payloads") is not None or job_payload.get("nav_points") is not None:
         return False
 
+    norm_broker = str(job_payload.get("broker_id") or "").strip().lower()
+    if norm_broker == "hyperliquid":
+        for addr_key in ("wallet_address", "address", "user"):
+            raw_addr = job_payload.get(addr_key)
+            if isinstance(raw_addr, str) and raw_addr.strip():
+                return True
+
     raw_text = (
         job_payload.get("raw_statement_text")
         if job_payload.get("raw_statement_text") is not None
@@ -785,13 +1100,7 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
         stripped = raw_text.lstrip()
         if stripped.startswith("<"):
             return True
-        if job_payload.get("csv_format") or str(job_payload.get("broker_id", "")).lower() in {
-            "degiro",
-            "degiro_csv",
-            "robinhood",
-            "robinhood_csv",
-            "schwab_csv",
-        }:
+        if job_payload.get("csv_format") or norm_broker in _OFFLINE_STATEMENT_BROKER_IDS:
             return True
 
     raw_b64 = job_payload.get("raw_statement_b64")
@@ -801,9 +1110,11 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
         except Exception:
             return False
         probe = decoded[:256].lstrip()
-        if probe.startswith(b"<") or job_payload.get("csv_format") or str(
-            job_payload.get("broker_id", "")
-        ).lower() in {"degiro", "degiro_csv", "robinhood", "robinhood_csv", "schwab_csv"}:
+        if (
+            probe.startswith(b"<")
+            or job_payload.get("csv_format")
+            or norm_broker in _OFFLINE_STATEMENT_BROKER_IDS
+        ):
             return True
 
     return False
@@ -836,6 +1147,12 @@ _WORKER_STRIPPED_CONNECTOR_KEYS: frozenset[str] = frozenset(
 )
 
 _PAPER_OR_SANDBOX_URL_TOKENS: tuple[str, ...] = ("paper", "sandbox", "demo", "testnet")
+
+# The account-tag salt and the queried account identity come from the server and the
+# connector credentials; fetch options may only narrow what is read.
+_WORKER_SERVER_ONLY_FETCH_KEYS: frozenset[str] = frozenset(
+    {"blinding_salt_hex", "wallet_address", "address", "user", "as_of_utc"}
+)
 
 
 def _coerce_worker_inline_bytes(val: Any, field_name: str) -> bytes | None:
@@ -886,11 +1203,9 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         if job_payload.get("period_end_utc_explicit") and job_payload.get("period_end_utc")
         else None
     )
-    base_ccy = (
-        str(job_payload["base_currency"]).strip().upper()
-        if job_payload.get("base_currency_explicit") and job_payload.get("base_currency")
-        else None
-    )
+    # The currency label comes from the input: the file, or the parser that read it. No
+    # request field (base_currency, broker_id) relabels a record.
+    base_ccy = None
 
     flex_xml: bytes | None = None
     if job_payload.get("flex_xml_b64"):
@@ -914,8 +1229,11 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         job_payload.get("degiro_portfolio_csv"), "degiro_portfolio_csv"
     )
 
-    # Support raw_statement / raw_statement_text / raw_statement_b64 when real XML or CSV is submitted
-    if flex_xml is None and csv_source is None:
+    # Support raw_statement / raw_statement_text / raw_statement_b64 across XML, HTML, and CSV formats
+    detected_offline_ledger: CanonicalPortfolioLedger | None = None
+    detected_offline_broker_id: str | None = None
+    detected_journal_tags: list[str] | None = None
+    if flex_xml is None and csv_source is None and job_payload.get("ledger") is None:
         raw_bytes: bytes | None = None
         if job_payload.get("raw_statement_b64"):
             raw_bytes = base64.b64decode(str(job_payload["raw_statement_b64"]))
@@ -924,14 +1242,44 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         elif isinstance(job_payload.get("raw_statement"), str):
             raw_bytes = job_payload["raw_statement"].encode("utf-8")
         if raw_bytes is not None:
-            if raw_bytes.lstrip().startswith(b"<"):
+            head_low = raw_bytes[:16384].decode("utf-8-sig", errors="replace").lstrip().lower()
+            explicit_cf = str(job_payload.get("csv_format") or "").strip().lower()
+            if head_low.startswith("<") and (
+                "<flexqueryresponse" in head_low
+                or "<flexstatement" in head_low
+                or broker_id in {"ibkr_flex", "ibkr_flex_offline"}
+            ):
                 flex_xml = raw_bytes
-            else:
+            elif not head_low.startswith("<") and explicit_cf in {
+                "degiro",
+                "degiro_csv",
+                "robinhood",
+                "robinhood_csv",
+            }:
                 csv_source = raw_bytes
+            else:
+                det = detect_and_parse_statement(
+                    raw_bytes,
+                    blinding_salt_hex=salt_hex,
+                    reject_demo=True,
+                    require_live=True,
+                )
+                detected_offline_ledger = det.ledger
+                detected_offline_broker_id = det.broker_id
+                if det.imported_journal_tags:
+                    detected_journal_tags = list(det.imported_journal_tags)
 
     raw_conn_kw = job_payload.get("connector_kwargs") or job_payload.get("connector_credentials")
     has_connector_input = raw_conn_kw is not None
     connector_kw = dict(raw_conn_kw or {})
+
+    if broker_id == "hyperliquid":
+        for addr_key in ("wallet_address", "address", "user"):
+            top_addr = job_payload.get(addr_key)
+            if top_addr is not None and str(top_addr).strip():
+                connector_kw.setdefault("wallet_address", str(top_addr).strip())
+                has_connector_input = True
+                break
 
     # Inspect custom URL fields for paper/sandbox/demo/testnet tokens before stripping overrides
     for scope_map in (job_payload, connector_kw):
@@ -958,6 +1306,7 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         item is not None
         for item in (
             job_payload.get("ledger"),
+            detected_offline_ledger,
             flex_xml,
             csv_source,
             degiro_account_bytes,
@@ -967,6 +1316,27 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
     )
     if has_connector_input or (broker_id is not None and not has_offline_or_ledger):
         connector_kw["require_live"] = True
+
+    if broker_id == "hyperliquid" and job_payload.get("_internal_hyperliquid_transport") is not None:
+        internal_transport = job_payload["_internal_hyperliquid_transport"]
+        if isinstance(internal_transport, str) and ":" in internal_transport:
+            import importlib
+
+            mod_name, attr_name = internal_transport.split(":", 1)
+            internal_transport = getattr(importlib.import_module(mod_name), attr_name)
+        connector_kw["http_transport"] = internal_transport
+
+    if (
+        broker_id in {"snaptrade", "snaptrade_relay", "snaptrade_poc"}
+        and job_payload.get("_internal_snaptrade_transport") is not None
+    ):
+        internal_st_transport = job_payload["_internal_snaptrade_transport"]
+        if isinstance(internal_st_transport, str) and ":" in internal_st_transport:
+            import importlib
+
+            mod_name, attr_name = internal_st_transport.split(":", 1)
+            internal_st_transport = getattr(importlib.import_module(mod_name), attr_name)
+        connector_kw["http_transport"] = internal_st_transport
 
     raw_fetch_kw = dict(job_payload.get("connector_fetch_kwargs") or {})
     connector_fetch_kw: dict[str, Any] = {}
@@ -978,25 +1348,60 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             )
         if k_str.strip().lower() == "require_live":
             continue
+        if k_str.strip().lower() in _WORKER_SERVER_ONLY_FETCH_KEYS:
+            raise ValueError(
+                f"connector_fetch_kwargs.{k_str} is set by the server, not by fetch options"
+            )
+        if isinstance(v, (list, tuple)):
+            if len(v) > 256 or any(not isinstance(item, (str, int, float, bool)) for item in v):
+                raise ValueError(
+                    f"Non-primitive sequence value rejected in connector_fetch_kwargs.{k_str}"
+                )
+            connector_fetch_kw[k_str] = list(v)
+            continue
         if v is not None and not isinstance(v, (str, int, float, bool)):
             raise ValueError(
                 f"Non-primitive value rejected in connector_fetch_kwargs.{k_str}: {type(v).__name__}"
             )
         connector_fetch_kw[k_str] = v
 
-    if period_start is None and job_payload.get("period_start_utc"):
-        connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
-    if period_end is None and job_payload.get("period_end_utc"):
-        connector_fetch_kw.setdefault("period_end_utc", str(job_payload["period_end_utc"]))
+    if broker_id not in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+        if period_start is None and job_payload.get("period_start_utc"):
+            connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
+        if period_end is None and job_payload.get("period_end_utc"):
+            connector_fetch_kw.setdefault("period_end_utc", str(job_payload["period_end_utc"]))
+
+    if broker_id in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+        if job_payload.get("start_date") is not None and str(job_payload["start_date"]).strip():
+            connector_fetch_kw.setdefault("start_date", str(job_payload["start_date"]).strip())
+        elif period_start is not None:
+            connector_fetch_kw.setdefault("start_date", period_start)
+        if job_payload.get("end_date") is not None and str(job_payload["end_date"]).strip():
+            connector_fetch_kw.setdefault("end_date", str(job_payload["end_date"]).strip())
+        elif period_end is not None:
+            connector_fetch_kw.setdefault("end_date", period_end)
 
     raw_acct_override = (
         str(job_payload["raw_account_id"]).strip()
         if job_payload.get("raw_account_id")
         else None
     )
+    if raw_acct_override and not has_offline_or_ledger:
+        # A live connector derives the account identity from what it reads, not from the request.
+        raise ValueError("raw_account_id is not accepted for live connector input")
+
+    explicit_tags = job_payload.get("imported_journal_tags")
+    merged_journal_tags: list[str] | None = None
+    if explicit_tags is not None or detected_journal_tags is not None:
+        merged_journal_tags = []
+        for tag_src in (detected_journal_tags or (), explicit_tags or ()):
+            for t_val in tag_src:
+                t_str = str(t_val).strip()
+                if t_str and t_str not in merged_journal_tags:
+                    merged_journal_tags.append(t_str)
 
     output = verify_portfolio(
-        ledger=job_payload.get("ledger"),
+        ledger=job_payload.get("ledger") if job_payload.get("ledger") is not None else detected_offline_ledger,
         flex_xml=flex_xml,
         csv_source=csv_source,
         csv_format=job_payload.get("csv_format"),
@@ -1016,18 +1421,77 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         eodhd_api_key=job_payload.get("eodhd_api_key"),
         benchmark_symbol=job_payload.get("benchmark_symbol"),
         annual_risk_free_rate=float(job_payload.get("annual_risk_free_rate", 0.0)),
-        periods_per_year=int(job_payload.get("periods_per_year", 252)),
-        cash_flow_timing=str(job_payload.get("cash_flow_timing", "end_of_day")),
+        periods_per_year=(
+            float(job_payload["periods_per_year"])
+            if job_payload.get("periods_per_year") is not None
+            else None
+        ),
+        cash_flow_timing=(
+            str(job_payload["cash_flow_timing"])
+            if job_payload.get("cash_flow_timing")
+            else None
+        ),
         psr_benchmark_sr=float(job_payload.get("psr_benchmark_sr", 0.0)),
         embargo_days=embargo_days,
         issued_at_utc=issued_at_utc,
         disclose_leaf_names=job_payload.get("disclose_leaf_names"),
         enable_llm_narrative=False,
-        imported_journal_tags=job_payload.get("imported_journal_tags"),
+        imported_journal_tags=merged_journal_tags,
     )
 
     bundle = output.proof_bundle
-    resolved_broker_id = broker_id if broker_id else bundle.broker_id
+    alias_preserve_pairs = {
+        ("ibkr_flex", "ibkr"),
+        ("ibkr_flex_offline", "ibkr"),
+        ("ibkr_flex", "ibkr_flex_offline"),
+        ("degiro", "degiro_csv"),
+        ("robinhood", "robinhood_csv"),
+        ("schwab", "schwab_csv"),
+        ("mt4", "mt4_statement"),
+        ("mt5", "mt5_statement"),
+        ("tradovate", "tradovate_csv"),
+        ("tradersync", "tradersync_journal"),
+        ("tradezella", "tradezella_journal"),
+    }
+    allowed_statement_broker_pairs = alias_preserve_pairs | {
+        (b, a) for a, b in alias_preserve_pairs
+    }
+    has_statement_input = any(
+        item is not None
+        for item in (
+            detected_offline_ledger,
+            flex_xml,
+            csv_source,
+            degiro_account_bytes,
+            degiro_tx_bytes,
+            degiro_port_bytes,
+        )
+    )
+    if has_statement_input:
+        is_auto = broker_id in {None, "", "auto_detect"} or (
+            broker_id == "journal_migration" and bundle.broker_id in {"tradersync", "tradezella"}
+        )
+        if (
+            not is_auto
+            and broker_id != bundle.broker_id
+            and (broker_id, bundle.broker_id) not in allowed_statement_broker_pairs
+        ):
+            raise ValueError(
+                f"Requested broker_id {broker_id!r} does not match uploaded statement broker {bundle.broker_id!r}"
+            )
+        if detected_offline_broker_id is not None:
+            if (broker_id, detected_offline_broker_id) in alias_preserve_pairs and broker_id:
+                resolved_broker_id = broker_id
+            else:
+                resolved_broker_id = detected_offline_broker_id
+        elif is_auto:
+            resolved_broker_id = bundle.broker_id
+        else:
+            resolved_broker_id = broker_id
+    elif broker_id in {None, "", "auto_detect", "journal_migration"}:
+        resolved_broker_id = bundle.broker_id
+    else:
+        resolved_broker_id = broker_id
     return {
         "broker_id": resolved_broker_id,
         "blinded_account_tag": bundle.blinded_account_tag,
@@ -1043,6 +1507,8 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         "disclosed_leaves": [leaf.to_dict() for leaf in bundle.disclosed_leaves],
         "undisclosed_leaf_hashes": dict(bundle.undisclosed_leaf_hashes),
         "stripped_recent_closed_trades_count": output.stripped_recent_closed_trades_count,
+        "performance_withheld": output.performance_withheld,
+        "withheld_reasons": list(output.withheld_reasons),
     }
 
 

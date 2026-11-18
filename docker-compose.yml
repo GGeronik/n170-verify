@@ -23,14 +23,30 @@ services:
       N170_VERIFY_SYNC_DB_PATH: "${N170_VERIFY_SYNC_DB_PATH:-:memory:}"
       N170_VERIFY_PUBLISHER_KID: "${N170_VERIFY_PUBLISHER_KID:-}"
       N170_VERIFY_SIGNING_SEED_FILE: "${N170_VERIFY_SIGNING_SEED_FILE:-/run/n170-verify-keys/publisher_seed.hex}"
+      N170_VERIFY_ACCOUNT_SALT_HEX: "${N170_VERIFY_ACCOUNT_SALT_HEX:-}"
+      # Required in hosted mode: start-up stops without it.
+      N170_VERIFY_VAULT_KEK_HEX: "${N170_VERIFY_VAULT_KEK_HEX:-}"
+      N170_VERIFY_CHECKPOINT_ORIGIN: "${N170_VERIFY_CHECKPOINT_ORIGIN:-verify.n170.org/continuity-log/v3}"
+      # The site's own public origin; SnapTrade portal redirects must match it.
+      N170_VERIFY_SITE_ORIGIN: "${N170_VERIFY_SITE_ORIGIN:-}"
+      SNAPTRADE_CLIENT_ID: "${SNAPTRADE_CLIENT_ID:-}"
+      SNAPTRADE_CONSUMER_KEY: "${SNAPTRADE_CONSUMER_KEY:-}"
+      SNAPTRADE_AUTH_MODE: "${SNAPTRADE_AUTH_MODE:-auto}"
+      N170_SNAPTRADE_DEV_KEY: "${N170_SNAPTRADE_DEV_KEY:-}"
+      # Relay session lifetime in seconds (60 to 1800); empty keeps the default.
+      N170_SNAPTRADE_SESSION_TTL_SECONDS: "${N170_SNAPTRADE_SESSION_TTL_SECONDS:-}"
       EODHD_API_KEY: "${EODHD_API_KEY:-}"
       N170_VERIFY_LLM_BASE_URL: "${N170_VERIFY_LLM_BASE_URL:-http://ollama:11434/v1}"
       N170_VERIFY_LLM_MODEL: "${N170_VERIFY_LLM_MODEL:-qwen2.5:7b-instruct}"
-      N170_VERIFY_SEC_USER_AGENT: "${N170_VERIFY_SEC_USER_AGENT:-}"
+      # The core reads SEC_EDGAR_USER_AGENT; an empty setting keeps the core's own default.
+      SEC_EDGAR_USER_AGENT: "${N170_VERIFY_SEC_USER_AGENT:-N170VerifyResearch/0.3 (research-compliance@example.com)}"
       FRED_API_KEY: "${FRED_API_KEY:-}"
     volumes:
       # External publisher signing key directory located strictly outside the git repository tree.
       - "${N170_VERIFY_HOST_KEY_DIR:-/var/tmp/n170-verify-keys}:/run/n170-verify-keys:ro"
+      # Persistent directory for opt-in published /p/[proofId] links and /leaderboard cohorts
+      # when N170_VERIFY_DB_PATH=/var/lib/n170-verify/proofs.sqlite is set (default :memory: stays ephemeral).
+      - n170_verify_proof_store:/var/lib/n170-verify
 
   web:
     build:
@@ -38,6 +54,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_N170_VERIFY_API_URL: "${NEXT_PUBLIC_N170_VERIFY_API_URL:-http://127.0.0.1:8080}"
+        N170_VERIFY_INTERNAL_API_URL: "${N170_VERIFY_INTERNAL_API_URL:-http://api:8080}"
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -70,4 +87,5 @@ services:
       - n170_verify_ollama_models:/root/.ollama
 
 volumes:
+  n170_verify_proof_store:
   n170_verify_ollama_models:

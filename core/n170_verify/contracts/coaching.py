@@ -31,14 +31,18 @@ class CatalystAlignmentClass(str, Enum):
 
 @dataclass(slots=True)
 class CostAndDragBreakdown(ContractModelMixin):
-    """Portfolio friction and cost drag decomposition in basis points of average NAV."""
+    """Portfolio friction and cost drag decomposition in basis points of average NAV.
 
-    commission_and_fee_drag_bps: float
-    margin_and_funding_drag_bps: float
-    fx_conversion_drag_bps: float
-    withholding_tax_drag_bps: float
-    total_friction_drag_bps: float
-    annualized_total_drag_bps: float = 0.0
+    Every ratio is null when the record's return is withheld: it would divide by, or
+    annualise over, valuations the record states it cannot use.
+    """
+
+    commission_and_fee_drag_bps: float | None
+    margin_and_funding_drag_bps: float | None
+    fx_conversion_drag_bps: float | None
+    withholding_tax_drag_bps: float | None
+    total_friction_drag_bps: float | None
+    annualized_total_drag_bps: float | None = 0.0
 
 
 @dataclass(slots=True)

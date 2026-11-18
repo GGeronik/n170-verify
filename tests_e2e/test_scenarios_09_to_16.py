@@ -180,6 +180,8 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
                 )
             ],
             hosted_multi_user_mode=True,
+            allow_client_supplied_series_for_tests=True,
+            allow_caller_clock_for_tests=True,
             db_path=":memory:",
             sync_db_path=":memory:",
             vault_master_kek_hex="aa" * 32,
@@ -418,10 +420,22 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
             *,
             raw_acct: str = "ACCT-CHAIN-11",
         ) -> VerifyProofBundle:
+            # Each record's valuations span exactly its link's period and prove the link's
+            # return, so the signed period and return are the ones the link states.
+            start = datetime.fromisoformat(link.period_start_utc.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(link.period_end_utc.replace("Z", "+00:00"))
+            mid = (start + (end - start) / 2).isoformat().replace("+00:00", "Z")
+            opening = 250_000.0
+            closing = opening * (1.0 + float(link.period_twr_decimal))
             ldg = _synth_ledger(
                 raw_account_id=raw_acct,
                 period_start_utc=link.period_start_utc,
                 period_end_utc=link.period_end_utc,
+                nav_points=[
+                    NormalizedNavPoint(timestamp_utc=link.period_start_utc, nav_base=opening),
+                    NormalizedNavPoint(timestamp_utc=mid, nav_base=(opening + closing) / 2),
+                    NormalizedNavPoint(timestamp_utc=link.period_end_utc, nav_base=closing),
+                ],
             )
             return verify_portfolio(
                 ledger=ldg,
@@ -858,8 +872,13 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
     # Scenario 16: Clean-source isolation, revocation receipt & release gate
     # ------------------------------------------------------------------
     def test_scenario_16_clean_source_subprocess_isolation_revocation_and_release_gate(self) -> None:
-        # 1. Subprocess-isolated one-shot POST /api/v1/verify
-        verify_resp = self.client.post(
+        # 1. Subprocess-isolated one-shot POST /api/v1/verify. The synthetic series needs an
+        # account id and period, which only a self-hosted deployment accepts on this route.
+        self_hosted = create_app(
+            dataclasses.replace(self.config, hosted_multi_user_mode=False), prefer_fastapi=False
+        )
+        self.addCleanup(self_hosted.close)
+        verify_resp = VerifyApiTestClient(self_hosted).post(
             "/api/v1/verify",
             json={
                 "broker_id": "ibkr_flex",
@@ -882,8 +901,9 @@ class TestInstitutionalAndRedTeamScenarios09To16(unittest.TestCase):
         self.assertEqual(receipt_iso["rlimit_core"], [0, 0])
         with self.assertRaises(ProcessLookupError):
             os.kill(int(receipt_iso["worker_pid"]), 0)
+        self.assertEqual(self_hosted.store.total_row_counts(), {"proofs": 0, "chains": 0, "continuity_log": 0})
+        self.assertEqual(self_hosted.sync_vault.connection_count(), 0)
         self.assertEqual(self.app.store.total_row_counts(), {"proofs": 0, "chains": 0, "continuity_log": 0})
-        self.assertEqual(self.app.sync_vault.connection_count(), 0)
 
         # 2. Opt-in sync enrollment + DELETE /api/v1/sync/{id} cryptographic RevocationReceipt
         sync_auth_headers = {"Authorization": "Bearer e2e-sync-token-16"}

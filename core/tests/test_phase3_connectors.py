@@ -52,11 +52,14 @@ from n170_verify.connectors import (
     TradovateOfflineCsvAdapter,
     UnsupportedScraperPolicyError,
     WriteCapableCredentialsRejectedError,
+    build_signed_request,
     build_trading212_basic_auth_header,
+    compute_snaptrade_signature,
     create_connector,
     deduplicate_coinbase_fills_by_entry_id,
     detect_and_parse_statement,
     get_connector_descriptor,
+    is_snaptrade_env_configured,
     list_all_connector_descriptors,
     list_connector_descriptors,
     parse_degiro_csv_bundle,
@@ -435,6 +438,12 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
             "balances": [
                 {"account_id": "acct_01", "total": 7200.0, "cash": 5000.0, "updated_at": "2026-01-20T16:00:00Z"}
             ],
+            # A valuation series covering the activity dates keeps them inside the period the
+            # record states (the deposit is under 10% of the opening value).
+            "nav_points": [
+                {"date": "2026-01-04", "value": 60000.0},
+                {"date": "2026-01-20", "value": 66000.0},
+            ],
         }
 
         ledger = adapter.parse_payload(live_payload, blinding_salt_hex=TEST_SALT_HEX)
@@ -456,6 +465,364 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
         }
         with self.assertRaises(PaperOrSandboxAccountRejectedError):
             adapter.parse_payload(paper_payload, blinding_salt_hex=TEST_SALT_HEX, require_live=True)
+
+    def test_snaptrade_v1_hmac_signature_and_no_secret_in_headers(self) -> None:
+        import base64
+        import hashlib
+        import hmac
+
+        consumer_key = "st-live-consumer-secret-xyz"
+        client_id = "N170-DEV-CLIENT"
+        user_id = "n170-founder-1"
+        user_secret = "usr-secret-very-sensitive-999"
+
+        req = build_signed_request(
+            "POST",
+            "/api/v1/snapTrade/login",
+            client_id=client_id,
+            consumer_key=consumer_key,
+            user_id=user_id,
+            user_secret=user_secret,
+            json_body={"connectionType": "read", "immediateRedirect": True},
+            timestamp="1760000000",
+        )
+
+        expected_query = (
+            f"clientId={urllib.parse.quote(client_id)}"
+            "&timestamp=1760000000"
+            f"&userId={urllib.parse.quote(user_id)}"
+            f"&userSecret={urllib.parse.quote(user_secret)}"
+        )
+        self.assertEqual(req.query_string, expected_query)
+
+        expected_sig_obj = {
+            "content": {"connectionType": "read", "immediateRedirect": True},
+            "path": "/api/v1/snapTrade/login",
+            "query": expected_query,
+        }
+        canonical = json.dumps(expected_sig_obj, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        expected_sig = base64.b64encode(
+            hmac.new(consumer_key.encode("utf-8"), canonical, hashlib.sha256).digest()
+        ).decode("ascii")
+
+        self.assertEqual(req.signature, expected_sig)
+        self.assertEqual(req.headers.get("Signature"), expected_sig)
+        self.assertEqual(
+            compute_snaptrade_signature(
+                consumer_key,
+                api_path="/api/v1/snapTrade/login",
+                query_string=f"?{expected_query}",
+                content={"immediateRedirect": True, "connectionType": "read"},
+            ),
+            expected_sig,
+        )
+
+        # Strictly ensure consumerKey and userSecret NEVER appear in HTTP headers
+        lower_hdr_keys = {k.lower() for k in req.headers}
+        self.assertNotIn("consumerkey", lower_hdr_keys)
+        self.assertNotIn("usersecret", lower_hdr_keys)
+        for hdr_val in req.headers.values():
+            self.assertNotIn(consumer_key, hdr_val)
+            self.assertNotIn(user_secret, hdr_val)
+
+        adapter = SnapTradeReadOnlyAdapter(client_id=client_id, consumer_key=consumer_key)
+        base_hdrs = adapter.build_auth_headers()
+        self.assertNotIn("consumerKey", base_hdrs)
+        self.assertNotIn("userSecret", base_hdrs)
+
+        # GET request signs content=None
+        get_req = build_signed_request(
+            "GET",
+            "/api/v1/accounts",
+            client_id=client_id,
+            consumer_key=consumer_key,
+            user_id=user_id,
+            user_secret=user_secret,
+            timestamp=1760000005,
+        )
+        self.assertIsNone(get_req.body)
+        get_canonical = json.dumps(
+            {
+                "content": None,
+                "path": "/api/v1/accounts",
+                "query": get_req.query_string,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        self.assertEqual(
+            get_req.headers["Signature"],
+            base64.b64encode(
+                hmac.new(consumer_key.encode("utf-8"), get_canonical, hashlib.sha256).digest()
+            ).decode("ascii"),
+        )
+
+    def test_snaptrade_env_configured_helper(self) -> None:
+        self.assertFalse(is_snaptrade_env_configured({}))
+        self.assertFalse(
+            is_snaptrade_env_configured(
+                {
+                    "SNAPTRADE_CLIENT_ID": "snaptrade-poc-client",
+                    "SNAPTRADE_CONSUMER_KEY": "snaptrade-poc-key",
+                }
+            )
+        )
+        self.assertFalse(
+            is_snaptrade_env_configured(
+                {
+                    "SNAPTRADE_CLIENT_ID": "YOUR_CLIENT_ID",
+                    "SNAPTRADE_CONSUMER_KEY": "real-secret-key",
+                }
+            )
+        )
+        self.assertTrue(
+            is_snaptrade_env_configured(
+                {
+                    "SNAPTRADE_CLIENT_ID": "N170-PROD-DEV-ID",
+                    "SNAPTRADE_CONSUMER_KEY": "real-hmac-consumer-key-99",
+                }
+            )
+        )
+
+    def test_snaptrade_v1_register_portal_live_ledger_and_delete_lifecycle(self) -> None:
+        slot_mgr = SnapTradeSlotManager(max_slots=5)
+        consumer_secret = "hmac-consumer-secret-alpha-77"
+        issued_user_secret = "issued-snap-user-secret-beta-88"
+
+        def responder(
+            method: str,
+            url: str,
+            headers: dict[str, str],
+            body: bytes | None,
+        ) -> tuple[int, dict[str, str], Any]:
+            # Every outbound request must carry Signature and zero consumerKey/userSecret headers
+            self.assertIn("Signature", headers)
+            self.assertNotIn("consumerKey", headers)
+            self.assertNotIn("userSecret", headers)
+            for hv in headers.values():
+                self.assertNotIn(consumer_secret, hv)
+                self.assertNotIn(issued_user_secret, hv)
+
+            parsed_u = urllib.parse.urlsplit(url)
+            qs = urllib.parse.parse_qs(parsed_u.query)
+            self.assertEqual(qs["clientId"], ["N170-CID"])
+            self.assertIn("timestamp", qs)
+
+            if method == "POST" and parsed_u.path == "/api/v1/snapTrade/registerUser":
+                req_json = json.loads((body or b"{}").decode("utf-8"))
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {"userId": req_json["userId"], "userSecret": issued_user_secret},
+                )
+
+            if method == "POST" and parsed_u.path == "/api/v1/snapTrade/login":
+                self.assertEqual(qs["userSecret"], [issued_user_secret])
+                login_json = json.loads((body or b"{}").decode("utf-8"))
+                self.assertEqual(login_json["connectionType"], "read")
+                self.assertTrue(login_json["immediateRedirect"])
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {
+                        "redirectURI": "https://app.snaptrade.com/snapTrade/redeemToken?token=tok123",
+                        "sessionId": "sess-read-001",
+                    },
+                )
+
+            if method == "GET" and parsed_u.path == "/api/v1/accounts":
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    [
+                        {
+                            "id": "st-acct-uuid-1",
+                            "number": "RH-99887766",
+                            "name": "Individual Cash",
+                            "institution_name": "Robinhood",
+                            "balance": {"total": {"amount": 11200.0, "currency": "USD"}},
+                            "meta": {"type": "Cash"},
+                        }
+                    ],
+                )
+
+            if method == "GET" and parsed_u.path == "/api/v1/holdings":
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    [
+                        {
+                            "account": {
+                                "id": "st-acct-uuid-1",
+                                "number": "RH-99887766",
+                                "sync_status": {
+                                    "holdings": {"last_successful_sync": "2026-01-31T21:00:00Z"}
+                                },
+                            },
+                            "balances": [{"currency": {"code": "USD"}, "cash": 4600.0}],
+                            "positions": [
+                                {
+                                    "symbol": {
+                                        "symbol": {
+                                            "symbol": "MSFT",
+                                            "currency": {"code": "USD"},
+                                            "type": {"code": "cs"},
+                                        }
+                                    },
+                                    "units": 15.0,
+                                    "price": 440.0,
+                                    "average_purchase_price": 400.0,
+                                }
+                            ],
+                            "total_value": {"value": 11200.0, "currency": "USD"},
+                        }
+                    ],
+                )
+
+            if method == "GET" and parsed_u.path == "/api/v1/activities":
+                self.assertEqual(qs.get("startDate"), ["2026-01-01"])
+                self.assertEqual(qs.get("endDate"), ["2026-01-31"])
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    [
+                        {
+                            "id": "act-dep-1",
+                            "account": {"id": "st-acct-uuid-1"},
+                            "type": "CONTRIBUTION",
+                            "amount": 1000.0,
+                            "currency": {"code": "USD"},
+                            "trade_date": "2026-01-02T14:00:00Z",
+                        },
+                        {
+                            "id": "act-buy-1",
+                            "account": {"id": "st-acct-uuid-1"},
+                            "type": "BUY",
+                            "symbol": {"symbol": "MSFT", "currency": {"code": "USD"}},
+                            "units": 15.0,
+                            "price": 400.0,
+                            "fee": 0.0,
+                            "currency": {"code": "USD"},
+                            "trade_date": "2026-01-05T15:30:00Z",
+                        },
+                        {
+                            "id": "act-div-1",
+                            "account": {"id": "st-acct-uuid-1"},
+                            "type": "DIVIDEND",
+                            "symbol": {"symbol": "MSFT", "currency": {"code": "USD"}},
+                            "amount": 25.0,
+                            "currency": {"code": "USD"},
+                            "trade_date": "2026-01-20T12:00:00Z",
+                        },
+                    ],
+                )
+
+            if method == "GET" and parsed_u.path == "/api/v1/performance/custom":
+                # Daily valuations for the requested window, so the activities fall inside the
+                # period the record states (the deposit is under 10% of the opening value).
+                self.assertEqual(qs.get("startDate"), ["2026-01-01"])
+                self.assertEqual(qs.get("endDate"), ["2026-01-31"])
+                self.assertEqual(qs.get("frequency"), ["daily"])
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {
+                        "totalEquityTimeframe": [
+                            {"date": "2026-01-01", "value": 10000.0},
+                            {"date": "2026-01-02", "value": 11050.0},
+                            {"date": "2026-01-31", "value": 11200.0},
+                        ]
+                    },
+                )
+
+            if method == "DELETE" and parsed_u.path == "/api/v1/snapTrade/deleteUser":
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {"status": "deleted", "userId": qs["userId"][0]},
+                )
+
+            return (404, {}, {"error": "unexpected_route"})
+
+        transport = _MockHttpTransport(responder)
+        adapter = SnapTradeReadOnlyAdapter(
+            client_id="N170-CID",
+            consumer_key=consumer_secret,
+            slot_manager=slot_mgr,
+            http_transport=transport,
+            timestamp_provider=lambda: 1760000123,
+        )
+
+        reg = adapter.register_user("founder-user-1")
+        self.assertEqual(reg["userId"], "founder-user-1")
+        self.assertEqual(reg["userSecret"], issued_user_secret)
+        self.assertEqual(slot_mgr.active_slot_count(), 1)
+
+        # Trading scope on portal login must be rejected before any network request
+        with self.assertRaises(DisallowedCapabilityError):
+            adapter.generate_connection_portal_url(
+                "founder-user-1",
+                issued_user_secret,
+                connection_type="trade",
+            )
+
+        portal = adapter.generate_connection_portal_url(
+            "founder-user-1",
+            issued_user_secret,
+            broker="ROBINHOOD",
+            custom_redirect="http://127.0.0.1:3000/connect?snaptrade=connected",
+        )
+        self.assertTrue(portal["redirectURI"].startswith("https://app.snaptrade.com/"))
+        self.assertEqual(portal["sessionId"], "sess-read-001")
+
+        ledger = adapter.fetch_live_ledger(
+            "founder-user-1",
+            issued_user_secret,
+            blinding_salt_hex=TEST_SALT_HEX,
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+        )
+        self.assertEqual(ledger.broker_id, "snaptrade")
+        self.assertEqual(ledger.provider_approval_state, ProviderApprovalState.AGGREGATOR_RELAYED)
+        self.assertEqual(ledger.environment_tier, EnvironmentTier.LIVE_PRODUCTION)
+        self.assertEqual(ledger.account_scope, AccountScope.ALL_ENUMERATED_SUBACCOUNTS)
+        self.assertEqual(len(ledger.trades), 1)
+        self.assertEqual(ledger.trades[0].symbol, "MSFT")
+        self.assertEqual(len(ledger.flows), 2)
+        self.assertIn(FlowKind.DEPOSIT, {f.kind for f in ledger.flows})
+        self.assertIn(FlowKind.DIVIDEND, {f.kind for f in ledger.flows})
+        self.assertEqual(len(ledger.ending_positions), 1)
+        self.assertEqual([p.nav_base for p in ledger.nav_points], [10000.0, 11050.0, 11200.0])
+        self.assertNotIn("RH-99887766", json.dumps(ledger.to_dict()))
+
+        deleted = adapter.delete_user_and_release_slot("founder-user-1")
+        self.assertTrue(deleted["slot_released"])
+        self.assertEqual(slot_mgr.active_slot_count(), 0)
+
+        # Verify userSecret & consumerKey are redacted from upstream HTTP error details
+        def error_responder(
+            _m: str, _u: str, _h: dict[str, str], _b: bytes | None
+        ) -> tuple[int, dict[str, str], Any]:
+            return (
+                401,
+                {"Content-Type": "application/json"},
+                {"detail": f"Invalid auth for secret {issued_user_secret} and key {consumer_secret}"},
+            )
+
+        err_adapter = SnapTradeReadOnlyAdapter(
+            client_id="N170-CID",
+            consumer_key=consumer_secret,
+            slot_manager=SnapTradeSlotManager(max_slots=5),
+            http_transport=_MockHttpTransport(error_responder),
+        )
+        with self.assertRaises(SnapTradeAuthenticationError) as err_ctx:
+            err_adapter.fetch_live_ledger(
+                "founder-user-err",
+                issued_user_secret,
+                blinding_salt_hex=TEST_SALT_HEX,
+            )
+        self.assertNotIn(issued_user_secret, str(err_ctx.exception))
+        self.assertNotIn(consumer_secret, str(err_ctx.exception))
 
 
 class TestMcpAllowlistFirewallAndRedactions(unittest.TestCase):
