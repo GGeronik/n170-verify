@@ -11,7 +11,7 @@ import urllib.parse
 from app.config import ApiConfig
 from app.main import VerifyApiTestClient, create_app
 from app.privacy_scanner import OutboundPrivacyScanner
-from app.routes_snaptrade import SnapTradeRelayCoordinator
+from app.routes_snaptrade import MAX_QUEUED_DELETES_PER_REQUEST, SnapTradeRelayCoordinator
 from n170_verify.connectors import HYPERLIQUID_LIVE_BASE_URL, compute_snaptrade_signature
 from n170_verify.contracts import (
     EnvironmentTier,
@@ -687,11 +687,16 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
                 self.assertEqual(r_p.status_code, 200, r_p.text)
             self.assertEqual(client.get("/api/v1/connect/snaptrade/status").json()["available_slots"], 0)
 
-            # Advance clock past 30m TTL -> status reaps all 5 upstream & frees all 5 local seats
+            # Advance clock past 30m TTL -> all 5 local seats are freed at once; the upstream
+            # deletes are queued and each request retries at most a few of them.
             fake_now[0] += 1805.0
             st_after = client.get("/api/v1/connect/snaptrade/status").json()
             self.assertEqual(st_after["available_slots"], 5)
             self.assertEqual(st_after["active_slots"], 0)
+            delete_calls = [r for r in recorded if r["path"] == "/api/v1/snapTrade/deleteUser"]
+            self.assertEqual(len(delete_calls), MAX_QUEUED_DELETES_PER_REQUEST)
+            for _ in range(5):
+                client.get("/api/v1/connect/snaptrade/status")
             delete_calls = [r for r in recorded if r["path"] == "/api/v1/snapTrade/deleteUser"]
             self.assertEqual(len(delete_calls), 5)
 

@@ -75,6 +75,9 @@ SWEEP_RETRY_MAX_SECONDS: float = 900.0
 # message survives, so the connector's own message is matched there.
 _RETRYABLE_REFUSAL_MARKERS: tuple[str, ...] = (SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE,)
 
+# One request retries at most this many queued upstream deletes before it answers.
+MAX_QUEUED_DELETES_PER_REQUEST: int = 2
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -513,9 +516,9 @@ class SnapTradeRelayCoordinator:
             return 0
         with self._lock:
             active_users = {s.user_id for s in self._sessions.values()} | set(self._users_in_use)
-            candidates = [
-                uid for uid in list(self._pending_upstream_deletes) if uid not in active_users
-            ]
+            candidates = sorted(
+                uid for uid in self._pending_upstream_deletes if uid not in active_users
+            )[:MAX_QUEUED_DELETES_PER_REQUEST]
             for uid in candidates:
                 self._pending_upstream_deletes.discard(uid)
         reaped = 0
@@ -650,13 +653,24 @@ class SnapTradeRelayCoordinator:
         user_id: str,
         *,
         is_personal: bool,
+        held_by_caller: bool = False,
     ) -> bool:
         """End a relay user: free its seat and sessions here, then delete it upstream.
 
-        A failed upstream delete of a build-key user is queued and retried on a later
-        request. Returns True when the upstream delete succeeded.
+        While another read is still using the user (``held_by_caller`` says whether the
+        caller is one of the reads), nothing is deleted upstream: the delete is queued and
+        runs once the last read has finished. A failed upstream delete of a build-key user
+        is queued and retried on a later request. Returns True when the upstream delete
+        succeeded now.
         """
+        with self._lock:
+            other_reads = self._users_in_use.get(user_id, 0) - (1 if held_by_caller else 0)
         self.purge_user_sessions_and_release_local(user_id, is_personal=is_personal)
+        if other_reads > 0:
+            if not is_personal:
+                with self._lock:
+                    self._pending_upstream_deletes.add(user_id)
+            return False
         try:
             adapter.delete_user_and_release_slot(user_id)
             return True
@@ -1015,7 +1029,7 @@ def _handle_post_snaptrade_verify(
         detail = str(body.get("detail") or "")
         if any(marker in detail for marker in _RETRYABLE_REFUSAL_MARKERS):
             return status, body
-        relay.end_user(adapter, sess.user_id, is_personal=is_personal)
+        relay.end_user(adapter, sess.user_id, is_personal=is_personal, held_by_caller=True)
         return status, {**body, "session_ended": True}
 
     def _worker_limit_refusal(exc: Exception) -> tuple[int, dict[str, Any]]:
@@ -1176,7 +1190,7 @@ def _handle_post_snaptrade_verify(
 
     slot_released = False
     if release_slot_after:
-        relay.end_user(adapter, sess.user_id, is_personal=is_personal)
+        relay.end_user(adapter, sess.user_id, is_personal=is_personal, held_by_caller=True)
         slot_released = True
         token_disposal = (
             "personal_session_purged_from_memory"

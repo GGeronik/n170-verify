@@ -27,13 +27,20 @@ class PrivacyLeakError(ValueError):
 # Account-id shapes. Each needs digits, so ordinary upper-case words never match:
 #   ibkr_account_id          U + 6 or more digits             (U1234567)
 #   ibkr_paper_account_id    DU + 6 or more digits            (DU1234567)
-#   alpaca_paper_account_id  PA + 6 or more letters or digits, at least one a digit
-#                            (PA3K9XZ1ABCD; not PATTERNS, PAYMENTS or PARTNERSHIP)
+#   alpaca_paper_account_id  PA + 8 to 10 letters or digits, at least two of them digits:
+#                            the whole token is 10 to 12 characters (PA3K9XZ1ABCD,
+#                            PA12345678). Not a word (PATTERNS), not a setup tag with one
+#                            digit (PAUSE1MIN) and not a compact option symbol, whose root,
+#                            expiry, C or P and strike make a token of 16 or more
+#                            characters (PANW260320C00150000)
 #   tradier_account_id       6YA + 6 or more digits           (6YA123456)
 _ACCOUNT_NUMBER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("ibkr_account_id", re.compile(r"\bU\d{6,}\b")),
     ("ibkr_paper_account_id", re.compile(r"\bDU\d{6,}\b")),
-    ("alpaca_paper_account_id", re.compile(r"\bPA(?=[A-Z0-9]*\d)[A-Z0-9]{6,}\b")),
+    (
+        "alpaca_paper_account_id",
+        re.compile(r"\bPA(?=(?:[A-Z]*\d){2})[A-Z0-9]{8,10}\b"),
+    ),
     ("tradier_account_id", re.compile(r"\b6YA\d{6,}\b")),
     (
         "raw_account_field",

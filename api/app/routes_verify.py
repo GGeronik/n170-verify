@@ -435,6 +435,8 @@ def handle_post_verify(
     }
     if response_body["performance_withheld"]:
         response_body["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
+    if result_meta.get("record_warnings"):
+        response_body["record_warnings"] = list(result_meta["record_warnings"])
     if sync_record_dict is not None:
         response_body["sync_connection"] = sync_record_dict
 

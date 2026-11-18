@@ -93,11 +93,15 @@ class WorkerValidationError(ValueError):
 MAX_CONCURRENT_VERIFICATION_WORKERS = 2
 # Seconds a refused caller is asked to wait before trying again.
 VERIFICATION_RETRY_AFTER_SECONDS = 10
-# Largest statement accepted for verification, in bytes and in rows (lines, or XML elements),
-# summed over every statement field of one request. Each row costs about 0.3 ms of worker
-# time on a laptop core, so a statement at the row limit finishes well inside the timeout.
+# Largest statement accepted for verification, in bytes and in rows (line endings of any
+# kind, or XML elements), summed over every statement field of one request. The cost per row
+# depends on the statement kind and grows faster than linearly for a long valuation series:
+# measured on a laptop core, a Tradovate cash history (the slowest kind measured) took 2.8 s
+# for 2,000 rows, 7.4 s for 4,000, 9.7 s at this limit and about 17 s near 10,000. The row
+# limit keeps the slowest legal file within about a third of the 30-second worker timeout
+# on that machine.
 MAX_STATEMENT_INPUT_BYTES = 2 * 1024 * 1024
-MAX_STATEMENT_INPUT_ROWS = 10_000
+MAX_STATEMENT_INPUT_ROWS = 5_000
 
 _VERIFICATION_WORKER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_VERIFICATION_WORKERS)
 
@@ -175,12 +179,22 @@ def _too_large_message(limit: str) -> str:
     )
 
 
+def _line_endings(blob: bytes) -> int:
+    """Line endings of every kind: CR LF, a lone LF and a lone CR each end one row."""
+    if blob[:2] in (b"\xff\xfe", b"\xfe\xff"):  # UTF-16 export: count its characters, not bytes
+        try:
+            blob = blob.decode("utf-16").encode("utf-8")
+        except UnicodeDecodeError:
+            pass
+    return blob.count(b"\n") + blob.count(b"\r") - blob.count(b"\r\n")
+
+
 def enforce_statement_input_limits(request_payload: Mapping[str, Any]) -> None:
     """Refuse a statement over the byte or row limit before any worker starts."""
     blobs = _statement_input_bytes(request_payload)
     if sum(len(b) for b in blobs) > MAX_STATEMENT_INPUT_BYTES:
         raise WorkerInputTooLargeError(_too_large_message("bytes"))
-    rows = sum(max(b.count(b"\n"), b.count(b"<") - b.count(b"</")) for b in blobs)
+    rows = sum(max(_line_endings(b), b.count(b"<") - b.count(b"</")) for b in blobs)
     if rows > MAX_STATEMENT_INPUT_ROWS:
         raise WorkerInputTooLargeError(_too_large_message("rows"))
 
@@ -753,6 +767,47 @@ SCANNER_REFUSAL_DETAIL = (
 )
 
 
+UNREADABLE_INPUT_DETAIL = (
+    "The statement could not be read: a row is malformed or the file is not a supported "
+    "export. Export it again from the broker and add it unchanged."
+)
+
+JOURNAL_TAGS_LEFT_OUT_WARNING = (
+    "{n} journal tag(s) that look like an account number or a credential were left out of "
+    "the record"
+)
+
+
+def _leave_out_journal_tags_the_scanner_blocks(dropped: set[str]) -> None:
+    """Inside the single-use worker only: a cleaned journal tag that the outbound scanner
+    would block is left out of the record (and counted) instead of refusing the record."""
+    import importlib
+
+    from app.privacy_scanner import OutboundPrivacyScanner
+
+    scanner = OutboundPrivacyScanner()
+    for module_name in ("n170_verify.coaching.engine", "n170_verify.pipeline"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        original = getattr(module, "sanitize_journal_tags", None)
+        if original is None or getattr(original, "_leaves_out_scanner_hits", False):
+            continue
+
+        def filtered(tags: Any, _original: Callable[..., list[str]] = original) -> list[str]:
+            kept: list[str] = []
+            for tag in _original(tags):
+                if scanner.scan_text(str(tag)):
+                    dropped.add(str(tag))
+                else:
+                    kept.append(tag)
+            return kept
+
+        filtered._leaves_out_scanner_hits = True  # type: ignore[attr-defined]
+        setattr(module, "sanitize_journal_tags", filtered)
+
+
 def _refuse_text_the_scanner_blocks_before_signing(draft: VerifyProofBundle) -> None:
     """Nothing the outbound privacy scanner would block is ever signed; the reason does not
     repeat the text."""
@@ -872,7 +927,11 @@ def _ephemeral_worker_entrypoint(
 
         # 3. Execute verification pipeline inside isolated address space
         pipeline_fn = _resolve_pipeline_spec(pipeline_spec)
+        dropped_tags: set[str] = set()
+        _leave_out_journal_tags_the_scanner_blocks(dropped_tags)
         redacted_result = pipeline_fn(job_payload)
+        if dropped_tags and isinstance(redacted_result, dict):
+            redacted_result["dropped_journal_tag_count"] = len(dropped_tags)
         if _withheld_without_core_metrics(redacted_result):
             # A withheld return is always visible: disclose core_metrics with whatever
             # else the first run disclosed.
@@ -951,12 +1010,14 @@ def _ephemeral_worker_entrypoint(
                 "worker_pid": os.getpid(),
             }
         )
-    except Exception as exc:  # pragma: no cover - defensive worker crash boundary
+    except Exception:  # noqa: BLE001 - any other input error is the caller's, never a 500
+        # A reader error (for example csv.Error) carries the library's own wording, so it is
+        # replaced by a sentence a visitor can act on.
         send_conn.send(
             {
                 "ok": False,
-                "error_kind": "internal",
-                "message": _redact_worker_error_message(f"{type(exc).__name__}: {exc}", job_payload),
+                "error_kind": "validation",
+                "message": UNREADABLE_INPUT_DETAIL,
                 "worker_pid": os.getpid(),
             }
         )
@@ -1429,6 +1490,10 @@ def run_isolated_one_shot_verification(
             core_leaf.get("withheld_reasons") if leaf_withheld else None
         )
         result_meta["withheld_reasons"] = [str(r) for r in reasons] if withheld and reasons else []
+        dropped_count = int(redacted.get("dropped_journal_tag_count") or 0)
+        result_meta["record_warnings"] = (
+            [JOURNAL_TAGS_LEFT_OUT_WARNING.format(n=dropped_count)] if dropped_count > 0 else []
+        )
     return draft, receipt, stripped_count
 
 

@@ -596,9 +596,9 @@ class TestStatementUploadPublishRefusalKeepsItsStatus(unittest.TestCase):
         cfg = ApiConfig(
             publisher_keypair=generate_ed25519_keypair(bytes.fromhex("11" * 32)),
             publisher_kid=HOST_KID,
-            # The host key is valid only from 2026-01-01, so a record issued
-            # earlier is not one this registry recognises.
-            publisher_key_not_before_utc="2026-01-01T00:00:00Z",
+            # The host key is valid only from 2027-01-01, so a record issued
+            # earlier (after the statement it describes) is not one this registry recognises.
+            publisher_key_not_before_utc="2027-01-01T00:00:00Z",
             hosted_multi_user_mode=True,
             allow_caller_clock_for_tests=True,
             db_path=":memory:",
@@ -613,7 +613,7 @@ class TestStatementUploadPublishRefusalKeepsItsStatus(unittest.TestCase):
                 json={
                     "raw_statement_text": SYNTHETIC_LIVE_IBKR_FLEX_XML,
                     "filename": "ibkr_activity_2026.xml",
-                    "issued_at_utc": "2025-12-31T12:00:00Z",
+                    "issued_at_utc": "2026-12-31T12:00:00Z",
                     "publish_proof": True,
                     "opt_in_leaderboard": True,
                 },

@@ -4,10 +4,12 @@ Rules covered here:
 - a busy host or a worker that runs out of time answers 503 with its own code, a
   ``retry_after_seconds`` field and a ``Retry-After`` header; a statement over the stated
   size answers 413; on the statement upload, on POST /api/v1/verify and on the relay;
-- text the outbound privacy scanner would block is refused with 422 before a record is
-  signed, whether or not it is published, and the reason does not repeat the text;
+- a journal tag the outbound privacy scanner would block is left out of the signed record;
+  other text it would block is refused with 422 before a record is signed, whether or not
+  it is published, and the reason does not repeat the text;
 - the relay ends a user in one place: the seat is freed, the upstream user is deleted, and
-  a failed delete is retried later; a session in use is never ended under its own read;
+  a failed delete is retried later, a few per request; a user another read is using is
+  deleted upstream only after the last read has finished;
 - a relay session with no linked account yet keeps its seat for a retry.
 """
 
@@ -62,8 +64,8 @@ except ImportError:  # pragma: no cover - run from inside api/tests
 
 
 UPLOAD = "/api/v1/verify/auto-detect"
-# A journal tag in the shape of a paper-account id, assembled at run time.
-ACCOUNT_SHAPED_TAG = "PA" + "QZXW" + "RT" + "7"
+# A paper-account id, assembled at run time.
+ACCOUNT_SHAPED_TAG = "PA" + "3K9XZ" + "1ABCD"
 
 
 def _scanner_tagged_tradersync() -> str:
@@ -177,7 +179,8 @@ class UploadAndVerifyRouteRefusals(unittest.TestCase):
         self.assertEqual(resp.status_code, 413, resp.text[:300])
         self.assertEqual(resp.json()["error"], "statement_too_large")
 
-    def test_text_the_scanner_blocks_is_refused_before_signing(self) -> None:
+    def test_an_account_id_in_a_journal_tag_never_reaches_a_signed_record(self) -> None:
+        # The tag is left out of the record and the response says so; the record is signed.
         statement = _scanner_tagged_tradersync()
         for publish in (False, True):
             with self.subTest(route="verify", publish=publish):
@@ -185,14 +188,14 @@ class UploadAndVerifyRouteRefusals(unittest.TestCase):
                     "/api/v1/verify",
                     json={"broker_id": "tradersync", "raw_statement_text": statement, "publish_proof": publish},
                 )
-                self.assertEqual(resp.status_code, 422, resp.text[:400])
-                self.assertEqual(resp.json()["error"], "validation_error")
+                self.assertEqual(resp.status_code, 200, resp.text[:400])
                 self.assertNotIn(ACCOUNT_SHAPED_TAG, resp.text)
+                self.assertTrue(resp.json().get("record_warnings"))
             with self.subTest(route="upload", publish=publish):
                 resp = self._upload(statement, publish=publish)
-                self.assertEqual(resp.status_code, 422, resp.text[:400])
+                self.assertEqual(resp.status_code, 200, resp.text[:400])
                 self.assertNotIn(ACCOUNT_SHAPED_TAG, resp.text)
-        self.assertEqual(self.app.store.total_row_counts()["proofs"], 0)
+                self.assertTrue(resp.json().get("record_warnings"))
 
 
 class RelayRouteRefusals(_AppCase):
@@ -301,6 +304,47 @@ class RelayRouteRefusals(_AppCase):
         self.assertEqual(deletes_during_read, [[]])
         self.assertEqual(resp.status_code, 200, resp.text[:300])
         self.assertEqual(len(_deleted_user_ids(recorded)), 1)
+
+    def test_a_user_another_read_is_using_is_not_deleted_upstream_until_that_read_ends(self) -> None:
+        for second in ("verify", "release"):
+            with self.subTest(second=second):
+                inner, recorded = _make_mock_snaptrade_transport()
+                holder: dict[str, Any] = {}
+                deletes_during_read: list[list[str]] = []
+
+                def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+                    if urllib.parse.urlsplit(url).path == "/api/v1/accounts" and not holder.get("nested"):
+                        holder["nested"] = True
+                        path = VERIFY if second == "verify" else RELEASE
+                        holder["second"] = holder["client"].post(path, json={"session_token": holder["token"]})
+                        deletes_during_read.append(list(_deleted_user_ids(recorded)))
+                    return inner(method, url, headers, body)
+
+                _, client, _, token = self._open(transport)
+                holder.update(client=client, token=token)
+                first = client.post(VERIFY, json={"session_token": token})
+                self.assertEqual(holder["second"].status_code, 200, holder["second"].text[:300])
+                self.assertEqual(deletes_during_read, [[]])
+                self.assertEqual(first.status_code, 200, first.text[:300])
+                client.get(STATUS)  # a queued delete runs once no read is using the user
+                deleted = _deleted_user_ids(recorded)
+                self.assertGreaterEqual(len(deleted), 1)
+                self.assertEqual(len(set(deleted)), 1)
+
+    def test_one_request_retries_only_a_few_queued_deletes(self) -> None:
+        from app.routes_snaptrade import MAX_QUEUED_DELETES_PER_REQUEST
+
+        transport, recorded = _make_mock_snaptrade_transport()
+        _, client, relay = self._relay_app(transport)
+        client.get(STATUS)
+        with relay._lock:
+            for n in range(MAX_QUEUED_DELETES_PER_REQUEST + 3):
+                relay._pending_upstream_deletes.add(f"n170-st-queued-{n:02d}")
+        before = len(_deleted_user_ids(recorded))
+        client.get(STATUS)
+        self.assertEqual(len(_deleted_user_ids(recorded)) - before, MAX_QUEUED_DELETES_PER_REQUEST)
+        with relay._lock:
+            self.assertEqual(len(relay._pending_upstream_deletes), 3)
 
     def test_no_linked_account_keeps_the_seat_through_the_real_connector(self) -> None:
         for transport in (f"{__name__}:picklable_no_linked_account_transport", picklable_no_linked_account_transport):

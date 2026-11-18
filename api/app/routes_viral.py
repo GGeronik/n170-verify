@@ -1629,6 +1629,8 @@ def handle_post_verify_auto_detect(
     }
     if response_body["performance_withheld"]:
         response_body["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
+    if result_meta.get("record_warnings"):
+        response_body["record_warnings"] = list(result_meta["record_warnings"])
     return 200, response_body
 
 
