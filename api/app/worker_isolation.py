@@ -88,6 +88,103 @@ class WorkerValidationError(ValueError):
     """Raised when verification input fails domain validation inside the isolated worker."""
 
 
+# At most this many verification workers run at once on this host (sized for two cores:
+# one worker per core). Every route that signs a record shares the limit.
+MAX_CONCURRENT_VERIFICATION_WORKERS = 2
+# Seconds a refused caller is asked to wait before trying again.
+VERIFICATION_RETRY_AFTER_SECONDS = 10
+# Largest statement accepted for verification, in bytes and in rows (lines, or XML elements),
+# summed over every statement field of one request. Each row costs about 0.3 ms of worker
+# time on a laptop core, so a statement at the row limit finishes well inside the timeout.
+MAX_STATEMENT_INPUT_BYTES = 2 * 1024 * 1024
+MAX_STATEMENT_INPUT_ROWS = 10_000
+
+_VERIFICATION_WORKER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_VERIFICATION_WORKERS)
+
+
+class WorkerCapacityExceededError(WorkerIsolationError):
+    """Every verification worker slot is in use; the caller should retry later (503)."""
+
+    http_status = 503
+    error_code = "verification_busy"
+
+    def __init__(self, message: str, *, retry_after_seconds: int = VERIFICATION_RETRY_AFTER_SECONDS) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = int(retry_after_seconds)
+
+
+class WorkerTimeoutError(WorkerIsolationError):
+    """The verification worker ran out of time; the caller may retry later (503)."""
+
+    http_status = 503
+    error_code = "verification_timed_out"
+
+    def __init__(self, message: str, *, retry_after_seconds: int = VERIFICATION_RETRY_AFTER_SECONDS) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = int(retry_after_seconds)
+
+
+class WorkerInputTooLargeError(WorkerValidationError):
+    """A statement is over the stated byte or row limit (413)."""
+
+    http_status = 413
+    error_code = "statement_too_large"
+
+
+_STATEMENT_TEXT_KEYS: tuple[str, ...] = (
+    "raw_statement",
+    "raw_statement_text",
+    "flex_xml",
+    "csv_source",
+    "degiro_account_csv",
+    "degiro_transactions_csv",
+    "degiro_portfolio_csv",
+)
+_STATEMENT_B64_KEYS: tuple[str, ...] = ("raw_statement_b64", "flex_xml_b64", "csv_b64")
+
+
+def _statement_input_bytes(request_payload: Mapping[str, Any]) -> list[bytes]:
+    out: list[bytes] = []
+    for key in _STATEMENT_TEXT_KEYS:
+        val = request_payload.get(key)
+        if isinstance(val, str):
+            out.append(val.encode("utf-8"))
+        elif isinstance(val, (bytes, bytearray)):
+            out.append(bytes(val))
+    for key in _STATEMENT_B64_KEYS:
+        val = request_payload.get(key)
+        if isinstance(val, (str, bytes)) and val:
+            if len(val) * 3 // 4 > MAX_STATEMENT_INPUT_BYTES + 3:
+                raise WorkerInputTooLargeError(_too_large_message("bytes"))
+            try:
+                out.append(base64.b64decode(val))
+            except Exception as exc:
+                raise WorkerValidationError(f"{key} must be valid base64") from exc
+    return out
+
+
+def _too_large_message(limit: str) -> str:
+    stated = (
+        f"{MAX_STATEMENT_INPUT_BYTES:,} bytes"
+        if limit == "bytes"
+        else f"{MAX_STATEMENT_INPUT_ROWS:,} rows"
+    )
+    return (
+        f"The statement is over this host's limit of {stated}. "
+        "Export a shorter date range and verify it in parts."
+    )
+
+
+def enforce_statement_input_limits(request_payload: Mapping[str, Any]) -> None:
+    """Refuse a statement over the byte or row limit before any worker starts."""
+    blobs = _statement_input_bytes(request_payload)
+    if sum(len(b) for b in blobs) > MAX_STATEMENT_INPUT_BYTES:
+        raise WorkerInputTooLargeError(_too_large_message("bytes"))
+    rows = sum(max(b.count(b"\n"), b.count(b"<") - b.count(b"</")) for b in blobs)
+    if rows > MAX_STATEMENT_INPUT_ROWS:
+        raise WorkerInputTooLargeError(_too_large_message("rows"))
+
+
 @dataclass(slots=True)
 class WorkerIsolationReceipt:
     """Honest OS/process-level isolation attestation for one-shot verification."""
@@ -650,6 +747,34 @@ def enforce_hosted_signing_oracle_policy(
         )
 
 
+def _withheld_without_core_metrics(result: Any) -> bool:
+    """True when a worker result reports a withheld return but leaves core_metrics undisclosed."""
+    if not isinstance(result, Mapping) or not result.get("performance_withheld"):
+        return False
+    return not any(
+        isinstance(leaf, Mapping) and leaf.get("leaf_name") == "core_metrics"
+        for leaf in result.get("disclosed_leaves") or []
+    )
+
+
+def _refuse_standalone_series_outside_tests(
+    request_payload: Mapping[str, Any], *, config: ApiConfig, pipeline_spec: Any
+) -> None:
+    """A job without real input would be signed from a client-supplied series by the
+    standalone builder, which does not apply the shared calculator's withholding rules;
+    only test configurations sign such a job."""
+    if pipeline_spec is not None or config.allow_client_supplied_series_for_tests:
+        return
+    from app.store import SigningOracleDisabledError
+    from n170_verify.pipeline import has_real_pipeline_input
+
+    if not has_real_pipeline_input(request_payload):
+        raise SigningOracleDisabledError(
+            "This host does not sign a client-supplied series; submit a real brokerage "
+            "statement or read-only connector"
+        )
+
+
 def _dispatch_default_or_real_pipeline(job_payload: Mapping[str, Any]) -> dict[str, Any]:
     """Route real statement/connector/ledger jobs to ``n170_verify.pipeline`` and synthetic payloads to standalone."""
     from n170_verify.pipeline import api_worker_pipeline_entrypoint, has_real_pipeline_input
@@ -717,6 +842,14 @@ def _ephemeral_worker_entrypoint(
         # 3. Execute verification pipeline inside isolated address space
         pipeline_fn = _resolve_pipeline_spec(pipeline_spec)
         redacted_result = pipeline_fn(job_payload)
+        if _withheld_without_core_metrics(redacted_result):
+            # A withheld return is always visible: disclose core_metrics with whatever
+            # else the first run disclosed.
+            rerun_job = dict(job_payload)
+            rerun_job["disclose_leaf_names"] = [
+                str(leaf.get("leaf_name")) for leaf in redacted_result.get("disclosed_leaves") or []
+            ] + ["core_metrics"]
+            redacted_result = pipeline_fn(rerun_job)
 
         send_conn.send(
             {
@@ -933,6 +1066,8 @@ def run_isolated_one_shot_verification(
         has_custom_pipeline=(pipeline_spec is not None),
         allow_trusted_internal_ledger=_trusted_internal_input,
     )
+    _refuse_standalone_series_outside_tests(request_payload, config=config, pipeline_spec=pipeline_spec)
+    enforce_statement_input_limits(request_payload)
 
     if config.hosted_multi_user_mode:
         # Hosted: chain links and attestations are never taken from the request into a record.
@@ -1048,50 +1183,58 @@ def run_isolated_one_shot_verification(
         worker_job["eodhd_api_key"] = config.eodhd_api_key
 
     parent_pid = os.getpid()
-    ctx = multiprocessing.get_context("spawn")
-    recv_conn, send_conn = ctx.Pipe(duplex=False)
-
-    with _SPAWN_ENV_LOCK:
-        saved_env = dict(os.environ)
-        try:
-            scrubbed_spawn_env = _build_sanitized_env_map()
-            os.environ.clear()
-            os.environ.update(scrubbed_spawn_env)
-            proc = ctx.Process(
-                target=_ephemeral_worker_entrypoint,
-                args=(send_conn, worker_job, pipeline_spec),
-                daemon=False,
-            )
-            proc.start()
-        finally:
-            os.environ.clear()
-            os.environ.update(saved_env)
-
-    send_conn.close()
-
+    # Refuse at once, without waiting, when every worker slot is in use.
+    if not _VERIFICATION_WORKER_SLOTS.acquire(blocking=False):
+        raise WorkerCapacityExceededError(
+            "Every verification worker on this host is busy; try again shortly"
+        )
     try:
-        has_msg = recv_conn.poll(config.worker_timeout_seconds)
-        if not has_msg:
-            if proc.is_alive():
-                proc.kill()
-                proc.join(timeout=5.0)
-            raise WorkerIsolationError(
-                f"Ephemeral verification worker timed out after {config.worker_timeout_seconds}s"
-            )
-        worker_envelope = recv_conn.recv()
-    except EOFError as exc:
-        proc.join(timeout=5.0)
-        raise WorkerIsolationError(
-            f"Ephemeral verification worker exited unexpectedly (exitcode={proc.exitcode})"
-        ) from exc
-    finally:
-        recv_conn.close()
+        ctx = multiprocessing.get_context("spawn")
+        recv_conn, send_conn = ctx.Pipe(duplex=False)
 
-    proc.join(timeout=5.0)
-    if proc.is_alive():
-        proc.kill()
-        proc.join(timeout=2.0)
-        raise WorkerIsolationError("Ephemeral verification worker did not terminate cleanly")
+        with _SPAWN_ENV_LOCK:
+            saved_env = dict(os.environ)
+            try:
+                scrubbed_spawn_env = _build_sanitized_env_map()
+                os.environ.clear()
+                os.environ.update(scrubbed_spawn_env)
+                proc = ctx.Process(
+                    target=_ephemeral_worker_entrypoint,
+                    args=(send_conn, worker_job, pipeline_spec),
+                    daemon=False,
+                )
+                proc.start()
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+
+        send_conn.close()
+
+        try:
+            has_msg = recv_conn.poll(config.worker_timeout_seconds)
+            if not has_msg:
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join(timeout=5.0)
+                raise WorkerTimeoutError(
+                    "Verification did not finish in time on this host; try again shortly"
+                )
+            worker_envelope = recv_conn.recv()
+        except EOFError as exc:
+            proc.join(timeout=5.0)
+            raise WorkerIsolationError(
+                f"Ephemeral verification worker exited unexpectedly (exitcode={proc.exitcode})"
+            ) from exc
+        finally:
+            recv_conn.close()
+
+        proc.join(timeout=5.0)
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=2.0)
+            raise WorkerIsolationError("Ephemeral verification worker did not terminate cleanly")
+    finally:
+        _VERIFICATION_WORKER_SLOTS.release()
 
     exitcode = proc.exitcode
     if not worker_envelope.get("ok"):
@@ -1143,6 +1286,10 @@ def run_isolated_one_shot_verification(
         raise WorkerIsolationError("Isolation invariant violated: unsanitized child environment")
 
     redacted = worker_envelope["result"]
+    if _withheld_without_core_metrics(redacted):
+        raise WorkerIsolationError(
+            "A record whose return was withheld must disclose core_metrics; it was not signed"
+        )
     if config.hosted_multi_user_mode:
         # Hosted: the host chooses the record id.
         proof_id = f"prf-{uuid.uuid4().hex[:20]}"
@@ -1254,8 +1401,15 @@ def run_isolated_one_shot_verification(
 
 
 __all__ = [
+    "MAX_CONCURRENT_VERIFICATION_WORKERS",
+    "MAX_STATEMENT_INPUT_BYTES",
+    "MAX_STATEMENT_INPUT_ROWS",
+    "VERIFICATION_RETRY_AFTER_SECONDS",
     "WorkerBrokerUpstreamError",
+    "WorkerCapacityExceededError",
+    "WorkerInputTooLargeError",
     "WorkerIsolationError",
+    "WorkerTimeoutError",
     "WorkerIsolationReceipt",
     "WorkerPipelineSpec",
     "WorkerValidationError",

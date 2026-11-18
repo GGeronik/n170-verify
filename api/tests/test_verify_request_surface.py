@@ -297,6 +297,58 @@ class HostedMalformedListedFieldsTests(unittest.TestCase):
                 self.assertLess(resp.status_code, 500, resp.text)
 
 
+class WithheldAndSeriesRulesTests(unittest.TestCase):
+    """A withheld return is always visible; a client-supplied series is test-only."""
+
+    def test_a_withheld_return_always_discloses_core_metrics(self) -> None:
+        try:
+            from tests.test_verify_input_allowlist import TRADERSYNC_CSV
+        except ImportError:  # pragma: no cover
+            from test_verify_input_allowlist import TRADERSYNC_CSV  # type: ignore[no-redef]
+
+        app = create_app(_config(hosted=True), prefer_fastapi=False)
+        self.addCleanup(app.verify_app.close)
+        resp = VerifyApiTestClient(app).post(
+            "/api/v1/verify",
+            json={
+                "broker_id": "tradersync",
+                "raw_statement_text": TRADERSYNC_CSV,
+                "disclose_leaf_names": ["capital_bracket"],
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertIs(body["performance_withheld"], True)
+        disclosed = {leaf["leaf_name"]: leaf["payload"] for leaf in body["proof_bundle"]["disclosed_leaves"]}
+        self.assertIn("core_metrics", disclosed)
+        self.assertIs(disclosed["core_metrics"].get("performance_withheld"), True)
+        self.assertIn("capital_bracket", disclosed)
+
+    def test_a_client_supplied_series_is_signed_only_in_test_configurations(self) -> None:
+        request = {
+            "broker_id": "schwab",
+            "raw_account_id": "dummy-account",
+            "nav_points": [
+                {"timestamp_utc": "2026-01-01T00:00:00Z", "nav_base": 100_000.0},
+                {"timestamp_utc": "2026-01-31T00:00:00Z", "nav_base": 160_000.0},
+            ],
+        }
+        import dataclasses
+
+        for overrides in ({}, {"allow_hosted_signing": True}):
+            with self.subTest(overrides=sorted(overrides)):
+                app = create_app(dataclasses.replace(_config(hosted=False), **overrides), prefer_fastapi=False)
+                self.addCleanup(app.verify_app.close)
+                resp = VerifyApiTestClient(app).post("/api/v1/verify", json=request)
+                self.assertEqual(resp.status_code, 403, resp.text)
+                self.assertEqual(resp.json()["error"], "signing_oracle_disabled")
+
+        test_cfg = dataclasses.replace(_config(hosted=False), allow_client_supplied_series_for_tests=True)
+        app = create_app(test_cfg, prefer_fastapi=False)
+        self.addCleanup(app.verify_app.close)
+        self.assertEqual(VerifyApiTestClient(app).post("/api/v1/verify", json=request).status_code, 200)
+
+
 class MalformedVerifyFieldsTests(unittest.TestCase):
     """Self-hosted deployments still accept these fields; a malformed value is a 422."""
 
