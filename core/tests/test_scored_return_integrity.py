@@ -591,5 +591,42 @@ class AnnualisationPreconditionTests(unittest.TestCase):
         self.assertIsNotNone(res.summary.annualized_volatility)
 
 
+
+class WithheldRecordCostDragTests(unittest.TestCase):
+    """A withheld record signs no ratio divided by, or annualised over, its valuations."""
+
+    _RATIOS = (
+        "commission_and_fee_drag_bps",
+        "margin_and_funding_drag_bps",
+        "fx_conversion_drag_bps",
+        "withholding_tax_drag_bps",
+        "total_friction_drag_bps",
+        "annualized_total_drag_bps",
+    )
+
+    def test_a_withheld_record_signs_null_cost_drag_ratios(self) -> None:
+        navs = _navs([10000.0, 10100.0, 0.0, 6000.0, 6100.0])
+        trades = [
+            _trade("MSFT", "buy", _DAY0 + timedelta(hours=3), 3, 400.0, "w1"),
+            _trade("MSFT", "sell", _DAY0 + timedelta(days=1, hours=3), 3, 404.0, "w2"),
+        ]
+        trades = [NormalizedTrade.from_dict({**t.to_dict(), "commission": 1.5}) for t in trades]
+        out = verify_portfolio(ledger=_ledger(navs, trades=trades), issued_at_utc=_ISSUED)
+        self.assertTrue(out.performance_withheld)
+        coaching = out.proof_bundle.get_disclosed_payload("coaching_and_context")
+        for name in self._RATIOS:
+            self.assertIsNone(coaching["cost_drag"][name], name)
+        self.assertNotIn("bps", coaching["style_summary"])
+        self.assertFalse(any("bps" in t for t in coaching["coaching_takeaways"]))
+
+    def test_cost_drag_with_null_ratios_round_trips_and_old_leaves_still_parse(self) -> None:
+        from n170_verify.contracts import CostAndDragBreakdown
+
+        empty = CostAndDragBreakdown(**{name: None for name in self._RATIOS})
+        self.assertEqual(CostAndDragBreakdown.from_dict(empty.to_dict()), empty)
+        old = {name: 1.25 for name in self._RATIOS}
+        self.assertEqual(CostAndDragBreakdown.from_dict(old).to_dict(), old)
+
+
 if __name__ == "__main__":
     unittest.main()

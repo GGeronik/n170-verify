@@ -38,6 +38,7 @@ from n170_verify.coaching.llm_coach import (
 from n170_verify.contracts import (
     AssetClass,
     CanonicalPortfolioLedger,
+    CostAndDragBreakdown,
     RedactedClosedTrade,
     TraderCoachingAndContextReport,
 )
@@ -122,7 +123,8 @@ class TraderCoachingEngine:
             ledger,
             price_snapshots=price_snapshots,
             atr_14_series=atr_14_series,
-            cost_drag=cost_drag,
+            # A withheld record's drag ratios are not usable, so no takeaway is drawn from them.
+            cost_drag=None if performance_withheld else cost_drag,
         )
         if performance_withheld:
             # No figure derived from the valuation path is signed when the return is withheld.
@@ -153,7 +155,7 @@ class TraderCoachingEngine:
         )
 
         asset_mix_pct = _compute_asset_class_mix_pct(ledger)
-        if enable_llm_narrative and self.llm_client is not None:
+        if enable_llm_narrative and self.llm_client is not None and not performance_withheld:
             narrative = self.llm_client.generate_coaching_narrative(
                 cost_drag=cost_drag,
                 behaviour=behaviour,
@@ -185,6 +187,13 @@ class TraderCoachingEngine:
             det.safety_filter_triggered = True
             det.fallback_reason = "engine_post_check_rejected"
             narrative = det
+        if performance_withheld:
+            # The summary text states no ratio over valuations the record cannot use.
+            narrative.style_summary = (
+                f"Activity profile of {behaviour.observed_trades} closed round-trips over "
+                f"{behaviour.observed_days} days; the return and the friction ratios over the "
+                "account's valuations are withheld."
+            )
 
         session_heatmap = compute_session_expectancy_heatmap(
             ledger,
@@ -219,7 +228,20 @@ class TraderCoachingEngine:
         clean_journal_tags = sanitize_journal_tags(imported_journal_tags)
 
         report = TraderCoachingAndContextReport(
-            cost_drag=cost_drag,
+            # Every drag ratio divides by, or annualises over, the valuations; a withheld
+            # return signs none of them.
+            cost_drag=(
+                CostAndDragBreakdown(
+                    commission_and_fee_drag_bps=None,
+                    margin_and_funding_drag_bps=None,
+                    fx_conversion_drag_bps=None,
+                    withholding_tax_drag_bps=None,
+                    total_friction_drag_bps=None,
+                    annualized_total_drag_bps=None,
+                )
+                if performance_withheld
+                else cost_drag
+            ),
             behaviour=behaviour,
             catalyst_regime_win_rate=catalyst_ctx.catalyst_regime_win_rate,
             quiet_regime_win_rate=catalyst_ctx.quiet_regime_win_rate,
