@@ -427,6 +427,7 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             publisher_kid="n170-hl-live-kid",
             hosted_multi_user_mode=True,
             allow_hosted_signing=False,
+            allow_caller_clock_for_tests=True,
             account_blinding_salt_hex="cd" * 32,
         )
         app = create_app(
@@ -513,10 +514,12 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             publisher_kid="n170-pers-kid",
             snaptrade_client_id="PERS-FOUNDER-LIVE-01",
             snaptrade_consumer_key="pers-consumer-secret-live-xyz",
+            snaptrade_dev_key="dummy-founder-dev-key",
             account_blinding_salt_hex="ef" * 32,
         )
         app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
         client = VerifyApiTestClient(app)
+        owner = {"X-N170-Dev-Key": "dummy-founder-dev-key"}
         try:
             st = client.get("/api/v1/connect/snaptrade/status")
             self.assertEqual(st.status_code, 200, st.text)
@@ -530,8 +533,9 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
                 json={
                     "slot_label": "founder-ibkr",
                     "broker": "IBKR",
-                    "redirect_url": "https://verify.n170.org/connect?snaptrade=connected",
+                    "redirect_url": "http://127.0.0.1:3000/connect?snaptrade=connected",
                 },
+                headers=owner,
             )
             self.assertEqual(p1.status_code, 200, p1.text)
             self.assertEqual(p1.json()["mode"], "personal_1_slot")
@@ -545,6 +549,7 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             p2 = client.post(
                 "/api/v1/connect/snaptrade/portal",
                 json={"slot_label": "founder-reconnect"},
+                headers=owner,
             )
             self.assertEqual(p2.status_code, 200, p2.text)
             self.assertEqual(p2.json()["slot_id"], 1)
@@ -558,6 +563,7 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
                     "opt_in_leaderboard": True,
                     "release_slot_after": False,
                 },
+                headers=owner,
             )
             self.assertEqual(v_resp.status_code, 200, v_resp.text)
             self.scanner.assert_clean(v_resp.text)
@@ -577,8 +583,12 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             self.assertAlmostEqual(core_metrics["twr_decimal"], (120000.0 / 117500.0) - 1.0, places=5)
             self.assertEqual(len(curve_leaf["points"]), 3)
 
-            # Release via string slot_id="1" (matching web UI) purges local slot without calling deleteUser
-            rel = client.post("/api/v1/connect/snaptrade/release", json={"slot_id": "1"})
+            # Release with the session's own token purges the local slot without calling deleteUser
+            rel = client.post(
+                "/api/v1/connect/snaptrade/release",
+                json={"session_token": p2.json()["session_token"]},
+                headers=owner,
+            )
             self.assertEqual(rel.status_code, 200, rel.text)
             self.assertEqual(rel.json()["released_slot_ids"], [1])
             self.assertEqual(rel.json()["upstream_deleted"], False)
@@ -724,16 +734,19 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
                 publisher_kid="n170-snap-worker-kid",
                 snaptrade_client_id=WORKER_SNAPTRADE_CLIENT_ID,
                 snaptrade_consumer_key=WORKER_SNAPTRADE_CONSUMER_KEY,
+                snaptrade_dev_key="dummy-worker-dev-key",
                 account_blinding_salt_hex="aa" * 32,
             )
+            owner = {"X-N170-Dev-Key": "dummy-worker-dev-key"}
             app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
             client = VerifyApiTestClient(app)
             try:
-                p_r = client.post("/api/v1/connect/snaptrade/portal", json={"slot_label": "founder-worker"})
+                p_r = client.post("/api/v1/connect/snaptrade/portal", json={"slot_label": "founder-worker"}, headers=owner)
                 self.assertEqual(p_r.status_code, 200, p_r.text)
                 v_r = client.post(
                     "/api/v1/connect/snaptrade/verify",
                     json={"session_token": p_r.json()["session_token"], "release_slot_after": False},
+                    headers=owner,
                 )
                 self.assertEqual(v_r.status_code, 200, v_r.text)
                 self.scanner.assert_clean(v_r.text)
@@ -756,11 +769,12 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             err_app = create_app(cfg, snaptrade_relay=err_relay, prefer_fastapi=False)
             err_client = VerifyApiTestClient(err_app)
             try:
-                p_err = err_client.post("/api/v1/connect/snaptrade/portal", json={"slot_label": "err-slot"})
+                p_err = err_client.post("/api/v1/connect/snaptrade/portal", json={"slot_label": "err-slot"}, headers=owner)
                 self.assertEqual(p_err.status_code, 200, p_err.text)
                 v_err = err_client.post(
                     "/api/v1/connect/snaptrade/verify",
                     json={"session_token": p_err.json()["session_token"]},
+                    headers=owner,
                 )
                 self.assertEqual(v_err.status_code, 502, v_err.text)
                 self.assertEqual(v_err.json()["error"], "snaptrade_upstream_error")
@@ -868,6 +882,7 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
         cfg = ApiConfig(
             publisher_keypair=self.pub_kp,
             publisher_kid="n170-offline-formats-kid",
+            allow_caller_clock_for_tests=True,
             account_blinding_salt_hex="ee" * 32,
         )
         app = create_app(cfg, prefer_fastapi=False)

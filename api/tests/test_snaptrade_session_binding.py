@@ -73,6 +73,7 @@ class _AppCase(unittest.TestCase):
         client_id: str = BUILD_CLIENT_ID,
         dev_key: str = "",
         hosted: bool = True,
+        allow_caller_clock: bool = False,
     ) -> tuple[Any, VerifyApiTestClient, SnapTradeRelayCoordinator]:
         relay = SnapTradeRelayCoordinator(http_transport=transport)
         cfg = ApiConfig(
@@ -83,6 +84,7 @@ class _AppCase(unittest.TestCase):
             snaptrade_dev_key=dev_key,
             account_blinding_salt_hex="5a" * 32,
             hosted_multi_user_mode=hosted,
+            allow_caller_clock_for_tests=allow_caller_clock,
         )
         app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
         self.addCleanup(app.close)
@@ -216,6 +218,52 @@ class TestReleaseNeedsTheCallersOwnSession(_AppCase):
         self.assertEqual(first.json()["slot_id"], second.json()["slot_id"])
         self.assertIsNone(relay.get_session(first.json()["session_token"]))
         self.assertIsNotNone(relay.get_session(second.json()["session_token"]))
+
+
+class TestRelayVerifyIssueTimeAndPublishRefusals(_AppCase):
+    def test_caller_may_not_set_the_issue_time_of_a_signed_record(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        app, client, relay = self._client(transport)
+        portal = client.post(PORTAL, json={})
+        self.assertEqual(portal.status_code, 200, portal.text)
+        token = portal.json()["session_token"]
+
+        r = client.post(
+            VERIFY,
+            json={"session_token": token, "issued_at_utc": "2026-02-10T12:00:00Z", "publish_proof": True},
+        )
+        self.assertEqual(r.status_code, 400, r.text)
+        self.assertEqual(r.json()["error"], "caller_clock_not_accepted")
+        self.assertEqual(app.store.total_row_counts()["proofs"], 0)
+        self.assertIsNotNone(relay.get_session(token))
+
+    def test_test_only_setting_still_accepts_an_issue_time(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport, allow_caller_clock=True)
+        portal = client.post(PORTAL, json={})
+        r = client.post(
+            VERIFY,
+            json={"session_token": portal.json()["session_token"], "issued_at_utc": "2026-02-10T12:00:00Z"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_a_record_the_host_may_not_publish_returns_its_own_refusal(self) -> None:
+        from app.store import PublisherKeyNotInRegistryError
+
+        transport, _ = _make_mock_snaptrade_transport()
+        app, client, _ = self._client(transport)
+
+        def refuse(*_a: Any, **_k: Any) -> Any:
+            raise PublisherKeyNotInRegistryError("signing key is not in this host's registry")
+
+        app.store.store_proof = refuse  # type: ignore[method-assign]
+        portal = client.post(PORTAL, json={})
+        r = client.post(
+            VERIFY,
+            json={"session_token": portal.json()["session_token"], "publish_proof": True},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.json()["error"], "publisher_key_not_in_registry")
 
 
 class TestRedirectLimitedToSiteOrigin(_AppCase):

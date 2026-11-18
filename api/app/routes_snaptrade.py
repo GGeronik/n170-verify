@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import ApiConfig
+from app.routes_proofs import refuse_caller_clock
 from app.routes_viral import sanitize_public_label
 from app.store import (
     GovernanceBlockedError,
@@ -760,6 +761,10 @@ def handle_post_snaptrade_verify(
     dev_ok, dev_err = _verify_dev_key_if_required(payload, headers, dev_key)
     if not dev_ok and dev_err is not None:
         return dev_err
+    # The host sets the issue time of a signed record; a caller may not.
+    clock_refusal = refuse_caller_clock(config, payload, field_name="issued_at_utc")
+    if clock_refusal is not None:
+        return clock_refusal
 
     raw_token = payload.get("session_token")
     if not isinstance(raw_token, str) or not raw_token.strip():
@@ -972,6 +977,9 @@ def handle_post_snaptrade_verify(
             return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except ProofBundleInvalidError as exc:
             return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
+        except GovernanceBlockedError as exc:
+            # A record this host may not publish is refused with its own status and code.
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     else:
         verification = store.verify_bundle_against_live_state(bundle)
 

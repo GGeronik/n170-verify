@@ -476,6 +476,8 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
         default_cfg = ApiConfig(
             publisher_keypair=self.pub_kp,
             publisher_kid="n170-hosted-prod-kid",
+            # The real-statement step below fixes the issue time so its output is repeatable.
+            allow_caller_clock_for_tests=True,
         )
         self.assertTrue(default_cfg.hosted_multi_user_mode)
         self.assertFalse(default_cfg.allow_hosted_signing)
