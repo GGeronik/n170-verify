@@ -487,14 +487,16 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
             }
             synthetic_leaves["capital_bracket"] = {"capital_bracket": CapitalBracket.OVER_1M.value}
 
+            # Offline broker ids: a live connector id is refused earlier on a hosted
+            # deployment (connector_not_offered), which would hide the refusal under test.
             oracle_attempts = [
                 {
-                    "broker_id": "schwab",
+                    "broker_id": "schwab_csv",
                     "raw_account_id": "SCH-ORACLE-1",
                     "leaf_payloads": synthetic_leaves,
                 },
                 {
-                    "broker_id": "schwab",
+                    "broker_id": "schwab_csv",
                     "raw_account_id": "SCH-ORACLE-2",
                     "performance_summary": {
                         "twr_decimal": 9.99,
@@ -504,20 +506,20 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
                     },
                 },
                 {
-                    "broker_id": "alpaca",
-                    "raw_account_id": "ALP-ORACLE-3",
+                    "broker_id": "tradovate_csv",
+                    "raw_account_id": "TDV-ORACLE-3",
                     "nav_points": [
                         {"timestamp_utc": "2026-01-01T00:00:00Z", "nav_base": 10000.0},
                         {"timestamp_utc": "2026-01-31T00:00:00Z", "nav_base": 99000.0},
                     ],
                 },
                 {
-                    "broker_id": "schwab",
+                    "broker_id": "schwab_csv",
                     "raw_account_id": "SCH-ORACLE-4",
                     "twr_decimal": 5.0,
                 },
                 {
-                    "broker_id": "schwab",
+                    "broker_id": "schwab_csv",
                     "raw_account_id": "SCH-ORACLE-5",
                     "_trusted_internal_input": True,
                     "_hosted_signing_restricted": False,
