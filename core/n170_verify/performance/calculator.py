@@ -42,6 +42,11 @@ CAPITAL_FLOW_KINDS_FOR_TWR: frozenset[FlowKind] = frozenset(
 
 SECONDS_PER_ACT365_YEAR = 365.0 * 86400.0
 
+# A return is withheld when the cash flows inside one valuation interval (gross: the sum of
+# the absolute external and in-kind flows) add up to more than this fraction of the
+# account's value at the start of that interval.
+LARGE_INTERVAL_FLOW_FRACTION = 0.10
+
 
 @dataclass(frozen=True, slots=True)
 class SubperiodReturnObservation:
@@ -432,6 +437,19 @@ def calculate_portfolio_performance_detailed(
         open_val = float(prev_pt.nav_base)
         close_val = float(curr_pt.nav_base)
 
+        if open_val > 0.0:
+            gross_flow = math.fsum(abs(f_amt) for _, f_amt in interval_flows)
+            if gross_flow > LARGE_INTERVAL_FLOW_FRACTION * open_val:
+                warnings.append(
+                    f"Performance metrics were withheld because cash flows of "
+                    f"{100.0 * gross_flow / open_val:.1f}% of the opening value fall inside the "
+                    f"valuation interval ending {curr_pt.timestamp_utc}; that interval's return "
+                    "cannot be computed from its two valuations."
+                )
+                return _withheld_result(
+                    warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology
+                )
+
         if cash_flow_timing == "end_of_day":
             denom = open_val
             period_ret = (close_val - net_flow) / denom - 1.0 if denom > 0.0 else float("nan")
@@ -651,6 +669,7 @@ def calculate_portfolio_performance(
 
 __all__ = [
     "CAPITAL_FLOW_KINDS_FOR_TWR",
+    "LARGE_INTERVAL_FLOW_FRACTION",
     "PerformanceCalculationResult",
     "SubperiodReturnObservation",
     "calculate_portfolio_performance",

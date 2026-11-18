@@ -108,6 +108,8 @@ class TraderCoachingEngine:
         enable_llm_narrative: bool = True,
         imported_journal_tags: Sequence[str] | None = None,
         max_drawdown_decimal: float | None = None,
+        scored_period_returns: Sequence[float] | None = None,
+        performance_withheld: bool = False,
     ) -> CoachingEngineOutput:
         """Compute ``TraderCoachingAndContextReport`` and 7-day-delayed ``RedactedClosedTrade`` list."""
         cost_drag = compute_cost_and_drag_breakdown(
@@ -184,13 +186,19 @@ class TraderCoachingEngine:
             ledger,
             closed_round_trips=closed_trips,
         )
-        counterfactual_twin = simulate_counterfactual_twin(
-            ledger,
-            cost_drag=cost_drag,
-            behaviour=behaviour,
-            closed_round_trips=closed_trips,
-            forex_midpoints=forex_midpoints,
-            atr_14_series=atr_14_series,
+        # The twin's "actual" path is the scored return path; a withheld return has none.
+        counterfactual_twin = (
+            None
+            if performance_withheld
+            else simulate_counterfactual_twin(
+                ledger,
+                cost_drag=cost_drag,
+                behaviour=behaviour,
+                closed_round_trips=closed_trips,
+                forex_midpoints=forex_midpoints,
+                atr_14_series=atr_14_series,
+                scored_period_returns=scored_period_returns,
+            )
         )
         quant_dna = compute_quant_dna_profile(
             ledger,

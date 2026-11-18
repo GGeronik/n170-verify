@@ -416,31 +416,34 @@ def ingest_portfolio_ledger(
             raw_account_id_override,
             salt_hex,
         )
-    # A requested period may narrow the record, never widen its claim beyond the NAV series
-    # that is scored. A ledger without NAV points keeps the requested period as before.
-    req_start, req_end = period_start_utc, period_end_utc
-    if resolved_ledger.nav_points and (req_start is not None or req_end is not None):
+    # Whenever the ledger has valuations, the signed period is exactly the span of the
+    # valuations that are scored, whatever the request or the connector stated. A requested
+    # period that would leave out a scored valuation is refused: the caller must supply input
+    # for that period instead. A ledger without valuations keeps its stated period.
+    if resolved_ledger.nav_points:
         nav_sorted = sorted(
             resolved_ledger.nav_points, key=lambda pt: parse_utc_timestamp(pt.timestamp_utc)
         )
         first_ts, last_ts = nav_sorted[0].timestamp_utc, nav_sorted[-1].timestamp_utc
-        if req_start is not None and parse_utc_timestamp(req_start) < parse_utc_timestamp(first_ts):
-            req_start = first_ts
-        if req_end is not None and parse_utc_timestamp(req_end) > parse_utc_timestamp(last_ts):
-            req_end = last_ts
-        eff_start = req_start if req_start is not None else resolved_ledger.period_start_utc
-        eff_end = req_end if req_end is not None else resolved_ledger.period_end_utc
-        if parse_utc_timestamp(eff_start) > parse_utc_timestamp(eff_end) or (
-            parse_utc_timestamp(eff_start) > parse_utc_timestamp(last_ts)
-            or parse_utc_timestamp(eff_end) < parse_utc_timestamp(first_ts)
-        ):
+        if period_start_utc is not None and parse_utc_timestamp(period_start_utc) > parse_utc_timestamp(first_ts):
             raise ValueError(
-                "The requested period does not overlap the NAV series that can be scored"
+                f"The requested period starts at {period_start_utc}, after the first scored valuation "
+                f"({first_ts}); supply input for the requested period instead"
             )
-    if req_start is not None:
-        updates["period_start_utc"] = req_start
-    if req_end is not None:
-        updates["period_end_utc"] = req_end
+        if period_end_utc is not None and parse_utc_timestamp(period_end_utc) < parse_utc_timestamp(last_ts):
+            raise ValueError(
+                f"The requested period ends at {period_end_utc}, before the last scored valuation "
+                f"({last_ts}); supply input for the requested period instead"
+            )
+        if resolved_ledger.period_start_utc != first_ts:
+            updates["period_start_utc"] = first_ts
+        if resolved_ledger.period_end_utc != last_ts:
+            updates["period_end_utc"] = last_ts
+    else:
+        if period_start_utc is not None:
+            updates["period_start_utc"] = period_start_utc
+        if period_end_utc is not None:
+            updates["period_end_utc"] = period_end_utc
     if base_currency is not None:
         updates["base_currency"] = base_currency.strip().upper()
 
@@ -761,6 +764,12 @@ def verify_portfolio(
         enable_llm_narrative=enable_llm_narrative,
         imported_journal_tags=imported_journal_tags,
         max_drawdown_decimal=performance_summary.max_drawdown_decimal,
+        scored_period_returns=(
+            None
+            if perf_calc.withheld
+            else [obs.period_return for obs in perf_calc.return_observations]
+        ),
+        performance_withheld=perf_calc.withheld,
     )
     delayed_trades = coaching_out.delayed_closed_trades
     stripped_recent_count = max(0, len(all_round_trips) - len(delayed_trades))

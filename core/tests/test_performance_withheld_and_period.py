@@ -1,8 +1,8 @@
 """The signed period and the signed performance section never claim more than was computed.
 
 Rules covered here:
-- a requested period may narrow a record, never widen it beyond the first and last NAV
-  point that were scored; a ledger without NAV points keeps the requested period;
+- the signed period is the span of the scored NAV points; a requested period that would
+  leave one out is refused; a ledger without NAV points keeps the requested period;
 - when a return cannot be computed, the signed performance section says so
   (``performance_withheld: true`` plus the reasons) and the pipeline output carries the
   same flag; a computed record carries neither key.
@@ -84,15 +84,16 @@ class SignedPeriodTests(unittest.TestCase):
         self.assertEqual(out.proof_bundle.period_start_utc, navs[0].timestamp_utc)
         self.assertEqual(out.proof_bundle.period_end_utc, navs[-1].timestamp_utc)
 
-    def test_requested_period_may_narrow_the_record(self) -> None:
+    def test_requested_period_narrower_than_the_scored_series_is_refused(self) -> None:
+        # Every valuation is scored, so a narrower label would claim a return for a period
+        # that was not what was measured.
         navs = _navs(_FEB, _COMPUTED_VALUES)
-        ledger = ingest_portfolio_ledger(
-            ledger=_ledger(navs),
-            period_start_utc="2026-02-05T00:00:00Z",
-            period_end_utc="2026-02-10T00:00:00Z",
-        )
-        self.assertEqual(ledger.period_start_utc, "2026-02-05T00:00:00Z")
-        self.assertEqual(ledger.period_end_utc, "2026-02-10T00:00:00Z")
+        with self.assertRaises(ValueError):
+            ingest_portfolio_ledger(
+                ledger=_ledger(navs),
+                period_start_utc="2026-02-05T00:00:00Z",
+                period_end_utc="2026-02-10T00:00:00Z",
+            )
 
     def test_requested_period_outside_the_nav_series_is_refused(self) -> None:
         navs = _navs(_FEB, _COMPUTED_VALUES)

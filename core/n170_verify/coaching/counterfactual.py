@@ -95,6 +95,7 @@ def simulate_counterfactual_twin(
     closed_round_trips: Sequence[ClosedRoundTrip] | None = None,
     forex_midpoints: Mapping[str, object] | None = None,
     atr_14_series: Mapping[str, Any] | None = None,
+    scored_period_returns: Sequence[float] | None = None,
 ) -> CounterfactualTwinReport:
     """Simulate 3 hypothetical coaching counterfactual wealth paths rebased at ``1.0``.
 
@@ -106,6 +107,9 @@ def simulate_counterfactual_twin(
     3. ``capped_tail_loss``: Caps closed trade losses beyond the ``95th`` loss-magnitude
        percentile at the ``90th`` percentile stop (with sub-period fallback when no closed
        trades exist).
+
+    When ``scored_period_returns`` is given (the performance calculator's per-interval
+    returns), the ``actual`` path is exactly that scored path, never a second calculation.
     """
     nav_sorted = _deduplicated_positive_navs(ledger)
     if len(nav_sorted) < 2:
@@ -164,6 +168,17 @@ def simulate_counterfactual_twin(
             raw_ret = 0.0
         safe_ret = max(-0.999999, raw_ret)
         intervals.append((prev_ts, curr_ts, curr_pt.timestamp_utc[:10], open_nav, safe_ret))
+
+    if scored_period_returns is not None:
+        if len(scored_period_returns) != len(intervals):
+            raise ValueError(
+                "scored_period_returns must have one return per valuation interval "
+                f"(got {len(scored_period_returns)}, expected {len(intervals)})"
+            )
+        intervals = [
+            (p_ts, c_ts, d_str, o_nav, float(scored))
+            for (p_ts, c_ts, d_str, o_nav, _), scored in zip(intervals, scored_period_returns)
+        ]
 
     n_steps = len(intervals)
     resolved_cost_drag = (
