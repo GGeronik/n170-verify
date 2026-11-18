@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 import re
 from typing import Any
 
@@ -456,9 +457,36 @@ def create_signed_proof_bundle(
     return draft
 
 
+class HolderClaimStatus(str, Enum):
+    """Status of the optional holder name, reported apart from the record's ``valid``.
+
+    The holder key is not bound to the broker account or wallet, so a correct
+    holder signature shows only that whoever attached the name held that key.
+    """
+
+    ABSENT = "absent"
+    SELF_ASSERTED = "self_asserted"
+    INVALID = "invalid"
+
+
+HOLDER_SELF_ASSERTED_MESSAGE = (
+    "Holder name is self-asserted: its key is not bound to the account, "
+    "so the name is not verified and is not part of this record's validity"
+)
+HOLDER_INVALID_MESSAGE = (
+    "Holder attestation is invalid (signature or binding to this record does not check out); "
+    "no holder name is shown"
+)
+
+
 @dataclass(slots=True)
 class BundleVerificationResult(ContractModelMixin):
-    """Comprehensive verification outcome with dynamically derived six-axis assurance profile."""
+    """Comprehensive verification outcome with dynamically derived six-axis assurance profile.
+
+    ``valid`` describes the record only. The holder name is reported separately in
+    ``holder_claim_status``; ``holder_display_name`` is set only when that status is
+    ``self_asserted``.
+    """
 
     valid: bool
     proof_id: str
@@ -476,6 +504,8 @@ class BundleVerificationResult(ContractModelMixin):
     chain_verification: ChainVerificationResult | None = None
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    holder_claim_status: HolderClaimStatus = HolderClaimStatus.ABSENT
+    holder_display_name: str | None = None
 
 
 def verify_proof_bundle(
@@ -506,7 +536,9 @@ def verify_proof_bundle(
     if not signature_valid:
         errors.append("Publisher Ed25519 signature verification failed")
 
-    holder_valid = True
+    # The holder claim is reported on its own and never changes ``valid``.
+    holder_claim_status = HolderClaimStatus.ABSENT
+    holder_display_name: str | None = None
     if proof_bundle.holder_identity is not None:
         att = proof_bundle.holder_identity
         if (
@@ -515,8 +547,12 @@ def verify_proof_bundle(
             or att.proof_hash != proof_bundle.proof_hash()
             or not att.verify_signature()
         ):
-            holder_valid = False
-            errors.append("Holder Ed25519 attribution signature failed verification")
+            holder_claim_status = HolderClaimStatus.INVALID
+            warnings.append(HOLDER_INVALID_MESSAGE)
+        else:
+            holder_claim_status = HolderClaimStatus.SELF_ASSERTED
+            holder_display_name = att.display_name
+            warnings.append(HOLDER_SELF_ASSERTED_MESSAGE)
 
     merkle_valid, merkle_errors = verify_selective_disclosure(
         proof_bundle.merkle_root,
@@ -605,7 +641,6 @@ def verify_proof_bundle(
         schema_ok
         and env_ok
         and signature_valid
-        and holder_valid
         and merkle_valid
         and transcript_safety_ok
         and signer_trust != SignerTrustStatus.REVOKED_KEY
@@ -638,13 +673,18 @@ def verify_proof_bundle(
         chain_verification=chain_result,
         errors=list(dict.fromkeys(errors)),
         warnings=list(dict.fromkeys(warnings)),
+        holder_claim_status=holder_claim_status,
+        holder_display_name=holder_display_name,
     )
 
 
 __all__ = [
     "ALLOWED_RETENTION_MODES",
     "BundleVerificationResult",
+    "HOLDER_INVALID_MESSAGE",
     "HOLDER_SCHEMA_VERSION",
+    "HOLDER_SELF_ASSERTED_MESSAGE",
+    "HolderClaimStatus",
     "HolderIdentityAttestation",
     "SIGNING_DOMAIN_HOLDER",
     "VERIFY_SCHEMA_VERSION",
