@@ -100,17 +100,22 @@ class _DayLiquidationSnapshot:
     open_avg_cost_by_symbol: dict[tuple[str, str], float]
 
 
+_InstrumentKey = tuple[str, str, str | None, float | None, str | None, str | None]
+
+
 def _instrument_key(
     symbol: str,
     asset_class: AssetClass,
     option_right: str | None,
     strike: float | None,
     expiry: str | None,
-) -> tuple[str, str, str | None, float | None, str | None]:
+    position_id: str | None = None,
+) -> _InstrumentKey:
     norm_sym = symbol.strip().upper()
+    norm_pos = position_id.strip() if isinstance(position_id, str) and position_id.strip() else None
     if asset_class in {AssetClass.OPTION, AssetClass.FUTURE}:
-        return (norm_sym, asset_class.value, option_right, strike, expiry)
-    return (norm_sym, asset_class.value, None, None, None)
+        return (norm_sym, asset_class.value, option_right, strike, expiry, norm_pos)
+    return (norm_sym, asset_class.value, None, None, None, norm_pos)
 
 
 def _compute_split_factor(action: CorporateActionRecord, open_total_qty: float) -> float | None:
@@ -133,7 +138,7 @@ def _compute_split_factor(action: CorporateActionRecord, open_total_qty: float) 
 
 def _apply_corporate_action(
     action: CorporateActionRecord,
-    lots_by_key: dict[tuple[str, str, str | None, float | None, str | None], deque[_OpenLot]],
+    lots_by_key: dict[_InstrumentKey, deque[_OpenLot]],
 ) -> None:
     target_sym = action.symbol.strip().upper()
     matching_keys = [key for key in list(lots_by_key.keys()) if key[0] == target_sym]
@@ -163,7 +168,7 @@ def _apply_corporate_action(
             queue = lots_by_key.pop(key)
             if not queue:
                 continue
-            new_key = (new_sym, key[1], key[2], key[3], key[4])
+            new_key = (new_sym,) + key[1:]
             dest = lots_by_key.setdefault(new_key, deque())
             for lot in queue:
                 lot.symbol = new_sym
@@ -171,7 +176,7 @@ def _apply_corporate_action(
 
 
 def _snapshot_open_cost_basis(
-    lots_by_key: Mapping[tuple[str, str, str | None, float | None, str | None], deque[_OpenLot]],
+    lots_by_key: Mapping[_InstrumentKey, deque[_OpenLot]],
 ) -> dict[tuple[str, str], float]:
     agg_qty_cost: dict[tuple[str, str], list[float]] = {}
     for queue in lots_by_key.values():
@@ -191,27 +196,29 @@ def _snapshot_open_cost_basis(
 
 def instruments_held_before_the_ledger(
     ledger: CanonicalPortfolioLedger,
-) -> set[tuple[str, str, str | None, float | None, str | None]]:
+) -> set[_InstrumentKey]:
     """Instruments whose position may have been opened before the ledger's first row.
 
     The ledger records a trade's side but no open/close indicator. When the input does not
-    state its opening positions, an instrument whose first trade in the ledger is a sale is
-    read as closing a position opened before the input (a short opened by that sale cannot be
-    told apart and is treated the same way). When the input states its opening positions
-    (an opening-positions section), an instrument listed there is held from before, and a
-    first sale in any other instrument opens a short. Round-trip matching leaves the held
-    instruments out, so no round trip that never happened is signed. A symbol change or
-    merger carries the old instrument's state to the new symbol.
+    state its opening positions, an instrument whose first trade in the ledger is a sale (or
+    whose cumulative in-ledger net quantity ever goes negative, e.g. averaging down on a
+    pre-file long before selling all units) is read as closing a position opened before the
+    input. When the input states its opening positions (an opening-positions section), an
+    instrument listed there is held from before, and a first sale in any other instrument
+    opens a short. Round-trip matching leaves the held instruments out, so no round trip that
+    never happened is signed. Splits and symbol changes carry state across events.
     """
     states_openings = "PriorPeriodPositions" in set(ledger.enabled_sections)
-    held: set[tuple[str, str, str | None, float | None, str | None]] = set()
+    held: set[_InstrumentKey] = set()
     for pos in ledger.prior_positions:
         if pos.asset_class != AssetClass.CASH and abs(pos.quantity) > 1e-12:
             held.add(
                 _instrument_key(pos.symbol, pos.asset_class, pos.option_right, pos.strike, pos.expiry)
             )
 
-    seen: set[tuple[str, str, str | None, float | None, str | None]] = set(held)
+    seen: set[_InstrumentKey] = set(held)
+    net_qty: dict[_InstrumentKey, float] = {}
+    origins: dict[_InstrumentKey, set[_InstrumentKey]] = {}
     events: list[tuple[datetime, int, int, Any]] = []
     for idx, ca in enumerate(ledger.corporate_actions):
         events.append((parse_utc_timestamp(ca.timestamp_utc), 0, idx, ca))
@@ -222,24 +229,51 @@ def instruments_held_before_the_ledger(
     events.sort(key=lambda item: (item[0], item[1], item[2]))
     for _, priority, _, record in events:
         if priority == 0:
+            old_norm = record.symbol.strip().upper()
+            if (
+                not states_openings
+                and record.action_type in {CorporateActionType.SPLIT, CorporateActionType.REVERSE_SPLIT}
+            ):
+                for key in [k for k in list(net_qty.keys()) if k[0] == old_norm]:
+                    if net_qty[key] > 1e-12:
+                        factor = _compute_split_factor(record, net_qty[key])
+                        if factor is not None and factor > 0.0:
+                            net_qty[key] *= factor
             new_sym = getattr(record, "new_symbol", None)
             if not new_sym:
                 continue
-            old_norm = record.symbol.strip().upper()
-            for key in [k for k in seen if k[0] == old_norm]:
-                new_key = (new_sym.strip().upper(),) + key[1:]
+            new_norm = new_sym.strip().upper()
+            if not new_norm or new_norm == old_norm:
+                continue
+            for key in [k for k in list(seen | set(net_qty.keys())) if k[0] == old_norm]:
+                new_key = (new_norm,) + key[1:]
                 seen.add(new_key)
                 if key in held:
                     held.add(new_key)
+                if not states_openings and (key in net_qty or key in origins):
+                    prev_origins = origins.pop(key, {key})
+                    origins.setdefault(new_key, {new_key}).update(prev_origins)
+                    net_qty[new_key] = net_qty.get(new_key, 0.0) + net_qty.pop(key, 0.0)
             continue
         key = _instrument_key(
-            record.symbol, record.asset_class, record.option_right, record.strike, record.expiry
+            record.symbol,
+            record.asset_class,
+            record.option_right,
+            record.strike,
+            record.expiry,
+            record.position_id,
         )
-        if key in seen:
-            continue
-        seen.add(key)
-        if str(record.side).strip().lower() != "buy" and not states_openings:
-            held.add(key)
+        origins.setdefault(key, {key})
+        is_buy = str(record.side).strip().lower() == "buy"
+        if key not in seen:
+            seen.add(key)
+            if not is_buy and not states_openings:
+                held.update(origins[key])
+        if not states_openings:
+            qty = abs(record.quantity)
+            net_qty[key] = net_qty.get(key, 0.0) + (qty if is_buy else -qty)
+            if net_qty[key] < -1e-12:
+                held.update(origins[key])
     return held
 
 
@@ -253,13 +287,19 @@ def _run_fifo_ledger_simulation(
     for idx, tr in enumerate(ledger.trades):
         if tr.asset_class == AssetClass.CASH:
             continue
-        if _instrument_key(tr.symbol, tr.asset_class, tr.option_right, tr.strike, tr.expiry) in held_before:
+        tr_key = _instrument_key(
+            tr.symbol, tr.asset_class, tr.option_right, tr.strike, tr.expiry, tr.position_id
+        )
+        tr_base_key = _instrument_key(
+            tr.symbol, tr.asset_class, tr.option_right, tr.strike, tr.expiry, None
+        )
+        if tr_key in held_before or tr_base_key in held_before:
             continue
         events.append((parse_utc_timestamp(tr.timestamp_utc), 1, idx, tr))
 
     events.sort(key=lambda item: (item[0], item[1], item[2]))
 
-    lots_by_key: dict[tuple[str, str, str | None, float | None, str | None], deque[_OpenLot]] = {}
+    lots_by_key: dict[_InstrumentKey, deque[_OpenLot]] = {}
     closed_trips: list[ClosedRoundTrip] = []
     opening_fills: list[_OpeningFill] = []
     day_snapshots: list[_DayLiquidationSnapshot] = []
@@ -304,6 +344,7 @@ def _run_fifo_ledger_simulation(
             record.option_right,
             record.strike,
             record.expiry,
+            record.position_id,
         )
         queue = lots_by_key.setdefault(key, deque())
 
@@ -781,7 +822,11 @@ def _generate_actionable_improvements(
             f"Accumulate at least {min_trades_gate} closed round-trips (currently {observed_trades} "
             f"across {observed_days} calendar days) before drawing firm behavioural conclusions."
         )
-        if cost_drag is not None and cost_drag.total_friction_drag_bps >= 25.0:
+        if (
+            cost_drag is not None
+            and cost_drag.total_friction_drag_bps is not None
+            and cost_drag.total_friction_drag_bps >= 25.0
+        ):
             improvements.append(
                 "Review execution commissions, financing charges, and FX conversion spreads to keep friction drag contained."
             )
@@ -809,15 +854,21 @@ def _generate_actionable_improvements(
         )
 
     if cost_drag is not None:
-        if cost_drag.fx_conversion_drag_bps >= 5.0:
+        if cost_drag.fx_conversion_drag_bps is not None and cost_drag.fx_conversion_drag_bps >= 5.0:
             improvements.append(
                 "Batch cross-currency conversions or route through institutional spot FX pairs to reduce conversion spread drag."
             )
-        if cost_drag.commission_and_fee_drag_bps >= 15.0:
+        if (
+            cost_drag.commission_and_fee_drag_bps is not None
+            and cost_drag.commission_and_fee_drag_bps >= 15.0
+        ):
             improvements.append(
                 "Use passive limit orders where liquidity permits to lower cumulative commission and exchange fee drag."
             )
-        if cost_drag.margin_and_funding_drag_bps >= 15.0:
+        if (
+            cost_drag.margin_and_funding_drag_bps is not None
+            and cost_drag.margin_and_funding_drag_bps >= 15.0
+        ):
             improvements.append(
                 "Evaluate margin utilization and perpetual funding carry schedules to reduce financing drag."
             )
@@ -1042,8 +1093,13 @@ def compute_quant_dna_profile(
     event_window_share_pct: float = 0.0,
     max_drawdown_decimal: float | None = None,
     closed_round_trips: Sequence[ClosedRoundTrip] | None = None,
-) -> QuantDnaProfile:
+) -> QuantDnaProfile | None:
     """Compute a 6-axis ``0.0..100.0`` normalized ``QuantDnaProfile`` and constructive archetype."""
+    if (
+        cost_drag.annualized_total_drag_bps is None
+        or cost_drag.total_friction_drag_bps is None
+    ):
+        return None
     nav_dd_series = _build_nav_drawdown_series(ledger)
     if max_drawdown_decimal is not None and math.isfinite(max_drawdown_decimal):
         dd_mag = abs(float(max_drawdown_decimal))

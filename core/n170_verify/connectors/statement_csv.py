@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 from io import StringIO
+import math
 import re
 from typing import Any
 
@@ -73,7 +74,7 @@ _FORMULA_TRIGGER_CHARS: frozenset[str] = frozenset(
 )
 
 _XXE_DECL_SYSTEM_PUBLIC_RE = re.compile(
-    rb"<![^>]*?\b(?:doctype|entity|element|attlist|system|public)\b",
+    rb"<![^<>]{0,4096}\b(?:doctype|entity|element|attlist|system|public)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _XXE_EXTERNAL_URI_RE = re.compile(
@@ -297,6 +298,8 @@ def _parse_localized_float(raw: str | None, *, default: float | None = None) -> 
         val = float(cleaned)
     except ValueError:
         return default
+    if not math.isfinite(val) or abs(val) > 1e30:
+        raise ValueError(f"Non-finite or out-of-range numeric value rejected: {raw!r}")
     if neg and val > 0:
         val = -val
     return 0.0 if val == 0.0 else val
@@ -642,7 +645,7 @@ def parse_degiro_csv_bundle(
         c_oid_acct = _find_col(hdrs, ("order id", "order-id"))
         has_separate_tx = len(tx_rows) >= 2
         trade_desc_re = re.compile(
-            r"^\s*(koop|buy|kauf|verkoop|sell|verkauf)\s+([0-9.,]+)\s*@\s*([0-9.,]+)(?:\s+([A-Za-z]{3}))?",
+            r"^\s*(koop|buy|kauf|achat|verkoop|sell|verkauf|vente)\s+([0-9.,]+)(?:\s+[^\s@]{1,32}){0,4}\s*@\s*([0-9.,]+)(?:\s+([A-Za-z]{3}))?",
             re.IGNORECASE,
         )
 
@@ -702,7 +705,7 @@ def parse_degiro_csv_bundle(
                 t_qty = _parse_localized_float(m_trade.group(2)) or 0.0
                 t_px = _parse_localized_float(m_trade.group(3)) or 0.0
                 t_ccy = (m_trade.group(4) or ccy or base_ccy).upper()
-                t_side = "buy" if verb_low in {"koop", "buy", "kauf"} else "sell"
+                t_side = "buy" if verb_low in {"koop", "buy", "kauf", "achat"} else "sell"
                 sym_key = isin or prod_name or f"INST-{a_idx}"
                 if t_qty > 0.0 and t_px >= 0.0:
                     oid = sanitize_csv_text_field(_cell(row, c_oid_acct)) or f"degiro-acct-{a_idx}"
@@ -727,7 +730,11 @@ def parse_degiro_csv_bundle(
                         )
                     )
                     signed_q = abs(t_qty) if t_side == "buy" else -abs(t_qty)
-                    open_qty_by_sym[sym_key] = round(open_qty_by_sym.get(sym_key, 0.0) + signed_q, 8)
+                    new_open_q = round(open_qty_by_sym.get(sym_key, 0.0) + signed_q, 8)
+                    if new_open_q < -1e-8:
+                        # A sale exceeded known opening shares, so shares were held before the statement.
+                        acct_flat_nav_by_ts.clear()
+                    open_qty_by_sym[sym_key] = new_open_q
             elif amt is not None and amt != 0.0:
                 kind = _classify_degiro_account_flow(desc, amt)
                 if kind is not None:
@@ -852,7 +859,7 @@ def parse_degiro_csv_bundle(
     all_ts = [t.timestamp_utc for t in trades] + [f.timestamp_utc for f in flows]
     period_start = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     period_end = max(all_ts) if all_ts else "2025-01-01T00:00:00Z"
-    if ending_nav > 0.0:
+    if "degiro_portfolio_csv" in enabled_sections:
         nav_points = [
             NormalizedNavPoint(timestamp_utc=period_end, nav_base=ending_nav, cash_base=ending_cash)
         ]

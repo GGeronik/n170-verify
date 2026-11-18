@@ -470,9 +470,20 @@ class StatementCurrencyLabelTests(unittest.TestCase):
             {"broker_id": "mt5_statement", "raw_statement": _MT5_NO_CURRENCY, "account_blinding_salt_hex": _SALT,
              "issued_at_utc": "2026-04-15T12:00:00Z"}
         )["base_currency"]
+        for mismatched_broker in ("degiro", "degiro_csv"):
+            with self.subTest(mismatched_broker=mismatched_broker):
+                with self.assertRaises(ValueError):
+                    api_worker_pipeline_entrypoint(
+                        {
+                            "broker_id": mismatched_broker,
+                            "raw_statement": _MT5_NO_CURRENCY,
+                            "account_blinding_salt_hex": _SALT,
+                            "issued_at_utc": "2026-04-15T12:00:00Z",
+                        }
+                    )
         for extra in (
-            {"broker_id": "degiro"},
-            {"broker_id": "degiro_csv"},
+            {"broker_id": "mt5"},
+            {"broker_id": "auto_detect", "base_currency": "EUR"},
             {"broker_id": "mt5_statement", "base_currency": "EUR", "base_currency_explicit": True},
         ):
             with self.subTest(extra=sorted(extra.items())):

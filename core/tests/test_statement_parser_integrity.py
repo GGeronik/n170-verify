@@ -330,13 +330,21 @@ class TestMetaTraderBalanceReconciliation(unittest.TestCase):
 
 class TestMetaTraderEquityTimestamp(unittest.TestCase):
     def test_equity_is_not_stamped_at_the_last_deal(self) -> None:
-        html = _mt4(
+        html_open = _mt4(
             _MT4_WITH_DEPOSIT + _MT4_OPEN,
             "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>8000.00</td>",
         )
-        ledger = parse_mt4_statement(html, blinding_salt_hex=_SALT)
-        self.assertNotIn(8000.0, [p.nav_base for p in ledger.nav_points])
-        self.assertEqual(ledger.nav_points[-1].timestamp_utc, "2026-02-06T10:00:00Z")
+        ledger_open = parse_mt4_statement(html_open, blinding_salt_hex=_SALT)
+        self.assertEqual(ledger_open.nav_points, [])
+        self.assertTrue(_verify(ledger_open).performance_withheld)
+
+        html_flat = _mt4(
+            _MT4_WITH_DEPOSIT,
+            "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>8000.00</td>",
+        )
+        ledger_flat = parse_mt4_statement(html_flat, blinding_salt_hex=_SALT)
+        self.assertNotIn(8000.0, [p.nav_base for p in ledger_flat.nav_points])
+        self.assertEqual(ledger_flat.nav_points[-1].timestamp_utc, "2026-02-06T10:00:00Z")
 
     def test_equity_is_stamped_at_a_stated_report_time(self) -> None:
         html = _mt4(
@@ -381,13 +389,24 @@ class TestMetaTraderBalanceOnlyWhileFlat(unittest.TestCase):
 
     def test_mt4_balance_while_a_position_is_open_is_not_a_valuation(self) -> None:
         open_since_day_two = _MT4_OPEN.replace("2026.02.20 12:00:00", "2026.02.03 09:00:00")
-        html = _mt4(
+        html_no_report = _mt4(
             _MT4_WITH_DEPOSIT + open_since_day_two,
             "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>8000.00</td>",
         )
-        ledger = parse_mt4_statement(html, blinding_salt_hex=_SALT)
-        self.assertEqual([p.timestamp_utc for p in ledger.nav_points], ["2026-02-02T08:00:00Z"])
-        self.assertTrue(_verify(ledger).performance_withheld)
+        ledger_no_report = parse_mt4_statement(html_no_report, blinding_salt_hex=_SALT)
+        self.assertEqual(ledger_no_report.nav_points, [])
+        self.assertTrue(_verify(ledger_no_report).performance_withheld)
+
+        html_with_report = _mt4(
+            _MT4_WITH_DEPOSIT + open_since_day_two,
+            "<td>Balance:</td><td>11 000.00</td><td>Equity:</td><td>8000.00</td>",
+            report="<td><b>Date: 2026.02.27 18:00</b></td>",
+        )
+        ledger_with_report = parse_mt4_statement(html_with_report, blinding_salt_hex=_SALT)
+        self.assertEqual(
+            [p.timestamp_utc for p in ledger_with_report.nav_points],
+            ["2026-02-02T08:00:00Z", "2026-02-27T18:00:00Z"],
+        )
 
     def test_mt4_balance_inside_an_overlapping_trade_is_not_a_valuation(self) -> None:
         body = (

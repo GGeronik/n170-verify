@@ -107,12 +107,36 @@ def build_redacted_summary_payload(
     """Construct a strictly PII-free and dollar-free dimensionless metrics dictionary (<2,500 tokens)."""
     payload: dict[str, Any] = {
         "cost_drag_bps": {
-            "commission_and_fee_bps": round(cost_drag.commission_and_fee_drag_bps, 2),
-            "margin_and_funding_bps": round(cost_drag.margin_and_funding_drag_bps, 2),
-            "fx_conversion_bps": round(cost_drag.fx_conversion_drag_bps, 2),
-            "withholding_tax_bps": round(cost_drag.withholding_tax_drag_bps, 2),
-            "total_friction_bps": round(cost_drag.total_friction_drag_bps, 2),
-            "annualized_total_bps": round(cost_drag.annualized_total_drag_bps, 2),
+            "commission_and_fee_bps": (
+                round(cost_drag.commission_and_fee_drag_bps, 2)
+                if cost_drag.commission_and_fee_drag_bps is not None
+                else None
+            ),
+            "margin_and_funding_bps": (
+                round(cost_drag.margin_and_funding_drag_bps, 2)
+                if cost_drag.margin_and_funding_drag_bps is not None
+                else None
+            ),
+            "fx_conversion_bps": (
+                round(cost_drag.fx_conversion_drag_bps, 2)
+                if cost_drag.fx_conversion_drag_bps is not None
+                else None
+            ),
+            "withholding_tax_bps": (
+                round(cost_drag.withholding_tax_drag_bps, 2)
+                if cost_drag.withholding_tax_drag_bps is not None
+                else None
+            ),
+            "total_friction_bps": (
+                round(cost_drag.total_friction_drag_bps, 2)
+                if cost_drag.total_friction_drag_bps is not None
+                else None
+            ),
+            "annualized_total_bps": (
+                round(cost_drag.annualized_total_drag_bps, 2)
+                if cost_drag.annualized_total_drag_bps is not None
+                else None
+            ),
         },
         "behaviour": {
             "sample_eligible": behaviour.sample_eligible,
@@ -177,10 +201,15 @@ def build_deterministic_coaching_narrative(
 ) -> CoachingNarrativeResult:
     """Generate a 100% deterministic, offline, claim-safe coaching summary and takeaways."""
     if not behaviour.sample_eligible:
+        drag_clause = (
+            f" with {cost_drag.total_friction_drag_bps:.1f} bps cumulative friction drag"
+            if cost_drag.total_friction_drag_bps is not None
+            else ""
+        )
         style_summary = (
             f"Developing activity profile ({behaviour.observed_trades} closed round-trips over "
-            f"{behaviour.observed_days} days; below the {behaviour.min_trades_gate}-trade sample gate) "
-            f"with {cost_drag.total_friction_drag_bps:.1f} bps cumulative friction drag."
+            f"{behaviour.observed_days} days; below the {behaviour.min_trades_gate}-trade sample gate)"
+            f"{drag_clause}."
         )
     else:
         horizon_text = behaviour.holding_horizon_label.replace("_", " ")
@@ -194,10 +223,14 @@ def build_deterministic_coaching_narrative(
             )
         else:
             sizing_phrase = "steady risk deployment"
+        drag_clause = (
+            f" and {cost_drag.total_friction_drag_bps:.1f} bps total friction drag"
+            if cost_drag.total_friction_drag_bps is not None
+            else ""
+        )
         style_summary = (
             f" Institutional {horizon_text} profile ({wr_pct:.1f}% win rate across "
-            f"{behaviour.observed_trades} round-trips) exhibiting {sizing_phrase} and "
-            f"{cost_drag.total_friction_drag_bps:.1f} bps total friction drag."
+            f"{behaviour.observed_trades} round-trips) exhibiting {sizing_phrase}{drag_clause}."
         ).strip()
 
     takeaways = list(behaviour.actionable_improvements)

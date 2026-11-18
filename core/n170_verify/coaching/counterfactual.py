@@ -96,7 +96,7 @@ def simulate_counterfactual_twin(
     forex_midpoints: Mapping[str, object] | None = None,
     atr_14_series: Mapping[str, Any] | None = None,
     scored_period_returns: Sequence[float] | None = None,
-) -> CounterfactualTwinReport:
+) -> CounterfactualTwinReport | None:
     """Simulate 3 hypothetical coaching counterfactual wealth paths rebased at ``1.0``.
 
     1. ``zero_friction``: Re-compounds returns adding back commissions, FX conversion spread
@@ -111,6 +111,19 @@ def simulate_counterfactual_twin(
     When ``scored_period_returns`` is given (the performance calculator's per-interval
     returns), the ``actual`` path is exactly that scored path, never a second calculation.
     """
+    resolved_cost_drag = (
+        cost_drag
+        if cost_drag is not None
+        else compute_cost_and_drag_breakdown(ledger, forex_midpoints=forex_midpoints)
+    )
+    if (
+        resolved_cost_drag.total_friction_drag_bps is None
+        or resolved_cost_drag.commission_and_fee_drag_bps is None
+        or resolved_cost_drag.fx_conversion_drag_bps is None
+        or resolved_cost_drag.margin_and_funding_drag_bps is None
+        or resolved_cost_drag.withholding_tax_drag_bps is None
+    ):
+        return None
     nav_sorted = _deduplicated_positive_navs(ledger)
     if len(nav_sorted) < 2:
         fallback_date = (
@@ -181,11 +194,6 @@ def simulate_counterfactual_twin(
         ]
 
     n_steps = len(intervals)
-    resolved_cost_drag = (
-        cost_drag
-        if cost_drag is not None
-        else compute_cost_and_drag_breakdown(ledger, forex_midpoints=forex_midpoints)
-    )
     trips = (
         list(closed_round_trips)
         if closed_round_trips is not None

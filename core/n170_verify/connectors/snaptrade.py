@@ -602,14 +602,22 @@ def _extract_units(item: Mapping[str, Any]) -> float:
     raw_u = item.get("units")
     if raw_u is not None and raw_u != "":
         val = float(raw_u)
+        if not math.isfinite(val) or abs(val) > 1e30:
+            raise ValueError(f"Non-finite or out-of-range SnapTrade units: {raw_u!r}")
         if val != 0.0 or item.get("fractional_units") in (None, ""):
             return val
     raw_frac = item.get("fractional_units")
     if raw_frac is not None and raw_frac != "":
-        return float(raw_frac)
+        val_f = float(raw_frac)
+        if not math.isfinite(val_f) or abs(val_f) > 1e30:
+            raise ValueError(f"Non-finite or out-of-range SnapTrade fractional_units: {raw_frac!r}")
+        return val_f
     raw_qty = item.get("quantity")
     if raw_qty is not None and raw_qty != "":
-        return float(raw_qty)
+        val_q = float(raw_qty)
+        if not math.isfinite(val_q) or abs(val_q) > 1e30:
+            raise ValueError(f"Non-finite or out-of-range SnapTrade quantity: {raw_qty!r}")
+        return val_q
     return 0.0
 
 
@@ -683,7 +691,7 @@ def _parse_currency_rate_pairs(
                     rate_val = float(raw_rate)
                 except (TypeError, ValueError):
                     continue
-                if rate_val > 0.0:
+                if math.isfinite(rate_val) and 0.0 < rate_val <= 1e30:
                     pair_rates[(src, dst)] = rate_val
     elif isinstance(raw_currency_rates, Mapping):
         raw_conversion_rates = (
@@ -700,7 +708,7 @@ def _parse_currency_rate_pairs(
                 rate_val = float(raw_v)
             except (TypeError, ValueError):
                 continue
-            if rate_val <= 0.0:
+            if not math.isfinite(rate_val) or rate_val <= 0.0 or rate_val > 1e30:
                 continue
             key_str = str(raw_k).strip().upper()
             if "/" in key_str:

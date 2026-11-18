@@ -1397,16 +1397,16 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
 
         # 2. Multi-day wallet with `allTime` + intraday `day`/`week` buckets to 1 UTC close per day,
         # and `verify_portfolio` defaults `cash_flow_timing` to `modified_dietz` for `hyperliquid`
-        d1_ms = int(dt.datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        d2_ms = int(dt.datetime(2026, 2, 2, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        d3_ms = int(dt.datetime(2026, 2, 3, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        d1_ms = int(dt.datetime(2026, 2, 1, 23, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        d2_ms = int(dt.datetime(2026, 2, 2, 23, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        d3_ms = int(dt.datetime(2026, 2, 3, 23, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
         multi_win = [
             ["allTime", {"accountValueHistory": [[d1_ms, "10000.0"], [d2_ms, "10500.0"], [d3_ms, "11200.0"]]}],
             [
                 "day",
                 {
                     "accountValueHistory": [
-                        [d3_ms + h * 3600_000, str(11200.0 + h * 20.0)] for h in range(1, 13)
+                        [d3_ms - (12 - h) * 3600_000, str(11000.0 + h * 20.0)] for h in range(1, 13)
                     ]
                 },
             ],

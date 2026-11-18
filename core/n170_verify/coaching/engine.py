@@ -112,12 +112,15 @@ class TraderCoachingEngine:
         max_drawdown_decimal: float | None = None,
         scored_period_returns: Sequence[float] | None = None,
         performance_withheld: bool = False,
+        annualization_allowed: bool = True,
     ) -> CoachingEngineOutput:
         """Compute ``TraderCoachingAndContextReport`` and 7-day-delayed ``RedactedClosedTrade`` list."""
         cost_drag = compute_cost_and_drag_breakdown(
             ledger,
             forex_midpoints=forex_midpoints,
         )
+        if not annualization_allowed and not performance_withheld:
+            cost_drag = dataclasses.replace(cost_drag, annualized_total_drag_bps=None)
         closed_trips = match_fifo_round_trips(ledger)
         behaviour = compute_behavioural_coaching_metrics(
             ledger,
@@ -282,6 +285,7 @@ def build_trader_coaching_report(
     enable_llm_narrative: bool = True,
     imported_journal_tags: Sequence[str] | None = None,
     max_drawdown_decimal: float | None = None,
+    annualization_allowed: bool = True,
 ) -> TraderCoachingAndContextReport:
     """Convenience entrypoint returning a validated ``TraderCoachingAndContextReport``."""
     engine = TraderCoachingEngine(llm_client=llm_client)
@@ -299,6 +303,7 @@ def build_trader_coaching_report(
         enable_llm_narrative=enable_llm_narrative,
         imported_journal_tags=imported_journal_tags,
         max_drawdown_decimal=max_drawdown_decimal,
+        annualization_allowed=annualization_allowed,
     )
     return output.report
 

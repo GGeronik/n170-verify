@@ -6,9 +6,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import ipaddress
 import re
 import unicodedata
 from typing import Any
+import urllib.parse
 
 from n170_verify.contracts.assurance import (
     AccountScope,
@@ -64,21 +66,110 @@ ALLOWED_RETENTION_MODES: frozenset[str] = frozenset(
         "opt_in_encrypted_sync",
     }
 )
-_HOLDER_HANDLE_RE = re.compile(r"^@[A-Za-z0-9_.\-]{1,32}$")
+_HOLDER_HANDLE_RE = re.compile(r"^@[A-Za-z0-9_.\-]{1,32}\Z")
 _FORBIDDEN_HOLDER_CHARS_RE = re.compile(r'[<>"\'`\x00-\x1f\x7f]')
+_FORBIDDEN_HOLDER_CATEGORIES: frozenset[str] = frozenset(
+    {"Cf", "Cc", "Cs", "Co", "Cn", "Zl", "Zp"}
+)
+_FORBIDDEN_HOLDER_CODEPOINTS: frozenset[int] = frozenset(
+    {0x034F, 0x061C, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
+)
+_BLANK_FILLER_LETTERS: frozenset[int] = frozenset({0x115F, 0x1160, 0x3164, 0xFFA0})
+
+
+def _is_forbidden_holder_char(ch: str) -> bool:
+    cat = unicodedata.category(ch)
+    if cat in _FORBIDDEN_HOLDER_CATEGORIES:
+        return True
+    if cat == "Zs" and ch != " ":
+        return True
+    cp = ord(ch)
+    return (
+        cp in _FORBIDDEN_HOLDER_CODEPOINTS
+        or 0x180B <= cp <= 0x180F
+        or 0xFE00 <= cp <= 0xFE0F
+        or 0xFFF0 <= cp <= 0xFFFF
+        or 0xE0100 <= cp <= 0xE01EF
+    )
 
 
 def holder_text_has_format_character(*values: str | None) -> bool:
-    """True when any holder text holds a Unicode format character (category Cf).
-
-    Bidi controls, zero-width characters, the soft hyphen, word joiners, the byte order
-    mark and tag characters change how a name reads without being visible, so a holder
-    claim that holds one is not a valid claim.
-    """
+    """True when any holder text holds a forbidden Unicode format, control, separator, or ignorable character."""
     return any(
-        value is not None and any(unicodedata.category(ch) == "Cf" for ch in value)
+        value is not None and any(_is_forbidden_holder_char(ch) for ch in value)
         for value in values
     )
+
+
+def holder_claim_fields_are_valid(att: HolderIdentityAttestation) -> bool:
+    """Validate holder display_name, handle, and profile_url for verification parity across core/api/web."""
+    name = att.display_name
+    if (
+        not name
+        or len(name) > 64
+        or _FORBIDDEN_HOLDER_CHARS_RE.search(name)
+        or any(_is_forbidden_holder_char(ch) for ch in name)
+    ):
+        return False
+    if not any(
+        unicodedata.category(ch)[0] in {"L", "N"} and ord(ch) not in _BLANK_FILLER_LETTERS
+        for ch in name
+    ):
+        return False
+
+    if att.handle is not None:
+        if not _HOLDER_HANDLE_RE.match(att.handle) or any(
+            _is_forbidden_holder_char(ch) for ch in att.handle
+        ):
+            return False
+
+    if att.profile_url is not None:
+        url = att.profile_url
+        if (
+            not url.startswith("https://")
+            or len(url) > 180
+            or _FORBIDDEN_HOLDER_CHARS_RE.search(url)
+            or any(ch.isspace() or _is_forbidden_holder_char(ch) for ch in url)
+        ):
+            return False
+        try:
+            unquoted = urllib.parse.unquote(url, errors="strict")
+        except UnicodeError:
+            return False
+        if any(_is_forbidden_holder_char(ch) for ch in unquoted):
+            return False
+        try:
+            parts = urllib.parse.urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return False
+        if (
+            parts.scheme != "https"
+            or parts.username is not None
+            or parts.password is not None
+            or "@" in parts.netloc
+            or port is not None
+            or ":" in parts.netloc
+        ):
+            return False
+        host = parts.hostname
+        if (
+            not host
+            or "." not in host
+            or host.startswith(".")
+            or host.endswith(".")
+            or host.lower() == "localhost"
+        ):
+            return False
+        try:
+            ipaddress.ip_address(host.strip("[]"))
+            return False
+        except ValueError:
+            pass
+        if all(seg.isdigit() for seg in host.split(".")):
+            return False
+
+    return True
 
 
 @dataclass(slots=True)
@@ -101,7 +192,7 @@ class HolderIdentityAttestation(ContractModelMixin):
             raise ValueError(
                 f"HolderIdentityAttestation.schema_version must be {HOLDER_SCHEMA_VERSION!r}"
             )
-        clean_name = self.display_name.strip()
+        clean_name = self.display_name.strip(" \t\r\n")
         if (
             not clean_name
             or len(clean_name) > 64
@@ -559,7 +650,7 @@ def verify_proof_bundle(
             att.proof_id != proof_bundle.proof_id
             or att.merkle_root != proof_bundle.merkle_root
             or att.proof_hash != proof_bundle.proof_hash()
-            or holder_text_has_format_character(att.display_name, att.handle, att.profile_url)
+            or not holder_claim_fields_are_valid(att)
             or not att.verify_signature()
         ):
             holder_claim_status = HolderClaimStatus.INVALID

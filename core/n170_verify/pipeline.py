@@ -75,6 +75,7 @@ from n170_verify.contracts import (
     VerifyProofBundle,
     compute_blinded_account_tag,
     create_signed_proof_bundle,
+    format_utc_timestamp,
     parse_utc_timestamp,
     verify_proof_bundle,
 )
@@ -234,6 +235,52 @@ def _call_adapter_fetch(
 EARLIEST_ACTIVITY_DATE_UTC = "1980-01-01T00:00:00Z"
 
 
+def _clamp_same_day_eod_valuations(
+    ledger: CanonicalPortfolioLedger, issued_at_utc: str
+) -> CanonicalPortfolioLedger:
+    """Clamp date-only 23:59:59Z valuations on the exact UTC issue date to ``issued_at_utc``."""
+    if not ledger.nav_points:
+        return ledger
+    issued_dt = parse_utc_timestamp(issued_at_utc)
+    if any(
+        parse_utc_timestamp(ts) > issued_dt
+        for ts in (
+            [t.timestamp_utc for t in ledger.trades]
+            + [f.timestamp_utc for f in ledger.flows]
+            + [c.timestamp_utc for c in ledger.corporate_actions]
+        )
+    ):
+        return ledger
+
+    future_navs = [
+        (idx, pt, parse_utc_timestamp(pt.timestamp_utc))
+        for idx, pt in enumerate(ledger.nav_points)
+        if parse_utc_timestamp(pt.timestamp_utc) > issued_dt
+    ]
+    if not future_navs:
+        return ledger
+    if not all(
+        dt.date() == issued_dt.date()
+        and dt.hour == 23
+        and dt.minute == 59
+        and dt.second == 59
+        and dt.microsecond == 0
+        for _, _, dt in future_navs
+    ):
+        return ledger
+
+    issued_norm = format_utc_timestamp(issued_dt)
+    clamped_stamps = {pt.timestamp_utc for _, pt, _ in future_navs}
+    ledger_dict = ledger.to_dict()
+    for idx, _, _ in future_navs:
+        ledger_dict["nav_points"][idx]["timestamp_utc"] = issued_norm
+    if ledger.period_end_utc in clamped_stamps:
+        ledger_dict["period_end_utc"] = issued_norm
+    if ledger.period_start_utc in clamped_stamps:
+        ledger_dict["period_start_utc"] = issued_norm
+    return CanonicalPortfolioLedger.from_dict(ledger_dict)
+
+
 def _refuse_activity_outside_issue_window(
     ledger: CanonicalPortfolioLedger, issued_at_utc: str
 ) -> None:
@@ -249,9 +296,15 @@ def _refuse_activity_outside_issue_window(
     for label, ts in dated:
         when = parse_utc_timestamp(ts)
         if when > issued_dt:
+            ahead_sec = (when - issued_dt).total_seconds()
+            tz_hint = (
+                " (broker-local server timestamps ahead of UTC cannot be signed before that UTC instant has passed)"
+                if 0.0 < ahead_sec <= 14 * 3600.0
+                else ""
+            )
             raise ValueError(
                 f"The input holds a {label} dated {ts}, after the record's issue time "
-                f"{issued_at_utc}; a record cannot describe activity that has not happened"
+                f"{issued_at_utc}; a record cannot describe activity that has not happened{tz_hint}"
             )
         if when < floor_dt:
             raise ValueError(
@@ -293,7 +346,14 @@ def _activity_inside_scored_span(
         return start_dt <= parse_utc_timestamp(ts) <= end_dt
 
     def _instrument(t: Any) -> tuple[Any, ...]:
-        return (t.symbol.strip().upper(), t.asset_class, t.option_right, t.strike, t.expiry)
+        return (
+            t.symbol.strip().upper(),
+            t.asset_class,
+            t.option_right,
+            t.strike,
+            t.expiry,
+            getattr(t, "position_id", None),
+        )
 
     held_into = {
         _instrument(t) for t in ledger.trades if parse_utc_timestamp(t.timestamp_utc) < start_dt
@@ -819,6 +879,7 @@ def verify_portfolio(
         allow_filesystem_paths=allow_filesystem_paths,
     )
 
+    canonical_ledger = _clamp_same_day_eod_valuations(canonical_ledger, issued_iso)
     _refuse_activity_outside_issue_window(canonical_ledger, issued_iso)
 
     # 2. Resolve optional market reference provider (EODHD when configured, else NullReferenceProvider)
@@ -889,6 +950,7 @@ def verify_portfolio(
             else [obs.period_return for obs in perf_calc.return_observations]
         ),
         performance_withheld=perf_calc.withheld,
+        annualization_allowed=(perf_calc.annualization_periods_per_year is not None),
     )
     delayed_trades = coaching_out.delayed_closed_trades
     stripped_recent_count = max(0, len(all_round_trips) - len(delayed_trades))
@@ -1089,7 +1151,7 @@ _PAPER_OR_SANDBOX_URL_TOKENS: tuple[str, ...] = ("paper", "sandbox", "demo", "te
 # The account-tag salt and the queried account identity come from the server and the
 # connector credentials; fetch options may only narrow what is read.
 _WORKER_SERVER_ONLY_FETCH_KEYS: frozenset[str] = frozenset(
-    {"blinding_salt_hex", "wallet_address", "address", "user"}
+    {"blinding_salt_hex", "wallet_address", "address", "user", "as_of_utc"}
 )
 
 
@@ -1379,6 +1441,8 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
 
     bundle = output.proof_bundle
     alias_preserve_pairs = {
+        ("ibkr_flex", "ibkr"),
+        ("ibkr_flex_offline", "ibkr"),
         ("ibkr_flex", "ibkr_flex_offline"),
         ("degiro", "degiro_csv"),
         ("robinhood", "robinhood_csv"),
@@ -1389,11 +1453,41 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         ("tradersync", "tradersync_journal"),
         ("tradezella", "tradezella_journal"),
     }
-    if detected_offline_broker_id is not None:
-        if (broker_id, detected_offline_broker_id) in alias_preserve_pairs and broker_id:
-            resolved_broker_id = broker_id
+    allowed_statement_broker_pairs = alias_preserve_pairs | {
+        (b, a) for a, b in alias_preserve_pairs
+    }
+    has_statement_input = any(
+        item is not None
+        for item in (
+            detected_offline_ledger,
+            flex_xml,
+            csv_source,
+            degiro_account_bytes,
+            degiro_tx_bytes,
+            degiro_port_bytes,
+        )
+    )
+    if has_statement_input:
+        is_auto = broker_id in {None, "", "auto_detect"} or (
+            broker_id == "journal_migration" and bundle.broker_id in {"tradersync", "tradezella"}
+        )
+        if (
+            not is_auto
+            and broker_id != bundle.broker_id
+            and (broker_id, bundle.broker_id) not in allowed_statement_broker_pairs
+        ):
+            raise ValueError(
+                f"Requested broker_id {broker_id!r} does not match uploaded statement broker {bundle.broker_id!r}"
+            )
+        if detected_offline_broker_id is not None:
+            if (broker_id, detected_offline_broker_id) in alias_preserve_pairs and broker_id:
+                resolved_broker_id = broker_id
+            else:
+                resolved_broker_id = detected_offline_broker_id
+        elif is_auto:
+            resolved_broker_id = bundle.broker_id
         else:
-            resolved_broker_id = detected_offline_broker_id
+            resolved_broker_id = broker_id
     elif broker_id in {None, "", "auto_detect", "journal_migration"}:
         resolved_broker_id = bundle.broker_id
     else:

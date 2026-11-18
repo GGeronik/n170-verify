@@ -583,7 +583,7 @@ def calculate_portfolio_performance_detailed(
         annualization_factor = None
         warnings.append(
             f"The annualised figures are withheld because the scored series has {refusal}: "
-            "CAGR, volatility, Sharpe, Sortino, the probabilistic Sharpe ratio and the "
+            "CAGR, XIRR, volatility, Sharpe, Sortino, the probabilistic Sharpe ratio and the "
             "information ratio."
         )
     elif periods_per_year is not None:
@@ -599,7 +599,7 @@ def calculate_portfolio_performance_detailed(
             cagr_decimal = None
     elif annualization_factor is not None:
         warnings.append(
-            f"CAGR is withheld because the scored series spans less than {MIN_CAGR_SPAN_DAYS:g} days."
+            f"CAGR and XIRR are withheld because the scored series spans less than {MIN_CAGR_SPAN_DAYS:g} days."
         )
 
     ann_vol: float | None = None
@@ -625,12 +625,15 @@ def calculate_portfolio_performance_detailed(
     else:
         warnings.append("Volatility, Sharpe, and Sortino require at least two return observations.")
 
-    xirr_cfs: list[tuple[datetime, float]] = [(start_ts, -float(nav_sorted[0][1].nav_base))]
-    for fts, fl in in_period_flows:
-        xirr_cfs.append((fts, -_signed_flow_amount_base(fl)))
-    xirr_cfs.append((end_ts, float(nav_sorted[-1][1].nav_base)))
-    xirr_val, xirr_warnings = solve_xirr_act365(xirr_cfs, preferred_rate=cagr_decimal)
-    warnings.extend(xirr_warnings)
+    xirr_decimal: float | None = None
+    if annualization_factor is not None and elapsed_days >= MIN_CAGR_SPAN_DAYS:
+        xirr_cfs: list[tuple[datetime, float]] = [(start_ts, -float(nav_sorted[0][1].nav_base))]
+        for fts, fl in in_period_flows:
+            xirr_cfs.append((fts, -_signed_flow_amount_base(fl)))
+        xirr_cfs.append((end_ts, float(nav_sorted[-1][1].nav_base)))
+        xirr_val, xirr_warnings = solve_xirr_act365(xirr_cfs, preferred_rate=cagr_decimal)
+        xirr_decimal = xirr_val
+        warnings.extend(xirr_warnings)
 
     econ = evaluate_econometric_diagnostics(
         returns,
@@ -665,7 +668,7 @@ def calculate_portfolio_performance_detailed(
     summary = PerformanceSummary(
         twr_decimal=twr_decimal,
         cagr_decimal=cagr_decimal,
-        xirr_decimal=xirr_val,
+        xirr_decimal=xirr_decimal,
         annualized_volatility=ann_vol,
         smoothing_index_xi=econ.smoothing_index_xi,
         lag1_autocorrelation=econ.lag1_autocorrelation,

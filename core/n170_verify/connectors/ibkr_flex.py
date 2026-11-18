@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 from io import BytesIO
+import math
 from pathlib import Path
 import re
 import time
@@ -74,14 +75,14 @@ _SPLIT_RATIO_RE = re.compile(
     re.IGNORECASE,
 )
 _XML_ENCODING_DECL_RE = re.compile(
-    rb'(<\?xml[^>]*?\bencoding\s*=\s*["\'])([^"\']+)(["\'])',
+    rb'(<\?xml[^<>]{0,4096}\bencoding\s*=\s*["\'])([^"\']+)(["\'])',
     re.IGNORECASE,
 )
 _FLEX_FORMULA_TRIGGER_CHARS: frozenset[str] = frozenset(
     {"=", "+", "-", "@", "'", "|", "\t", "\r", "\n", "\v", "\f"}
 )
 _FLEX_XXE_DECL_RE = re.compile(
-    rb"<![^>]*?\b(?:doctype|entity|element|attlist|system|public)\b",
+    rb"<![^<>]{0,4096}\b(?:doctype|entity|element|attlist|system|public)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _FLEX_XXE_URI_RE = re.compile(
@@ -339,7 +340,12 @@ def _classify_corporate_action(attrs: dict[str, str]) -> tuple[CorporateActionTy
         try:
             n_val = float(ratio_match.group(1))
             d_val = float(ratio_match.group(2))
-            if n_val > 0 and d_val > 0:
+            if (
+                math.isfinite(n_val)
+                and math.isfinite(d_val)
+                and 0.0 < n_val <= 1e30
+                and 0.0 < d_val <= 1e30
+            ):
                 num, den = n_val, d_val
         except ValueError:
             pass

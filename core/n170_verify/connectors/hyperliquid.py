@@ -378,32 +378,79 @@ def _unvalued_inbound_warning(token_name: str) -> str:
     )
 
 
+_MIN_DAILY_CLOSE_GAP_MS = 20 * 3_600_000
+_MAX_DAILY_CLOSE_GAP_MS = 28 * 3_600_000
+
+
 def _restrict_to_daily_closes(
     points: list[NormalizedNavPoint],
+    nav_ms: Mapping[str, int] | None = None,
 ) -> tuple[list[NormalizedNavPoint], bool, str | None]:
     """Return the NAV points to score, whether earlier points were dropped, and a warning.
 
     Every return interval is scored as one daily period, so a scored series contains only
-    closes on consecutive UTC dates. When the series ends in such a run, only that run is
-    kept and the excluded snapshots are named in a parser warning. When it does not, the
-    record is withheld: Hyperliquid reports daily account history only for about the most
-    recent month, and older history is too coarse to score as days.
+    closes on consecutive UTC dates spaced 20h..28h apart. When the series ends in such a
+    run, only that run is kept and the excluded snapshots are named in a parser warning.
+    When it does not, the record is withheld: Hyperliquid reports daily account history only
+    for about the most recent month, and older history is too coarse to score as days.
     """
     if len(points) < 2:
         return points, False, None
-    dates = [datetime.fromisoformat(p.timestamp_utc[:10]).date() for p in points]
-    multi_day = [i for i in range(1, len(points)) if (dates[i] - dates[i - 1]).days > 1]
-    if not multi_day:
+
+    def _pt_ms(pt: NormalizedNavPoint) -> int:
+        if nav_ms is not None and pt.timestamp_utc in nav_ms:
+            return int(nav_ms[pt.timestamp_utc])
+        return int(round(parse_utc_timestamp(pt.timestamp_utc).timestamp() * 1000.0))
+
+    close_indices = [
+        idx
+        for idx, pt in enumerate(points)
+        if not (
+            pt.nav_base <= 0.0
+            and idx + 1 < len(points)
+            and points[idx + 1].timestamp_utc[:10] == pt.timestamp_utc[:10]
+        )
+    ]
+    if len(close_indices) < 2:
         return points, False, None
-    run_start = multi_day[-1]
-    if len(points) - run_start >= 2:
+
+    breaks: list[int] = []
+    for prev_idx, curr_idx in zip(close_indices, close_indices[1:]):
+        prev_date = datetime.fromisoformat(points[prev_idx].timestamp_utc[:10]).date()
+        curr_date = datetime.fromisoformat(points[curr_idx].timestamp_utc[:10]).date()
+        day_diff = (curr_date - prev_date).days
+        gap_ms = _pt_ms(points[curr_idx]) - _pt_ms(points[prev_idx])
+        if points[prev_idx].nav_base <= 0.0 or points[curr_idx].nav_base <= 0.0:
+            is_break = day_diff > 1
+        else:
+            is_break = (
+                day_diff != 1
+                or gap_ms < _MIN_DAILY_CLOSE_GAP_MS
+                or gap_ms > _MAX_DAILY_CLOSE_GAP_MS
+            )
+        if is_break:
+            start_idx = (
+                curr_idx - 1
+                if (
+                    curr_idx - 1 > prev_idx
+                    and points[curr_idx - 1].timestamp_utc[:10] == points[curr_idx].timestamp_utc[:10]
+                )
+                else curr_idx
+            )
+            breaks.append(start_idx)
+
+    if not breaks:
+        return points, False, None
+    run_start = breaks[-1]
+    remaining_closes = [idx for idx in close_indices if idx >= run_start]
+    if len(remaining_closes) >= 2:
         return (
             points[run_start:],
             True,
             (
                 f"Hyperliquid return series starts at {points[run_start].timestamp_utc}: "
-                f"{run_start} earlier snapshot(s) are not daily closes (spaced more than one day "
-                "apart) and were excluded so every scored interval is one day."
+                f"{run_start} earlier snapshot(s) are not daily closes (spaced outside the "
+                "20h-28h daily-close window) and were excluded so every scored interval is one day."
             ),
         )
     raise HyperliquidValidationError(
@@ -523,7 +570,7 @@ def _select_scored_nav_series(
             "needs at least one full UTC day between two closes"
         )
 
-    nav_points, truncated, spacing_warning = _restrict_to_daily_closes(nav_points)
+    nav_points, truncated, spacing_warning = _restrict_to_daily_closes(nav_points, selected_ms)
     return selected_window, nav_points, truncated, spacing_warning, selected_ms
 
 
