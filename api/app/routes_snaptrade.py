@@ -63,6 +63,12 @@ SNAPTRADE_UNCONFIGURED_DETAIL: str = (
 )
 # Every upstream user this relay creates carries this prefix; start-up clean-up touches no other id.
 SNAPTRADE_RELAY_USER_PREFIX: str = "n170-st-"
+# A failed start-up listing is retried after this wait, doubling up to the maximum.
+SWEEP_RETRY_INITIAL_SECONDS: float = 60.0
+SWEEP_RETRY_MAX_SECONDS: float = 900.0
+# A verify refusal with one of these reasons can succeed on retry (the visitor has not finished
+# linking an account yet), so the session and its seat are kept.
+_RETRYABLE_REFUSAL_MARKERS: tuple[str, ...] = ("No brokerage accounts are connected",)
 # The site's own public origin (for example https://verify.example.org); the only https
 # origin accepted for redirect_url. Unset means only local http://127.0.0.1 is accepted.
 SNAPTRADE_SITE_ORIGIN_ENV: str = "N170_VERIFY_SITE_ORIGIN"
@@ -174,9 +180,23 @@ def validate_snaptrade_redirect_url(
     )
 
 
-def _new_relay_user_id() -> str:
+def deployment_user_prefix(salt_hex: str) -> str:
+    """This deployment's upstream user-id prefix: ``n170-st-<tag>-``.
+
+    ``tag`` is the first 8 hex characters of HMAC-SHA256 keyed with the account blinding salt
+    over the fixed label ``n170.snaptrade.deployment.v1``. It tells this deployment's users
+    apart from those of another deployment sharing the consumer key; the salt itself is never
+    sent or recoverable from it.
+    """
+    tag = hmac.new(
+        bytes.fromhex(salt_hex), b"n170.snaptrade.deployment.v1", hashlib.sha256
+    ).hexdigest()[:8]
+    return f"{SNAPTRADE_RELAY_USER_PREFIX}{tag}-"
+
+
+def _new_relay_user_id(salt_hex: str) -> str:
     """A fresh random upstream user id for one portal call (never derived from caller input)."""
-    return f"{SNAPTRADE_RELAY_USER_PREFIX}{secrets.token_hex(12)}"
+    return f"{deployment_user_prefix(salt_hex)}{secrets.token_hex(12)}"
 
 
 def _derive_blinded_snaptrade_user_id(slot_label: str, salt_hex: str) -> str:
@@ -308,27 +328,50 @@ class SnapTradeRelayCoordinator:
         self._sessions: dict[str, _EphemeralSnapTradeSession] = {}
         self._labels_by_user: dict[str, str] = {}
         self._pending_upstream_deletes: set[str] = set()
+        # Users whose seat is reserved while their upstream registration is in flight.
+        self._reserved_users: set[str] = set()
         self._startup_cleanup_done = False
+        self._sweep_running = False
+        self._sweep_next_attempt = float("-inf")
+        self._sweep_backoff_seconds = SWEEP_RETRY_INITIAL_SECONDS
         self.startup_cleanup_warnings: list[str] = []
 
-    def cleanup_leftover_upstream_users_once(self, adapter: SnapTradeReadOnlyAdapter) -> int:
-        """Delete relay users left upstream by an earlier process; runs once per coordinator.
+    def _user_known_locked(self, user_id: str) -> bool:
+        """True when this process holds the user: a seat, a reservation or a live session."""
+        return (
+            self.slot_manager.is_user_registered(user_id)
+            or user_id in self._reserved_users
+            or any(s.user_id == user_id for s in self._sessions.values())
+        )
+
+    def cleanup_leftover_upstream_users_once(
+        self,
+        adapter: SnapTradeReadOnlyAdapter,
+        *,
+        user_prefix: str,
+    ) -> int:
+        """Delete this deployment's relay users left upstream by an earlier process.
 
         Sessions live only in memory, so users created before a restart can no longer be used
-        or released. Only build (non-personal) keys are touched, only ids carrying
-        ``SNAPTRADE_RELAY_USER_PREFIX`` are deleted, users with a live session here are kept,
-        and any upstream failure is recorded as a warning without stopping the API.
-
-        The whole sweep holds the relay lock, so no portal call can register a user while it
-        runs; each id is also re-checked against live sessions and registered slots right
-        before it is deleted, so a user known to this process is never removed.
+        or released. Only build (non-personal) keys are touched and only ids starting with
+        ``user_prefix`` (this deployment's own prefix) are deleted. No upstream call is made
+        while holding the relay lock: each id is checked under the lock right before its
+        delete, and a user with a seat, a reservation or a live session here is never removed.
+        The sweep is marked done only after a successful listing; after a failure the next
+        attempt waits SWEEP_RETRY_INITIAL_SECONDS, doubling up to SWEEP_RETRY_MAX_SECONDS, so a
+        failing upstream adds at most one slow call per wait. Failures never stop the API.
         """
+        if adapter.is_personal_key:
+            return 0
         with self._lock:
-            if self._startup_cleanup_done:
+            if (
+                self._startup_cleanup_done
+                or self._sweep_running
+                or self._clock() < self._sweep_next_attempt
+            ):
                 return 0
-            self._startup_cleanup_done = True
-            if adapter.is_personal_key:
-                return 0
+            self._sweep_running = True
+        try:
             try:
                 resp = adapter._execute_signed("GET", "/api/v1/snapTrade/listUsers")
                 listed = adapter._decode_json_or_raise(
@@ -336,21 +379,24 @@ class SnapTradeRelayCoordinator:
                 )
             except Exception as exc:  # noqa: BLE001 - start-up clean-up must never stop the API
                 self._record_cleanup_warning("listing upstream users failed", exc, adapter)
+                self._schedule_sweep_retry()
                 return 0
             if not isinstance(listed, list):
                 self.startup_cleanup_warnings.append(
-                    "SnapTrade start-up clean-up skipped: listUsers returned a non-list response"
+                    "SnapTrade start-up clean-up: listUsers returned a non-list response; will retry"
                 )
                 _LOG.warning(self.startup_cleanup_warnings[-1])
+                self._schedule_sweep_retry()
                 return 0
+            with self._lock:
+                self._startup_cleanup_done = True
             deleted = 0
             for uid in listed:
-                if not isinstance(uid, str) or not uid.startswith(SNAPTRADE_RELAY_USER_PREFIX):
+                if not isinstance(uid, str) or not uid.startswith(user_prefix):
                     continue
-                if self.slot_manager.is_user_registered(uid) or any(
-                    s.user_id == uid for s in self._sessions.values()
-                ):
-                    continue
+                with self._lock:
+                    if self._user_known_locked(uid):
+                        continue
                 try:
                     adapter.delete_user_and_release_slot(uid)
                     deleted += 1
@@ -359,6 +405,59 @@ class SnapTradeRelayCoordinator:
                         "deleting a leftover upstream user failed", exc, adapter
                     )
             return deleted
+        finally:
+            with self._lock:
+                self._sweep_running = False
+
+    def _schedule_sweep_retry(self) -> None:
+        with self._lock:
+            self._sweep_next_attempt = self._clock() + self._sweep_backoff_seconds
+            self._sweep_backoff_seconds = min(
+                self._sweep_backoff_seconds * 2.0, SWEEP_RETRY_MAX_SECONDS
+            )
+
+    def reserve_seat(self, user_id: str, *, is_personal: bool) -> tuple[Any, bool]:
+        """Reserve a seat for ``user_id`` before any upstream call; returns ``(slot, newly)``."""
+        self.purge_expired_sessions()
+        manager = self._manager_for(is_personal=is_personal)
+        with self._lock:
+            already = manager.is_user_registered(user_id)
+            if len(self._sessions) >= self.max_sessions and not (is_personal and already):
+                raise SnapTradeSlotCapExceededError(
+                    "SnapTrade relay session table is full; try again later"
+                )
+            slot = manager.register_slot(user_id)
+            if not is_personal:
+                self._reserved_users.add(user_id)
+            return slot, not already
+
+    def cancel_reservation(self, user_id: str, *, is_personal: bool, newly: bool) -> None:
+        """Free a seat reserved for a portal call that failed."""
+        with self._lock:
+            self._reserved_users.discard(user_id)
+            if newly:
+                self._manager_for(is_personal=is_personal).release_slot(user_id)
+
+    def finalize_reservation(
+        self,
+        *,
+        slot_id: int,
+        slot_label: str,
+        user_id: str,
+        user_secret: str,
+        is_personal: bool,
+    ) -> _EphemeralSnapTradeSession:
+        """Turn a reservation into a session in one step under the lock."""
+        with self._lock:
+            sess = self.store_session(
+                slot_id=slot_id,
+                slot_label=slot_label,
+                user_id=user_id,
+                user_secret=user_secret,
+                is_personal=is_personal,
+            )
+            self._reserved_users.discard(user_id)
+            return sess
 
     def _record_cleanup_warning(
         self,
@@ -466,11 +565,15 @@ class SnapTradeRelayCoordinator:
         if isinstance(resolved_transport, str) and ":" in resolved_transport:
             mod_name, attr_name = resolved_transport.split(":", 1)
             resolved_transport = getattr(importlib.import_module(mod_name), attr_name)
+        # The adapter gets its own throwaway slot book: seats are kept only in this
+        # coordinator and changed only under its lock, never as a side effect of an HTTP call.
         return SnapTradeReadOnlyAdapter(
             client_id=client_id,
             consumer_key=consumer_key,
             auth_mode=auth_mode,
-            slot_manager=self._manager_for(is_personal=is_personal),
+            slot_manager=SnapTradeSlotManager(
+                max_slots=MAX_SNAPTRADE_PERSONAL_SLOTS if is_personal else MAX_SNAPTRADE_POC_SLOTS
+            ),
             http_transport=resolved_transport,
             require_live=True,
             auto_register_slot=False,
@@ -576,7 +679,9 @@ def handle_get_snaptrade_status(
         return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
     if configured and not is_personal:
         status_adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
-        relay.cleanup_leftover_upstream_users_once(status_adapter)
+        relay.cleanup_leftover_upstream_users_once(
+            status_adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+        )
         relay.reap_expired_upstream_users(status_adapter)
     status_summary = relay.slot_status_dict(include_slots=True, is_personal=is_personal)
     return 200, {
@@ -659,58 +764,52 @@ def handle_post_snaptrade_portal(
             "personal-owner", config.account_blinding_salt_hex
         )
     else:
-        user_id = _new_relay_user_id()
+        user_id = _new_relay_user_id(config.account_blinding_salt_hex)
     adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
     secrets_to_redact = [consumer_key, client_id, user_id]
 
     try:
-        relay.cleanup_leftover_upstream_users_once(adapter)
+        relay.cleanup_leftover_upstream_users_once(
+        adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+    )
         relay.reap_expired_upstream_users(adapter)
-        with relay._lock:
-            replaces_own_session = is_personal and manager.is_user_registered(user_id)
-            if relay.session_count() >= relay.max_sessions and not replaces_own_session:
-                raise SnapTradeSlotCapExceededError(
-                    "SnapTrade relay session table is full; try again later"
-                )
+        # 1. Reserve the seat under the lock (no upstream call yet).
+        slot_obj, newly_reserved = relay.reserve_seat(user_id, is_personal=is_personal)
+        # 2. Upstream calls run without the relay lock.
+        try:
             if is_personal:
                 user_secret = ""
-                adapter.register_user(user_id)
             else:
                 reg = adapter.register_user(user_id)
                 user_secret = reg["userSecret"]
-
-            if user_secret:
                 secrets_to_redact.append(user_secret)
-            try:
-                portal = adapter.generate_connection_portal_url(
-                    user_id,
-                    user_secret,
-                    broker=clean_broker or None,
-                    custom_redirect=clean_redirect,
-                    reconnect=clean_reconnect or None,
-                    connection_type="read",
-                )
-            except Exception:
-                # No session will ever hold this fresh user: remove it rather than strand a slot.
-                if not is_personal:
-                    try:
-                        adapter.delete_user_and_release_slot(user_id)
-                    except SnapTradeError:
-                        relay._pending_upstream_deletes.add(user_id)
-                    manager.release_slot(user_id)
-                raise
-            slot_obj = manager.get_slot(user_id)
-            if slot_obj is None or not slot_obj.active:
-                slot_obj = manager.register_slot(user_id)
-
-            sess = relay.store_session(
+            portal = adapter.generate_connection_portal_url(
+                user_id,
+                user_secret,
+                broker=clean_broker or None,
+                custom_redirect=clean_redirect,
+                reconnect=clean_reconnect or None,
+                connection_type="read",
+            )
+            # 3. Finalise under the lock.
+            sess = relay.finalize_reservation(
                 slot_id=slot_obj.slot_id,
                 slot_label=clean_label,
                 user_id=user_id,
                 user_secret=user_secret,
                 is_personal=is_personal,
             )
-            counts = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
+        except Exception:
+            # No session will hold this user: free the reserved seat and remove the user.
+            relay.cancel_reservation(user_id, is_personal=is_personal, newly=newly_reserved)
+            if not is_personal:
+                try:
+                    adapter.delete_user_and_release_slot(user_id)
+                except SnapTradeError:
+                    with relay._lock:
+                        relay._pending_upstream_deletes.add(user_id)
+            raise
+        counts = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
 
         return 200, {
             "mode": mode_label,
@@ -780,7 +879,9 @@ def handle_post_snaptrade_verify(
     refusal = _personal_mode_refusal(config, is_personal=is_personal, dev_key=dev_key)
     if refusal is not None:
         return refusal
-    relay.cleanup_leftover_upstream_users_once(adapter)
+    relay.cleanup_leftover_upstream_users_once(
+        adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+    )
     relay.reap_expired_upstream_users(adapter)
 
     sess = relay.get_session(raw_token.strip())
@@ -834,14 +935,24 @@ def handle_post_snaptrade_verify(
         tok for tok in (consumer_key, client_id, sess.user_secret, sess.user_id) if tok
     ]
 
-    def _release_rejected_slot() -> None:
-        if not release_slot_after:
-            return
+    def _end_session() -> None:
+        relay.purge_user_sessions_and_release_local(sess.user_id, is_personal=is_personal)
         try:
             adapter.delete_user_and_release_slot(sess.user_id)
         except SnapTradeError:
-            pass
-        relay.purge_user_sessions_and_release_local(sess.user_id, is_personal=is_personal)
+            if not is_personal:
+                with relay._lock:
+                    relay._pending_upstream_deletes.add(sess.user_id)
+
+    def _final_refusal(status: int, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """A refusal a retry cannot fix frees the seat and ends the session."""
+        detail = str(body.get("detail") or "")
+        if any(marker in detail for marker in _RETRYABLE_REFUSAL_MARKERS):
+            return status, body
+        _end_session()
+        return status, {**body, "session_ended": True}
+
+    result_meta: dict[str, Any] = {}
 
     execute_fetch_in_worker = pipeline_spec is None and (
         relay.http_transport is None
@@ -884,20 +995,18 @@ def handle_post_snaptrade_verify(
                 retention_mode="no_persistent_storage",
                 persistent_rows_written=0,
                 _snaptrade_http_transport=relay.http_transport,
+                result_meta=result_meta,
             )
-        except PaperOrSandboxRejectedError as exc:
-            _release_rejected_slot()
-            safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return exc.http_status, {"error": exc.error_code, "detail": safe_msg}
         except GovernanceBlockedError as exc:
+            # Includes paper or sandbox accounts.
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return exc.http_status, {"error": exc.error_code, "detail": safe_msg}
+            return _final_refusal(exc.http_status, {"error": exc.error_code, "detail": safe_msg})
         except ReadOnlyCapabilityViolationError as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+            return _final_refusal(422, {"error": "read_only_capability_violation", "detail": safe_msg})
         except WorkerValidationError as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return 422, {"error": "validation_error", "detail": safe_msg}
+            return _final_refusal(422, {"error": "validation_error", "detail": safe_msg})
         except WorkerBrokerUpstreamError as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
             return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
@@ -916,18 +1025,17 @@ def handle_post_snaptrade_verify(
                 require_live=True,
             )
         except PaperOrSandboxAccountRejectedError as exc:
-            _release_rejected_slot()
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return 422, {"error": "paper_or_sandbox_rejected", "detail": safe_msg}
+            return _final_refusal(422, {"error": "paper_or_sandbox_rejected", "detail": safe_msg})
         except (DisallowedCapabilityError, ReadOnlyCapabilityViolationError) as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+            return _final_refusal(422, {"error": "read_only_capability_violation", "detail": safe_msg})
         except SnapTradeError as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
             return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
         except ValueError as exc:
             safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
-            return 422, {"error": "validation_error", "detail": safe_msg}
+            return _final_refusal(422, {"error": "validation_error", "detail": safe_msg})
 
         worker_payload = {
             "broker_id": live_ledger.broker_id,
@@ -953,16 +1061,15 @@ def handle_post_snaptrade_verify(
                 retention_mode="no_persistent_storage",
                 persistent_rows_written=0,
                 _trusted_internal_input=True,
+                result_meta=result_meta,
             )
-        except PaperOrSandboxRejectedError as exc:
-            _release_rejected_slot()
-            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except GovernanceBlockedError as exc:
-            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+            # Includes paper or sandbox accounts.
+            return _final_refusal(exc.http_status, {"error": exc.error_code, "detail": str(exc)})
         except ReadOnlyCapabilityViolationError as exc:
-            return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
+            return _final_refusal(422, {"error": "read_only_capability_violation", "detail": str(exc)})
         except WorkerValidationError as exc:
-            return 422, {"error": "validation_error", "detail": str(exc)}
+            return _final_refusal(422, {"error": "validation_error", "detail": str(exc)})
         except WorkerIsolationError as exc:
             return 500, {"error": "worker_isolation_error", "detail": str(exc)}
 
@@ -974,12 +1081,12 @@ def handle_post_snaptrade_verify(
             )
             rows_written = 1
         except ProofConflictError as exc:
-            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+            return _final_refusal(exc.http_status, {"error": exc.error_code, "detail": str(exc)})
         except ProofBundleInvalidError as exc:
-            return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
+            return _final_refusal(422, {"error": "invalid_proof_bundle", "errors": exc.errors})
         except GovernanceBlockedError as exc:
             # A record this host may not publish is refused with its own status and code.
-            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+            return _final_refusal(exc.http_status, {"error": exc.error_code, "detail": str(exc)})
     else:
         verification = store.verify_bundle_against_live_state(bundle)
 
@@ -1003,8 +1110,13 @@ def handle_post_snaptrade_verify(
 
     slot_status = relay.slot_status_dict(include_slots=False, is_personal=is_personal)
     bundle_dict = bundle.to_dict()
+    withheld = bool(result_meta.get("performance_withheld", False))
+    withheld_fields: dict[str, Any] = {"performance_withheld": withheld}
+    if withheld:
+        withheld_fields["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
 
     return 200, {
+        **withheld_fields,
         "mode": mode_label,
         "bundle": bundle_dict,
         "proof_bundle": bundle_dict,
@@ -1055,7 +1167,9 @@ def handle_post_snaptrade_release(
         adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
     except SnapTradeAuthenticationError as exc:
         return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
-    relay.cleanup_leftover_upstream_users_once(adapter)
+    relay.cleanup_leftover_upstream_users_once(
+        adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+    )
     relay.reap_expired_upstream_users(adapter)
 
     raw_token = payload.get("session_token")

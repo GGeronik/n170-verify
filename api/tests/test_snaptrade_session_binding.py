@@ -12,7 +12,10 @@ Rules covered here:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import threading
 from typing import Any
 import unittest
 from unittest import mock
@@ -39,6 +42,13 @@ PORTAL = "/api/v1/connect/snaptrade/portal"
 VERIFY = "/api/v1/connect/snaptrade/verify"
 RELEASE = "/api/v1/connect/snaptrade/release"
 STATUS = "/api/v1/connect/snaptrade/status"
+
+TEST_SALT_HEX = "5a" * 32
+# This deployment's part of an upstream user id: a short keyed hash of the account salt.
+OWN_TAG = hmac.new(
+    bytes.fromhex(TEST_SALT_HEX), b"n170.snaptrade.deployment.v1", hashlib.sha256
+).hexdigest()[:8]
+OWN_PREFIX = f"n170-st-{OWN_TAG}-"
 
 
 def _registered_user_ids(recorded: list[dict[str, Any]]) -> list[str]:
@@ -74,15 +84,20 @@ class _AppCase(unittest.TestCase):
         dev_key: str = "",
         hosted: bool = True,
         allow_caller_clock: bool = False,
+        clock: Any = None,
     ) -> tuple[Any, VerifyApiTestClient, SnapTradeRelayCoordinator]:
-        relay = SnapTradeRelayCoordinator(http_transport=transport)
+        relay = (
+            SnapTradeRelayCoordinator(http_transport=transport, monotonic_clock=clock)
+            if clock is not None
+            else SnapTradeRelayCoordinator(http_transport=transport)
+        )
         cfg = ApiConfig(
             publisher_keypair=self.kp,
             publisher_kid="n170-binding-test-kid",
             snaptrade_client_id=client_id,
             snaptrade_consumer_key=CONSUMER_KEY,
             snaptrade_dev_key=dev_key,
-            account_blinding_salt_hex="5a" * 32,
+            account_blinding_salt_hex=TEST_SALT_HEX,
             hosted_multi_user_mode=hosted,
             allow_caller_clock_for_tests=allow_caller_clock,
         )
@@ -112,8 +127,8 @@ class TestRelaySessionBelongsToItsCreator(_AppCase):
         self.assertEqual(len(user_ids), 2, user_ids)
         self.assertNotEqual(user_ids[0], user_ids[1])
         for uid in user_ids:
-            self.assertTrue(uid.startswith("n170-st-"), uid)
-            self.assertEqual(len(uid), len("n170-st-") + 24, uid)
+            self.assertTrue(uid.startswith(OWN_PREFIX), uid)
+            self.assertEqual(len(uid), len(OWN_PREFIX) + 24, uid)
 
 
 class TestPersonalKeyIsOperatorOnlyWhenHosted(_AppCase):
@@ -384,7 +399,7 @@ def _with_list_users(inner: Any, listed: Any, status: int = 200) -> tuple[Any, l
 class TestLeftoverUpstreamUsersAreCleanedOnce(_AppCase):
     def test_first_use_deletes_only_prefixed_leftover_users(self) -> None:
         inner, recorded = _make_mock_snaptrade_transport()
-        leftover = "n170-st-" + "a" * 24
+        leftover = OWN_PREFIX + "a" * 24
         transport, seen = _with_list_users(inner, [leftover, "someone-else", 42])
         _, client, _ = self._client(transport)
 
@@ -397,7 +412,7 @@ class TestLeftoverUpstreamUsersAreCleanedOnce(_AppCase):
 
     def test_sweep_keeps_a_user_registered_while_it_runs(self) -> None:
         inner, recorded = _make_mock_snaptrade_transport()
-        leftover = "n170-st-" + "c" * 24
+        leftover = OWN_PREFIX + "c" * 24
         state: dict[str, Any] = {}
 
         def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
@@ -439,6 +454,256 @@ class TestLeftoverUpstreamUsersAreCleanedOnce(_AppCase):
         self.assertEqual(client.get(STATUS).status_code, 200)
         self.assertEqual(seen, [])
         self.assertEqual(_deleted_user_ids(recorded), [])
+
+
+def _session_ids(relay: SnapTradeRelayCoordinator) -> list[str]:
+    with relay._lock:
+        return [s.user_id for s in relay._sessions.values()]
+
+
+class TestRefusalThatRetryCannotFixFreesTheSeat(_AppCase):
+    """A refusal a retry cannot fix ends the session; an upstream failure keeps it."""
+
+    def _open(self) -> tuple[Any, VerifyApiTestClient, SnapTradeRelayCoordinator, list, str]:
+        transport, recorded = _make_mock_snaptrade_transport()
+        app, client, relay = self._client(transport)
+        portal = client.post(PORTAL, json={})
+        self.assertEqual(portal.status_code, 200, portal.text)
+        return app, client, relay, recorded, portal.json()["session_token"]
+
+    def _assert_seat_freed(self, client: VerifyApiTestClient, relay: Any, recorded: list, token: str) -> None:
+        self.assertIsNone(relay.get_session(token))
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 0)
+        self.assertEqual(len(_deleted_user_ids(recorded)), 1)
+
+    def _assert_seat_kept(self, client: VerifyApiTestClient, relay: Any, recorded: list, token: str) -> None:
+        self.assertIsNotNone(relay.get_session(token))
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 1)
+        self.assertEqual(_deleted_user_ids(recorded), [])
+
+    def test_missing_conversion_rate_frees_the_seat(self) -> None:
+        from app.worker_isolation import WorkerValidationError
+
+        _, client, relay, recorded, token = self._open()
+        with mock.patch(
+            "app.routes_snaptrade.run_isolated_one_shot_verification",
+            side_effect=WorkerValidationError("No conversion rate from CAD to USD is available"),
+        ):
+            r = client.post(VERIFY, json={"session_token": token, "release_slot_after": False})
+        self.assertEqual(r.status_code, 422, r.text)
+        self._assert_seat_freed(client, relay, recorded, token)
+
+    def test_governance_refusal_frees_the_seat(self) -> None:
+        from app.store import GovernanceBlockedError
+
+        _, client, relay, recorded, token = self._open()
+        with mock.patch(
+            "app.routes_snaptrade.run_isolated_one_shot_verification",
+            side_effect=GovernanceBlockedError("connector not approved"),
+        ):
+            r = client.post(VERIFY, json={"session_token": token})
+        self.assertEqual(r.status_code, 403, r.text)
+        self._assert_seat_freed(client, relay, recorded, token)
+
+    def test_publish_refusal_frees_the_seat(self) -> None:
+        from app.store import PublisherKeyNotInRegistryError
+
+        app, client, relay, recorded, token = self._open()
+
+        def refuse(*_a: Any, **_k: Any) -> Any:
+            raise PublisherKeyNotInRegistryError("signing key is not in this host's registry")
+
+        app.store.store_proof = refuse  # type: ignore[method-assign]
+        r = client.post(
+            VERIFY, json={"session_token": token, "publish_proof": True, "release_slot_after": False}
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self._assert_seat_freed(client, relay, recorded, token)
+
+    def test_no_linked_account_yet_keeps_the_seat_for_a_retry(self) -> None:
+        from app.worker_isolation import WorkerValidationError
+
+        _, client, relay, recorded, token = self._open()
+        with mock.patch(
+            "app.routes_snaptrade.run_isolated_one_shot_verification",
+            side_effect=WorkerValidationError(
+                "No brokerage accounts are connected to this SnapTrade session yet"
+            ),
+        ):
+            r = client.post(VERIFY, json={"session_token": token})
+        self.assertEqual(r.status_code, 422, r.text)
+        self._assert_seat_kept(client, relay, recorded, token)
+
+    def test_upstream_failure_keeps_the_seat_for_a_retry(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/accounts":
+                return (503, {"Content-Type": "application/json"}, {"detail": "busy"})
+            return inner(method, url, headers, body)
+
+        _, client, relay = self._client(transport)
+        token = client.post(PORTAL, json={}).json()["session_token"]
+        r = client.post(VERIFY, json={"session_token": token})
+        self.assertEqual(r.status_code, 502, r.text)
+        self._assert_seat_kept(client, relay, recorded, token)
+
+
+class TestNoUpstreamCallHoldsTheRelayLock(_AppCase):
+    """A slow aggregator delays only the request waiting on it, never other relay requests."""
+
+    def _run_in_thread(self, fn: Any) -> tuple[threading.Thread, dict[str, Any]]:
+        out: dict[str, Any] = {}
+
+        def target() -> None:
+            out["result"] = fn()
+
+        t = threading.Thread(target=target, daemon=True)
+        t.start()
+        return t, out
+
+    def test_status_is_answered_while_a_portal_call_waits_on_upstream(self) -> None:
+        inner, _ = _make_mock_snaptrade_transport()
+        entered, release = threading.Event(), threading.Event()
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/registerUser":
+                entered.set()
+                release.wait(10)
+            return inner(method, url, headers, body)
+
+        _, client, _ = self._client(transport)
+        client.get(STATUS)  # first-use sweep happens here
+        slow, slow_out = self._run_in_thread(lambda: client.post(PORTAL, json={}))
+        try:
+            self.assertTrue(entered.wait(5))
+            fast, fast_out = self._run_in_thread(lambda: client.get(STATUS))
+            fast.join(2.0)
+            self.assertFalse(fast.is_alive(), "status waited behind an upstream call")
+            self.assertEqual(fast_out["result"].status_code, 200)
+            # The pending seat is already counted while its upstream call is in flight.
+            self.assertEqual(fast_out["result"].json()["active_slots"], 1)
+        finally:
+            release.set()
+            slow.join(10)
+        self.assertEqual(slow_out["result"].status_code, 200, slow_out["result"].text)
+
+    def test_a_portal_call_is_answered_while_the_sweep_waits_on_the_listing(self) -> None:
+        inner, _ = _make_mock_snaptrade_transport()
+        entered, release = threading.Event(), threading.Event()
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/listUsers":
+                entered.set()
+                release.wait(10)
+                return (200, {"Content-Type": "application/json"}, [])
+            return inner(method, url, headers, body)
+
+        _, client, _ = self._client(transport)
+        sweep, _ = self._run_in_thread(lambda: client.get(STATUS))
+        try:
+            self.assertTrue(entered.wait(5))
+            fast, fast_out = self._run_in_thread(lambda: client.post(PORTAL, json={}))
+            fast.join(2.0)
+            self.assertFalse(fast.is_alive(), "portal waited behind the sweep's upstream listing")
+            self.assertEqual(fast_out["result"].status_code, 200, fast_out["result"].text)
+        finally:
+            release.set()
+            sweep.join(10)
+
+    def test_a_failed_portal_call_frees_its_reserved_seat(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/login":
+                return (503, {"Content-Type": "application/json"}, {"detail": "busy"})
+            return inner(method, url, headers, body)
+
+        _, client, relay = self._client(transport)
+        r = client.post(PORTAL, json={})
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 0)
+        self.assertEqual(_session_ids(relay), [])
+        self.assertEqual(_deleted_user_ids(recorded), _registered_user_ids(recorded))
+
+    def test_sweep_keeps_a_user_reserved_between_listing_and_deleting(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+        first_leftover = OWN_PREFIX + "d" * 24
+        reserved_id = OWN_PREFIX + "e" * 24
+        state: dict[str, Any] = {}
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            parsed = urllib.parse.urlsplit(url)
+            if method == "GET" and parsed.path == "/api/v1/snapTrade/listUsers":
+                return (200, {"Content-Type": "application/json"}, [first_leftover, reserved_id])
+            if parsed.path == "/api/v1/snapTrade/deleteUser" and "portal" not in state:
+                # After the listing, before the sweep reaches the second id, a portal call
+                # reserves exactly that id.
+                with mock.patch("app.routes_snaptrade.secrets.token_hex", return_value="e" * 24):
+                    state["portal"] = state["client"].post(PORTAL, json={})
+            return inner(method, url, headers, body)
+
+        _, client, relay = self._client(transport)
+        state["client"] = client
+        self.assertEqual(client.get(STATUS).status_code, 200)
+        self.assertEqual(state["portal"].status_code, 200, state["portal"].text)
+        self.assertIn(reserved_id, _registered_user_ids(recorded))
+        self.assertEqual(_deleted_user_ids(recorded), [first_leftover])
+        self.assertIn(reserved_id, _session_ids(relay))
+
+
+class TestSweepTouchesOnlyThisDeployment(_AppCase):
+    def test_user_ids_carry_this_deployments_tag_and_the_sweep_keeps_others(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+        own_leftover = OWN_PREFIX + "a" * 24
+        other_deployment = "n170-st-0123abcd-" + "a" * 24
+        old_shape = "n170-st-" + "a" * 24
+        transport, _ = _with_list_users(inner, [own_leftover, other_deployment, old_shape])
+        _, client, _ = self._client(transport)
+
+        self.assertEqual(client.get(STATUS).status_code, 200)
+        self.assertEqual(_deleted_user_ids(recorded), [own_leftover])
+        self.assertNotIn(TEST_SALT_HEX, OWN_PREFIX)
+        client.post(PORTAL, json={})
+        self.assertTrue(_registered_user_ids(recorded)[0].startswith(OWN_PREFIX))
+
+    def test_a_failed_listing_is_retried_after_a_bounded_wait(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+        now = [1000.0]
+        leftover = OWN_PREFIX + "f" * 24
+        replies = [(503, {"detail": "down"}), (200, [leftover])]
+        seen: list[int] = []
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/listUsers":
+                seen.append(1)
+                status, payload = replies[min(len(seen) - 1, len(replies) - 1)]
+                return (status, {"Content-Type": "application/json"}, payload)
+            return inner(method, url, headers, body)
+
+        _, client, _ = self._client(transport, clock=lambda: now[0])
+        client.get(STATUS)
+        client.get(STATUS)
+        self.assertEqual(len(seen), 1, "a failing listing must not be retried on every request")
+        now[0] += 61.0
+        client.get(STATUS)
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(_deleted_user_ids(recorded), [leftover])
+        now[0] += 10_000.0
+        client.get(STATUS)
+        self.assertEqual(len(seen), 2, "after a successful listing the sweep is done")
+
+
+class TestRelayVerifyReportsWithheldReturn(_AppCase):
+    def test_a_single_snapshot_reports_the_return_as_withheld(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport)
+        token = client.post(PORTAL, json={}).json()["session_token"]
+        r = client.post(VERIFY, json={"session_token": token})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertIs(body.get("performance_withheld"), True, sorted(body))
+        self.assertTrue(body.get("withheld_reasons"))
 
 
 if __name__ == "__main__":
