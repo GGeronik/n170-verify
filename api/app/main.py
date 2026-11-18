@@ -168,6 +168,17 @@ def _error_code_of(body: bytes) -> str:
     return "request_refused"
 
 
+def _retry_after_seconds_of(body: bytes) -> int | None:
+    """A refusal's own ``retry_after_seconds``, when it states a positive whole number."""
+    try:
+        value = json.loads(body.decode("utf-8")).get("retry_after_seconds")
+    except Exception:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
 def _flatten_query_params(query_string: str) -> dict[str, str]:
     if not query_string:
         return {}
@@ -260,6 +271,10 @@ class VerifyApiApplication:
         for k in list(resp.headers.keys()):
             if k.lower() == "set-cookie":
                 del resp.headers[k]
+        if resp.status_code == 503:
+            retry_after = _retry_after_seconds_of(resp.body)
+            if retry_after is not None:
+                resp.headers["Retry-After"] = str(retry_after)
         path = raw_path or "/"
         if not _is_sync_route(path) and resp.status_code < 500:
             scanner = OutboundPrivacyScanner()

@@ -747,6 +747,37 @@ def enforce_hosted_signing_oracle_policy(
         )
 
 
+SCANNER_REFUSAL_DETAIL = (
+    "The record contains text that looks like an account number, a raw statement excerpt or "
+    "a credential; remove it from the statement or journal and try again"
+)
+
+
+def _refuse_text_the_scanner_blocks_before_signing(draft: VerifyProofBundle) -> None:
+    """Nothing the outbound privacy scanner would block is ever signed; the reason does not
+    repeat the text."""
+    from app.privacy_scanner import OutboundPrivacyScanner
+
+    if OutboundPrivacyScanner().scan_payload(draft.to_dict()):
+        raise WorkerValidationError(SCANNER_REFUSAL_DETAIL)
+
+
+WORKER_LIMIT_ERRORS: tuple[type[Exception], ...] = (
+    WorkerCapacityExceededError,
+    WorkerTimeoutError,
+    WorkerInputTooLargeError,
+)
+
+
+def worker_limit_response(exc: Exception) -> tuple[int, dict[str, Any]]:
+    """The HTTP answer every route gives for a busy host, a timeout or an oversized input."""
+    body: dict[str, Any] = {"error": getattr(exc, "error_code"), "detail": str(exc)}
+    retry = getattr(exc, "retry_after_seconds", None)
+    if retry is not None:
+        body["retry_after_seconds"] = int(retry)
+    return int(getattr(exc, "http_status")), body
+
+
 def _withheld_without_core_metrics(result: Any) -> bool:
     """True when a worker result reports a withheld return but leaves core_metrics undisclosed."""
     if not isinstance(result, Mapping) or not result.get("performance_withheld"):
@@ -1356,6 +1387,7 @@ def run_isolated_one_shot_verification(
         retention_mode=norm_retention,
         signature_hex="00" * 64,
     )
+    _refuse_text_the_scanner_blocks_before_signing(draft)
     sig_hex = ed25519_sign_domain(
         config.publisher_keypair.private_key_hex,
         SIGNING_DOMAIN_BUNDLE,
@@ -1404,7 +1436,9 @@ __all__ = [
     "MAX_CONCURRENT_VERIFICATION_WORKERS",
     "MAX_STATEMENT_INPUT_BYTES",
     "MAX_STATEMENT_INPUT_ROWS",
+    "SCANNER_REFUSAL_DETAIL",
     "VERIFICATION_RETRY_AFTER_SECONDS",
+    "WORKER_LIMIT_ERRORS",
     "WorkerBrokerUpstreamError",
     "WorkerCapacityExceededError",
     "WorkerInputTooLargeError",
@@ -1417,4 +1451,5 @@ __all__ = [
     "default_standalone_worker_pipeline",
     "filter_delayed_closed_trades",
     "run_isolated_one_shot_verification",
+    "worker_limit_response",
 ]

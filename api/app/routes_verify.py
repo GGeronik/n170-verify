@@ -23,16 +23,15 @@ from app.store import (
 )
 from app.sync_vault import SyncVault, SyncVaultConflictError
 from app.worker_isolation import (
+    WORKER_LIMIT_ERRORS,
     WorkerBrokerUpstreamError,
-    WorkerCapacityExceededError,
-    WorkerInputTooLargeError,
     WorkerIsolationError,
-    WorkerTimeoutError,
     WorkerPipelineSpec,
     WorkerValidationError,
     _SYNTHETIC_SIGNING_ORACLE_KEYS,
     enforce_hosted_signing_oracle_policy,
     run_isolated_one_shot_verification,
+    worker_limit_response,
 )
 from n170_verify.contracts import (
     EnvironmentTier,
@@ -367,16 +366,10 @@ def handle_post_verify(
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ReadOnlyCapabilityViolationError as exc:
         return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
-    except WorkerInputTooLargeError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+    except WORKER_LIMIT_ERRORS as exc:
+        return worker_limit_response(exc)
     except WorkerValidationError as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
-    except (WorkerCapacityExceededError, WorkerTimeoutError) as exc:
-        return exc.http_status, {
-            "error": exc.error_code,
-            "detail": str(exc),
-            "retry_after_seconds": exc.retry_after_seconds,
-        }
     except WorkerBrokerUpstreamError as exc:
         return 502, {"error": "broker_upstream_error", "detail": str(exc)}
     except WorkerIsolationError as exc:

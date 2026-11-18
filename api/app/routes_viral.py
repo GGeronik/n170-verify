@@ -33,9 +33,11 @@ from app.store import (
     ProofStore,
 )
 from app.worker_isolation import (
+    WORKER_LIMIT_ERRORS,
     WorkerIsolationError,
     WorkerValidationError,
     run_isolated_one_shot_verification,
+    worker_limit_response,
 )
 from n170_verify.connectors import (
     PaperOrSandboxAccountRejectedError,
@@ -1571,6 +1573,8 @@ def handle_post_verify_auto_detect(
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ReadOnlyCapabilityViolationError as exc:
         return 422, {"error": "read_only_capability_violation", "detail": str(exc)}
+    except WORKER_LIMIT_ERRORS as exc:
+        return worker_limit_response(exc)
     except (WorkerValidationError, ValueError) as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
     except WorkerIsolationError as exc:
