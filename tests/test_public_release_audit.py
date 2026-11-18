@@ -267,6 +267,40 @@ class PublicReleaseAuditTests(unittest.TestCase):
                 rules, _ = self._rules_for("settings.py", content)
                 self.assertNotIn("snaptrade-consumer-key", rules)
 
+    def test_snaptrade_secret_or_key_assignment_is_blocked(self):
+        value = self._consumer_key_shaped(40)
+        names = (
+            "snaptrade_" + "secret",
+            "SNAPTRADE_" + "USER_SECRET",
+            "snapTrade" + "Secret",
+            "snaptrade_" + "api_key",
+            "SNAPTRADE_" + "KEY",
+            "secret_for_" + "snaptrade",
+        )
+        templates = ('{name} = "{value}"\n', "{name}={value}\n", '{{"{name}": "{value}"}}\n', "    {name}: {value}\n")
+        for name in names:
+            for template in templates:
+                with self.subTest(name=name, template=template):
+                    rules, rendered = self._rules_for("settings.py", template.format(name=name, value=value))
+                    self.assertIn("snaptrade-secret", rules)
+                    self.assertNotIn(value, rendered)
+
+    def test_snaptrade_secret_references_and_placeholders_are_not_flagged(self):
+        name = "snaptrade_" + "secret"
+        upper = "SNAPTRADE_" + "USER_SECRET"
+        benign = {
+            "empty-env": f"{upper}=\n",
+            "environ-read": f'{name} = os.environ.get("{upper}", "")\n',
+            "variable-reference": f"adapter = build({name}={name})\n",
+            "hyphenated-placeholder": f'{name} = "snap-ephemeral-user-secret-0001-supersecret"\n',
+            "short-alnum": f'{name} = "{self._consumer_key_shaped(23)}"\n',
+            "compose-substitution": f'      {upper}: "${{{upper}:-}}"\n',
+        }
+        for label, content in benign.items():
+            with self.subTest(label):
+                rules, _ = self._rules_for("settings.py", content)
+                self.assertNotIn("snaptrade-secret", rules)
+
     def test_reviewed_synthetic_personal_client_ids_pass_only_at_their_reviewed_path(self):
         reviewed_path = "api/tests/test_launch_blockers_hyperliquid_snaptrade.py"
         fixture = self.PERS + "WORKER-" + "ISOLATION-01"

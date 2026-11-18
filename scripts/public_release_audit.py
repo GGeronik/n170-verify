@@ -101,6 +101,19 @@ SECRET_PATTERNS = (
             r"[A-Za-z0-9]{32,}(?![A-Za-z0-9_-])"
         ),
     ),
+    # Any long letters-and-digits value assigned or passed under a name that pairs
+    # SnapTrade with "secret" or "key" (a user secret, an API key), in the same
+    # source forms as above. Variable references, hyphenated or underscored
+    # placeholders and values shorter than 24 characters do not match.
+    (
+        "snaptrade-secret",
+        re.compile(
+            r"(?i:snap_?trade\w*(?:secret|key)|(?:secret|key)\w*snap_?trade)\w*[\"'`]?\]?\s*"
+            r"(?::\s*[A-Za-z_][\w.\[\]| ]*?\s*)?"
+            r"(?:=>|:=|[=:,]|\s)\s*[rbuRBU]{0,2}[\"'`]?"
+            r"[A-Za-z0-9]{24,}(?![A-Za-z0-9_-])"
+        ),
+    ),
     ("hard-coded-home-path", re.compile(r"/(?:Users|home)/[^/\s'\"]+/")),
     ("known-development-password", re.compile("neo4j/" + "n170")),
 )
