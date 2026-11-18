@@ -181,12 +181,44 @@ class PublicReleaseAuditTests(unittest.TestCase):
             "hyphenated": self.PERS + "ab12-cd34-ef56",
             "mixed-hyphenated": self.PERS + "Ab12-Cd34-Ef56-Gh78",
             "short-hyphenated": self.PERS + "a1b2-c3d4",
+            # The service treats an id as personal when its upper-cased form
+            # starts with the prefix, whatever the suffix length.
+            "lower-prefix": "pers" + "-" + "abcd1234efgh5678",
+            "title-prefix": "Pers" + "-" + "ABCD1234EFGH",
+            "short-suffix": self.PERS + "ABC1234",
+            "one-character-suffix": self.PERS + "7",
         }
         for label, client_id in variants.items():
             with self.subTest(label):
                 rules, rendered = self._rules_for("config.py", f'CLIENT_ID = "{client_id}"\n')
                 self.assertIn("snaptrade-personal-client-id", rules)
                 self.assertNotIn(client_id, rendered)
+        contexts = {
+            "env": "SNAPTRADE_CLIENT_ID={id}\n",
+            "url-segment": "url = 'https://example.invalid/accounts/{id}'\n",
+            "underscore-separated-env-value": "SNAPTRADE_CLIENT_ID_DEV={id}\n",
+            "json": '{{"clientId": "{id}"}}\n',
+        }
+        client_id = "pErS" + "-" + "a1b2"
+        for label, template in contexts.items():
+            with self.subTest(label):
+                rules, _ = self._rules_for("config.txt", template.format(id=client_id))
+                self.assertIn("snaptrade-personal-client-id", rules)
+
+    def test_prefix_inside_a_longer_token_or_alone_is_not_a_personal_client_id(self):
+        prefix = "PERS" + "-"
+        benign = {
+            "prefix-check-in-code": f'return client_id.strip().upper().startswith("{prefix}")\n',
+            "prefix-in-prose": f"# Personal keys start with {prefix} and are upper-cased first.\n",
+            "inside-hyphenated-id": '"id": "acct-worker-' + "pers" + '-1"\n',
+            "non-personal-id": 'client_id="NON-' + prefix + 'ID-OVERRIDE"\n',
+            "package-version": '"resolved": "https://registry.example/@babel/hel' + "pers" + '-7.29.7.tgz"\n',
+            "inside-identifier": "X_" + prefix + "abcd = 1\n",
+        }
+        for label, content in benign.items():
+            with self.subTest(label):
+                rules, _ = self._rules_for("module.py", content)
+                self.assertNotIn("snaptrade-personal-client-id", rules)
 
     def test_snaptrade_consumer_key_assignment_is_blocked_in_common_source_forms(self):
         key = self._consumer_key_shaped(50)
@@ -248,6 +280,17 @@ class PublicReleaseAuditTests(unittest.TestCase):
 
         unreviewed = self.PERS + "ab12-cd34-ef56"
         rules, _ = self._rules_for(reviewed_path, content + f'OTHER = "{unreviewed}"\n')
+        self.assertIn("snaptrade-personal-client-id", rules)
+
+        # The prefix case is part of the reviewed string.
+        recased = "pers" + "-" + "WORKER-" + "ISOLATION-01"
+        rules, _ = self._rules_for(reviewed_path, f'CLIENT_ID = "{recased}"\n')
+        self.assertIn("snaptrade-personal-client-id", rules)
+
+        lower_reviewed = "pers" + "-" + "consumer-secret-" + "live-xyz"
+        rules, _ = self._rules_for(reviewed_path, f'KEY = "{lower_reviewed}"\n')
+        self.assertNotIn("snaptrade-personal-client-id", rules)
+        rules, _ = self._rules_for("api/tests/test_other.py", f'KEY = "{lower_reviewed}"\n')
         self.assertIn("snaptrade-personal-client-id", rules)
 
         near_miss = fixture + "X"

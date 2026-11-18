@@ -76,9 +76,17 @@ SECRET_PATTERNS = (
     ("github-token", re.compile(r"(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}")),
     ("google-api-key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
-    # A SnapTrade personal client id in any issued shape: letters of either
-    # case, digits and hyphens after the PERS- prefix.
-    ("snaptrade-personal-client-id", re.compile(r"PERS-[A-Za-z0-9-]{8,}")),
+    # Any value the SnapTrade connector treats as a personal client id: it
+    # upper-cases the id and checks the prefix, so the prefix is matched in any
+    # case and any non-empty suffix of letters, digits and hyphens counts. The
+    # prefix must start a token: one inside a longer hyphenated or underscored
+    # token (an account id, a package version) is not a value the connector
+    # would read as personal. The bare prefix alone, as used in code and prose
+    # that describes the rule, is not an id.
+    (
+        "snaptrade-personal-client-id",
+        re.compile(r"(?<![A-Za-z0-9_-])(?i:PERS)-[A-Za-z0-9-]*[A-Za-z0-9]"),
+    ),
     # A SnapTrade consumer key assigned or passed under a name that says what it
     # is (env, Python, JSON, YAML, JavaScript and TypeScript forms). A real key
     # is a long random run of letters and digits, so the value must be at least
@@ -147,29 +155,46 @@ REVIEWED_NEGATIVE_TEST_FILES = {
     },
 }
 
-# Synthetic SnapTrade personal client ids used as test fixtures, allowed only
-# at the exact repository path listed and only as the exact whole match. Each
-# entry is the text after the "PERS-" prefix, so this file holds no full id.
-# The same id at any other path, or any other id in these files, is blocked.
+# Synthetic strings that the personal client id rule matches in test fixtures,
+# allowed only at the exact repository path listed and only as the exact whole
+# match, prefix case included. Each entry is (prefix as written, text after the
+# hyphen), so this file holds no full id. Every entry is a readable label of
+# words and short counters, not a random string. The same string at any other
+# path, in another prefix case, or any other match in these files is blocked.
 REVIEWED_SYNTHETIC_PERSONAL_CLIENT_IDS = {
     "api/tests/test_launch_blockers_hyperliquid_snaptrade.py": frozenset(
-        {"WORKER-ISOLATION-01", "FOUNDER-LIVE-01", "BAD-MODE-01"}
-    ),
-    "api/tests/test_snaptrade_session_binding.py": frozenset({"DUMMY-OWNER-01"}),
-    "core/tests/test_hyperliquid_and_snaptrade_personal.py": frozenset(
         {
-            "COMPAT-01",
-            "EMPTY-CHECK-01",
-            "FOUNDER-001",
-            "FOUNDER-EUR-01",
-            "FOUNDER-KEY-99",
-            "ID-OVERRIDE",
-            "N170-FOUNDER",
+            ("PERS", "WORKER-ISOLATION-01"),
+            ("PERS", "FOUNDER-LIVE-01"),
+            ("PERS", "BAD-MODE-01"),
+            # Consumer-key placeholders that happen to begin with the prefix.
+            ("pers", "consumer-secret-live-xyz"),
+            ("pers", "consumer-secret-badmode"),
         }
     ),
-    "core/tests/test_snaptrade_nav_and_fx.py": frozenset({"DUMMY-CLIENT-01"}),
+    "api/tests/test_snaptrade_session_binding.py": frozenset({("PERS", "DUMMY-OWNER-01")}),
+    "core/tests/test_hyperliquid_and_snaptrade_personal.py": frozenset(
+        {
+            ("PERS", "COMPAT-01"),
+            ("PERS", "CUSTOM"),
+            ("PERS", "EMPTY-CHECK-01"),
+            ("PERS", "FOUNDER-001"),
+            ("PERS", "FOUNDER-EUR-01"),
+            ("PERS", "FOUNDER-KEY-99"),
+            ("PERS", "N170-FOUNDER"),
+            # A lower-case id that checks the connector's case folding.
+            ("pers", "lower-key"),
+            # A portal URL path segment in a mocked relay response.
+            ("pers", "session"),
+            # Consumer-key placeholders that happen to begin with the prefix.
+            ("pers", "compat-secret"),
+            ("pers", "empty-secret"),
+            ("pers", "eur-secret"),
+            ("pers", "hmac-secret-999"),
+        }
+    ),
+    "core/tests/test_snaptrade_nav_and_fx.py": frozenset({("PERS", "DUMMY-CLIENT-01")}),
 }
-PERSONAL_CLIENT_ID_PREFIX = "PERS-"
 
 BROKER_EXPORT_SUFFIXES = {".csv", ".json", ".xml"}
 BROKER_EXPORT_NAME_TOKENS = {"flex", "ibkr"}
@@ -290,7 +315,7 @@ def _content_rules(path: Path, *, relative_path: str | None = None) -> list[str]
     for name, pattern in SECRET_PATTERNS:
         if name == "snaptrade-personal-client-id":
             matched = any(
-                match.group(0)[len(PERSONAL_CLIENT_ID_PREFIX):] not in reviewed_ids
+                tuple(match.group(0).split("-", 1)) not in reviewed_ids
                 for match in pattern.finditer(text)
             )
         else:
