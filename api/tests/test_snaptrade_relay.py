@@ -258,6 +258,11 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
         )
         app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
         client = VerifyApiTestClient(app)
+        origin_env = mock.patch.dict(
+            os.environ, {"N170_VERIFY_SITE_ORIGIN": "https://verify.example.org"}, clear=False
+        )
+        origin_env.start()
+        self.addCleanup(origin_env.stop)
         try:
             # 1. Status reflects configured=True and requires_dev_key=True
             st_init = client.get("/api/v1/connect/snaptrade/status")
@@ -283,9 +288,10 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
 
             dev_headers = {"X-N170-Dev-Key": "promo-gate-secret-2026"}
 
-            # 3. Validate redirect_url allowlist (http://127.0.0.1:* or https://* only)
+            # 3. Validate redirect_url allowlist (local http://127.0.0.1:* or the site's own origin)
             for bad_redir in (
                 "http://evil.example.com/callback",
+                "https://evil.example.com/callback",
                 "javascript:alert(1)",
                 "https://user:pass@example.com/cb",
             ):
