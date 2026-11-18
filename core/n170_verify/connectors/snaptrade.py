@@ -709,6 +709,29 @@ def _lookup_fx_rate(
     return None
 
 
+class SnapTradeMissingFxRateError(ValueError):
+    """A value is in a currency that has no conversion rate to the currency it must be valued in.
+
+    A ``ValueError`` (not an upstream service error): the account data is incomplete, so the
+    record is refused as a validation failure with this reason.
+    """
+
+
+def _require_fx_rate(
+    src_currency: str,
+    dst_currency: str,
+    pair_rates: Mapping[tuple[str, str], float],
+) -> float:
+    """Return the ``src -> dst`` rate, or raise: a foreign amount is never valued at 1:1."""
+    rate = _lookup_fx_rate(src_currency, dst_currency, pair_rates)
+    if rate is None or not rate > 0.0:
+        raise SnapTradeMissingFxRateError(
+            f"No conversion rate from {src_currency} to {dst_currency} is available; "
+            "the record is withheld rather than counting one currency as the other."
+        )
+    return rate
+
+
 def _scrub_account_identifiers(text: str, raw_identifiers: Sequence[str]) -> str:
     cleaned = text or ""
     for raw_ident in raw_identifiers:
@@ -1352,14 +1375,14 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 for b_item in h_balances:
                     if isinstance(b_item, Mapping) and b_item.get("cash") is not None:
                         b_ccy = _extract_currency_code(b_item.get("currency"), base_currency)
-                        b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                        b_fx = _require_fx_rate(b_ccy, base_currency, pair_rates)
                         cash_sum += float(b_item["cash"]) * b_fx
                         has_cash = True
 
             total_val: float | None = None
             if isinstance(h_total_obj, Mapping) and h_total_obj.get("value") is not None:
                 tot_ccy = _extract_currency_code(h_total_obj.get("currency"), base_currency)
-                tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                tot_fx = _require_fx_rate(tot_ccy, base_currency, pair_rates)
                 total_val = float(h_total_obj["value"]) * tot_fx
             elif isinstance(h_acct, Mapping):
                 acct_bal = h_acct.get("balance")
@@ -1367,7 +1390,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     tot_inner = acct_bal["total"]
                     if tot_inner.get("amount") is not None:
                         tot_ccy = _extract_currency_code(tot_inner.get("currency"), base_currency)
-                        tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                        tot_fx = _require_fx_rate(tot_ccy, base_currency, pair_rates)
                         total_val = float(tot_inner["amount"]) * tot_fx
 
             if total_val is not None or has_cash:
@@ -1378,7 +1401,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                             u = _extract_units(p)
                             pr = float(p.get("price") or p.get("current_price") or 0.0)
                             _, p_ccy, _, p_mult = _position_asset_info(p, base_currency)
-                            p_fx = _lookup_fx_rate(p_ccy, base_currency, pair_rates) or 1.0
+                            p_fx = _require_fx_rate(p_ccy, base_currency, pair_rates)
                             pos_mkt_sum += u * pr * p_mult * p_fx
                 resolved_tot = total_val if total_val is not None else (cash_sum + pos_mkt_sum)
                 sync_ts = None
@@ -1404,7 +1427,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     tot_map = acct_bal.get("total")
                     if isinstance(tot_map, Mapping) and tot_map.get("amount") is not None:
                         tot_ccy = _extract_currency_code(tot_map.get("currency"), base_currency)
-                        tot_fx = _lookup_fx_rate(tot_ccy, base_currency, pair_rates) or 1.0
+                        tot_fx = _require_fx_rate(tot_ccy, base_currency, pair_rates)
                         flattened_balances.append(
                             {
                                 "account_id": aid,
@@ -1485,9 +1508,9 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             price = abs(float(act.get("price") or 0.0))
             fee = abs(float(act.get("fee") or act.get("commission") or 0.0))
             currency = _extract_currency_code(act.get("currency"), sym_ccy or base_currency)
-            act_fx = _lookup_fx_rate(currency, base_currency, pair_rates) or 1.0
 
             if act_type in {"buy", "sell", "rei"}:
+                act_fx = _require_fx_rate(currency, base_currency, pair_rates)
                 asset_cls = _infer_asset_class(sym_str, sym_type, is_option=is_opt)
                 opt_right: str | None = None
                 opt_strike: float | None = None
@@ -1557,6 +1580,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 "tax",
                 "transfer",
             }:
+                act_fx = _require_fx_rate(currency, base_currency, pair_rates)
                 raw_amt = float(act.get("amount") if act.get("amount") is not None else (price * qty))
                 if act_type in {"deposit", "contribution", "funds_contribution"}:
                     flow_kind = FlowKind.DEPOSIT
@@ -1633,7 +1657,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             if selected_set and aid and aid not in selected_set:
                 continue
             sym_str, pos_ccy, asset_cls, mult = _position_asset_info(p, base_currency)
-            pos_fx = _lookup_fx_rate(pos_ccy, base_currency, pair_rates) or 1.0
+            pos_fx = _require_fx_rate(pos_ccy, base_currency, pair_rates)
             units = _extract_units(p)
             price = float(p.get("price") or p.get("current_price") or 0.0)
             avg_cost = p.get("average_purchase_price")
@@ -1669,20 +1693,19 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     np_item.get("timestamp_utc") or np_item.get("date"),
                     end_of_day=("timestamp_utc" not in np_item),
                 )
-                np_ccy = _extract_currency_code(np_item.get("currency"), base_currency)
-                np_fx = _lookup_fx_rate(np_ccy, base_currency, pair_rates) or 1.0
-                n_val = (
-                    float(
-                        np_item.get("nav_base")
-                        if np_item.get("nav_base") is not None
-                        else (
+                if np_item.get("nav_base") is not None:
+                    n_val = float(np_item["nav_base"])
+                else:
+                    np_ccy = _extract_currency_code(np_item.get("currency"), base_currency)
+                    np_fx = _require_fx_rate(np_ccy, base_currency, pair_rates)
+                    n_val = (
+                        float(
                             np_item.get("total")
                             if np_item.get("total") is not None
                             else (np_item.get("value") or 0.0)
                         )
+                        * np_fx
                     )
-                    * (1.0 if np_item.get("nav_base") is not None else np_fx)
-                )
                 n_cash = float(np_item["cash_base"]) if np_item.get("cash_base") is not None else None
                 prev_nav, prev_cash = nav_by_ts.get(n_ts, (0.0, None))
                 merged_cash = (
@@ -1704,6 +1727,13 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             balances_source.extend(flattened_balances)
 
         if not has_explicit_curve:
+            # One balances fetch is one snapshot: all accounts are summed into a single NAV
+            # point at one time (the latest account timestamp), never one point per account.
+            # A record built from one snapshot has one point and its return is withheld.
+            snap_total = 0.0
+            snap_cash: float | None = None
+            snap_ts_values: list[str] = []
+            has_snapshot_row = False
             for b in balances_source:
                 aid = str(b.get("account_id") or "").strip()
                 if selected_set and aid and aid not in selected_set:
@@ -1712,10 +1742,10 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 b_ccy = _extract_currency_code(b.get("currency"), base_currency)
                 if isinstance(tot_field, Mapping):
                     b_ccy = _extract_currency_code(tot_field.get("currency"), b_ccy)
-                    b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                    b_fx = _require_fx_rate(b_ccy, base_currency, pair_rates)
                     tot = float(tot_field.get("amount") or tot_field.get("value") or 0.0) * b_fx
                 else:
-                    b_fx = _lookup_fx_rate(b_ccy, base_currency, pair_rates) or 1.0
+                    b_fx = _require_fx_rate(b_ccy, base_currency, pair_rates)
                     tot = (
                         float(
                             tot_field
@@ -1724,17 +1754,24 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         )
                         * b_fx
                     )
-                cash_ccy = _extract_currency_code(b.get("currency"), base_currency)
-                cash_fx = _lookup_fx_rate(cash_ccy, base_currency, pair_rates) or 1.0
-                cash_val = float(b["cash"]) * cash_fx if b.get("cash") is not None else None
-                b_ts = _parse_iso_ts(b.get("updated_at") or b.get("date"))
+                if b.get("cash") is not None:
+                    cash_ccy = _extract_currency_code(b.get("currency"), base_currency)
+                    cash_fx = _require_fx_rate(cash_ccy, base_currency, pair_rates)
+                    snap_cash = (snap_cash or 0.0) + float(b["cash"]) * cash_fx
+                snap_total += tot
+                raw_b_ts = b.get("updated_at") or b.get("date")
+                if raw_b_ts and str(raw_b_ts).strip():
+                    snap_ts_values.append(_parse_iso_ts(raw_b_ts))
+                has_snapshot_row = True
+            if has_snapshot_row:
+                b_ts = max(snap_ts_values) if snap_ts_values else _parse_iso_ts(None)
                 prev_nav, prev_cash = nav_by_ts.get(b_ts, (0.0, None))
                 merged_cash = (
-                    (prev_cash or 0.0) + cash_val
-                    if (prev_cash is not None or cash_val is not None)
+                    (prev_cash or 0.0) + snap_cash
+                    if (prev_cash is not None or snap_cash is not None)
                     else None
                 )
-                nav_by_ts[b_ts] = (prev_nav + tot, merged_cash)
+                nav_by_ts[b_ts] = (prev_nav + snap_total, merged_cash)
 
         nav_points = [
             NormalizedNavPoint(timestamp_utc=ts_key, nav_base=vals[0], cash_base=vals[1])
@@ -2153,18 +2190,18 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 for b_row in bal_items:
                     if b_row.get("cash") is not None:
                         row_ccy = _extract_currency_code(b_row.get("currency"), acct_ccy)
-                        row_fx = _lookup_fx_rate(row_ccy, acct_ccy, live_pair_rates) or 1.0
+                        row_fx = _require_fx_rate(row_ccy, acct_ccy, live_pair_rates)
                         cash_sum += float(b_row["cash"]) * row_fx
                 pos_mkt_sum = 0.0
                 for p_row in acct_positions:
                     u = _extract_units(p_row)
                     pr = float(p_row.get("price") or p_row.get("current_price") or 0.0)
                     _, p_ccy, _, p_mult = _position_asset_info(p_row, acct_ccy)
-                    p_fx = _lookup_fx_rate(p_ccy, acct_ccy, live_pair_rates) or 1.0
+                    p_fx = _require_fx_rate(p_ccy, acct_ccy, live_pair_rates)
                     pos_mkt_sum += u * pr * p_mult * p_fx
                 if acct_tot_val is not None:
                     tot_fx = (
-                        _lookup_fx_rate(acct_tot_ccy or acct_ccy, acct_ccy, live_pair_rates) or 1.0
+                        _require_fx_rate(acct_tot_ccy or acct_ccy, acct_ccy, live_pair_rates)
                     )
                     resolved_total = acct_tot_val * tot_fx
                 else:
