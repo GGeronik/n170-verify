@@ -26,7 +26,11 @@ import re
 from typing import Any
 
 from n170_verify.connectors.ccxt_crypto import UnsupportedScraperPolicyError
-from n170_verify.connectors.ibkr_flex import IbkrFlexXmlSecurityError, parse_ibkr_flex_xml
+from n170_verify.connectors.ibkr_flex import (
+    IbkrFlexXmlSecurityError,
+    _trim_valuation_series,
+    parse_ibkr_flex_xml,
+)
 from n170_verify.contracts import (
     AccountScope,
     AssetClass,
@@ -641,6 +645,7 @@ def parse_degiro_csv_bundle(
                 parsed_acct_rows.append((ts_val, a_idx, row))
         parsed_acct_rows.sort(key=lambda item: (item[0], item[1]))
         open_qty_by_sym: dict[str, float] = {}
+        cash_bal_by_ccy: dict[str, float] = {}
 
         for ts, a_idx, row in parsed_acct_rows:
             desc = sanitize_csv_text_field(_cell(row, c_desc))
@@ -727,18 +732,34 @@ def parse_degiro_csv_bundle(
                         )
                     )
 
+            if has_separate_tx:
+                continue
+            if bal_val is not None:
+                if bal_ccy not in cash_bal_by_ccy and bal_ccy != base_ccy:
+                    opening = bal_val - (amt or 0.0) if ccy == bal_ccy else bal_val
+                    if abs(opening) > 0.005:
+                        # This currency held cash before its first row, so every earlier
+                        # valuation left that cash out.
+                        acct_flat_nav_by_ts.clear()
+                cash_bal_by_ccy[bal_ccy] = bal_val
+            # A flat-position valuation is the cash of every currency at this moment. It is
+            # emitted only while all cash is in the base currency; cash held in another
+            # currency is never left out or valued at a rate from another moment.
             if (
-                not has_separate_tx
-                and bal_val is not None
-                and bal_val > 0.0
-                and bal_ccy == base_ccy
+                base_ccy in cash_bal_by_ccy
                 and all(abs(q) <= 1e-8 for q in open_qty_by_sym.values())
+                and all(
+                    abs(v) <= 0.005 for c, v in cash_bal_by_ccy.items() if c != base_ccy
+                )
             ):
+                base_cash = cash_bal_by_ccy[base_ccy]
                 acct_flat_nav_by_ts[ts] = NormalizedNavPoint(
                     timestamp_utc=ts,
-                    nav_base=bal_val,
-                    cash_base=bal_val,
+                    nav_base=base_cash,
+                    cash_base=base_cash,
                 )
+            else:
+                acct_flat_nav_by_ts.pop(ts, None)
 
     # 3. Portfolio CSV (EN / NL / DE)
     port_rows = _read_csv_rows(port_text)
@@ -824,7 +845,9 @@ def parse_degiro_csv_bundle(
             NormalizedNavPoint(timestamp_utc=period_end, nav_base=ending_nav, cash_base=ending_cash)
         ]
     elif acct_flat_nav_by_ts:
-        nav_points = [acct_flat_nav_by_ts[k] for k in sorted(acct_flat_nav_by_ts)]
+        nav_points = _trim_valuation_series(
+            [acct_flat_nav_by_ts[k] for k in sorted(acct_flat_nav_by_ts)]
+        )
     else:
         nav_points = []
 

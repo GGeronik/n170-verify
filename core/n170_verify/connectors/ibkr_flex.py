@@ -194,6 +194,28 @@ def _parse_flex_timestamp_utc(raw: str | None) -> str | None:
     return None
 
 
+_DATE_ONLY_RE = re.compile(r"^\s*(?:\d{8}|\d{4}-\d{2}-\d{2})\s*$")
+
+
+def _trim_valuation_series(points: Sequence[NormalizedNavPoint]) -> list[NormalizedNavPoint]:
+    """Keep a time-ordered valuation series from its first positive value onward.
+
+    A value at or below zero after a positive one stays in the series, so a wipe-out is
+    visible to the return calculation (which then withholds) and is never skipped. After
+    the last positive value only the first non-positive one is kept; values before the
+    account was first funded are not part of the series.
+    """
+    ordered = sorted(points, key=lambda p: p.timestamp_utc)
+    pos_idx = [i for i, p in enumerate(ordered) if p.nav_base > 0.0]
+    if not pos_idx:
+        return []
+    first, last = pos_idx[0], pos_idx[-1]
+    kept = ordered[first : last + 1]
+    if last + 1 < len(ordered):
+        kept.append(ordered[last + 1])
+    return kept
+
+
 def _decode_and_guard_xml_bytes(raw: bytes, *, max_bytes: int) -> bytes:
     """Reject DTD/XXE across UTF-8/16/32 and normalize UTF-16 into UTF-8 bytes for ElementTree."""
     if len(raw) > max_bytes:
@@ -499,6 +521,21 @@ def parse_ibkr_flex_xml(
         aid = _first_attr(st, ("accountId", "acctCode"))
         if aid and aid not in raw_acct_ids:
             raw_acct_ids.append(aid)
+    for row in nav_rows:
+        aid = _first_attr(row, ("accountId", "acctCode"))
+        if aid and aid != "-" and aid not in raw_acct_ids:
+            raw_acct_ids.append(aid)
+    # A valuation series describes exactly one account: valuations of several accounts are
+    # never merged by date, since no file proves every account is valued at every date.
+    statements_without_id = sum(
+        1 for st in statement_attrs_list if not _first_attr(st, ("accountId", "acctCode"))
+    )
+    if len(raw_acct_ids) > 1 or (len(statement_attrs_list) > 1 and statements_without_id):
+        raise IbkrFlexParseError(
+            "This Flex file contains statements for more than one account. A performance "
+            "record covers one account: run the Flex query for a single account and upload "
+            "one file per account."
+        )
 
     if environment_tier is not None:
         env_tier = EnvironmentTier(environment_tier)
@@ -560,13 +597,24 @@ def parse_ibkr_flex_xml(
     nav_by_ts: dict[str, NormalizedNavPoint] = {}
     warnings: list[str] = []
     for row in nav_rows:
-        ts = _parse_flex_timestamp_utc(_first_attr(row, ("reportDate", "date", "asOfDate", "toDate")))
+        raw_date = _first_attr(row, ("reportDate", "date", "asOfDate", "toDate"))
+        ts = _parse_flex_timestamp_utc(raw_date)
+        if ts is not None and raw_date is not None and _DATE_ONLY_RE.match(raw_date):
+            # A report-date valuation is the value at the end of that date, so a cash flow
+            # during that day falls in the interval that ends at this valuation.
+            ts = ts[:10] + "T23:59:59Z"
         total = _parse_flex_float(
             _first_attr(row, ("total", "netLiquidationValue", "netAssetValue", "value", "endingValue"))
         )
-        if ts is None or total is None or total <= 0.0:
-            warnings.append("Ignored invalid or non-positive EquitySummaryInBase row.")
+        if ts is None or total is None:
+            warnings.append("Ignored invalid EquitySummaryInBase row.")
             continue
+        prior = nav_by_ts.get(ts)
+        if prior is not None and abs(prior.nav_base - total) > 1e-6:
+            raise IbkrFlexParseError(
+                "This Flex file reports two different account values for the same date; "
+                "upload a single statement that covers the period once."
+            )
         cash_b = _parse_flex_float(_first_attr(row, ("cash", "cashLong")))
         stock_b = _parse_flex_float(_first_attr(row, ("stock",)), default=0.0) or 0.0
         opt_b = _parse_flex_float(_first_attr(row, ("options",)), default=0.0) or 0.0
@@ -582,7 +630,7 @@ def parse_ibkr_flex_xml(
             positions_base=pos_b,
             accruals_base=acc_b,
         )
-    nav_points = [nav_by_ts[k] for k in sorted(nav_by_ts)]
+    nav_points = _trim_valuation_series([nav_by_ts[k] for k in sorted(nav_by_ts)])
 
     # 3. PriorPeriodPositions & OpenPositions
     def _parse_positions(rows: list[dict[str, str]], boundary: str) -> list[NormalizedPosition]:
@@ -823,7 +871,11 @@ def parse_ibkr_flex_xml(
         )
 
     stmt_start = _parse_flex_timestamp_utc(_first_attr(primary_stmt, ("fromDate", "startDate")))
-    stmt_end = _parse_flex_timestamp_utc(_first_attr(primary_stmt, ("toDate", "endDate")))
+    raw_stmt_end = _first_attr(primary_stmt, ("toDate", "endDate"))
+    stmt_end = _parse_flex_timestamp_utc(raw_stmt_end)
+    if stmt_end is not None and raw_stmt_end is not None and _DATE_ONLY_RE.match(raw_stmt_end):
+        # The statement's last date is inclusive: it ends with that date's valuation.
+        stmt_end = stmt_end[:10] + "T23:59:59Z"
     all_ts = (
         [p.timestamp_utc for p in nav_points]
         + [t.timestamp_utc for t in trades_by_id.values()]
