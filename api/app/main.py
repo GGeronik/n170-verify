@@ -276,11 +276,11 @@ class VerifyApiApplication:
             if retry_after is not None:
                 resp.headers["Retry-After"] = str(retry_after)
         path = raw_path or "/"
-        if not _is_sync_route(path) and resp.status_code < 500:
+        if not _is_sync_route(path) and (resp.status_code < 500 or resp.status_code == 502):
             scanner = OutboundPrivacyScanner()
             body_text = resp.body.decode("utf-8", errors="replace")
             violations = scanner.scan_text(body_text)
-            if violations and 400 <= resp.status_code < 500:
+            if violations and (400 <= resp.status_code < 500 or resp.status_code == 502):
                 # An error that would repeat a caller's own text (a field name, a path
                 # id) in a form the scanner blocks keeps its status and names only the
                 # kind of problem.
@@ -408,7 +408,7 @@ class VerifyApiApplication:
                 headers=req_headers,
                 hyperliquid_http_transport=self.hyperliquid_http_transport,
             )
-            if isinstance(parsed, Mapping) and bool(parsed.get("persist_sync", False)):
+            if isinstance(parsed, Mapping) and parsed.get("persist_sync") is True:
                 return _sync_json_response(st, resp)
             return ApiResponse.json_response(st, resp)
 

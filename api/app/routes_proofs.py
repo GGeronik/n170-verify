@@ -36,6 +36,36 @@ def refuse_caller_clock(
     }
 
 
+def parse_strict_bool(
+    payload: Mapping[str, Any], key: str, *, default: bool = False
+) -> tuple[bool, tuple[int, dict[str, Any]] | None]:
+    """Parse an optional JSON boolean flag strictly (rejecting strings and numbers with 422)."""
+    raw = payload.get(key)
+    if raw is None:
+        return default, None
+    if isinstance(raw, bool):
+        return raw, None
+    return False, (
+        422,
+        {"error": "validation_error", "detail": f"{key} must be a boolean"},
+    )
+
+
+def parse_optional_strict_bool(
+    payload: Mapping[str, Any], key: str
+) -> tuple[bool | None, tuple[int, dict[str, Any]] | None]:
+    """Parse an optional nullable JSON boolean flag strictly."""
+    raw = payload.get(key)
+    if raw is None:
+        return None, None
+    if isinstance(raw, bool):
+        return raw, None
+    return None, (
+        422,
+        {"error": "validation_error", "detail": f"{key} must be a boolean"},
+    )
+
+
 def _parse_bundle_from_payload(payload: Mapping[str, Any]) -> VerifyProofBundle:
     raw = payload.get("proof_bundle", payload)
     if not isinstance(raw, Mapping):
@@ -59,7 +89,9 @@ def handle_post_proof(
     except (ValueError, TypeError) as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
 
-    opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
+    opt_in_leaderboard, bool_err = parse_strict_bool(payload, "opt_in_leaderboard", default=False)
+    if bool_err is not None:
+        return bool_err
     now_utc = payload.get("now_utc")
     try:
         stored_bundle, verification, created = store.publish_proof(
@@ -154,8 +186,14 @@ def handle_post_enroll_chain(
     except (ValueError, TypeError) as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
 
-    opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
-    allow_backfill = bool(payload.get("allow_retrospective_backfill", False))
+    opt_in_leaderboard, bool_err = parse_strict_bool(payload, "opt_in_leaderboard", default=False)
+    if bool_err is not None:
+        return bool_err
+    allow_backfill, backfill_err = parse_strict_bool(
+        payload, "allow_retrospective_backfill", default=False
+    )
+    if backfill_err is not None:
+        return backfill_err
     now_utc = payload.get("now_utc")
 
     try:
@@ -219,8 +257,9 @@ def handle_post_append_chain(
     except (ValueError, TypeError) as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
 
-    opt_in_raw = payload.get("opt_in_leaderboard")
-    opt_in_val = None if opt_in_raw is None else bool(opt_in_raw)
+    opt_in_val, bool_err = parse_optional_strict_bool(payload, "opt_in_leaderboard")
+    if bool_err is not None:
+        return bool_err
     now_utc = payload.get("now_utc")
 
     try:
@@ -326,5 +365,7 @@ __all__ = [
     "handle_post_enroll_chain",
     "handle_post_proof",
     "handle_post_verify_proof",
+    "parse_optional_strict_bool",
+    "parse_strict_bool",
     "refuse_caller_clock",
 ]

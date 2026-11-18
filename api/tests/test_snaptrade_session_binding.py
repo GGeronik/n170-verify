@@ -369,6 +369,9 @@ class TestRedirectLimitedToSiteOrigin(_AppCase):
             "https://verify.example.org:8443/connect",
             "http://verify.example.org/connect",
             "http://localhost:3000/connect",
+            "http://127.0.0.1:3000/connect",
+            "https://verify.example.org//evil.com/",
+            "https://verify.example.org/\\evil.com",
         ):
             r = self._portal(client, bad)
             self.assertEqual(r.status_code, 422, f"{bad} -> {r.text}")
@@ -377,17 +380,28 @@ class TestRedirectLimitedToSiteOrigin(_AppCase):
         for good in (
             "https://verify.example.org/connect?snaptrade=connected",
             "https://VERIFY.example.org:443/connect",
-            "http://127.0.0.1:3000/connect",
         ):
             r = self._portal(client, good)
             self.assertEqual(r.status_code, 200, f"{good} -> {r.text}")
 
+        # Self-hosted or loopback-origin deployments still accept http://127.0.0.1:* callbacks.
+        _, sh_client, _ = self._client(
+            transport, site_origin="https://verify.example.org", hosted=False
+        )
+        self.assertEqual(self._portal(sh_client, "http://127.0.0.1:3000/connect").status_code, 200)
+        _, loop_client, _ = self._client(transport, site_origin="http://localhost:3000")
+        self.assertEqual(self._portal(loop_client, "http://127.0.0.1:3000/connect").status_code, 200)
+
     def test_without_configured_origin_only_local_loopback_is_accepted(self) -> None:
         transport, _ = _make_mock_snaptrade_transport()
-        _, client, _ = self._client(transport)
-        r = self._portal(client, "https://verify.example.org/connect")
+        _, hosted_client, _ = self._client(transport, hosted=True)
+        self.assertEqual(self._portal(hosted_client, "https://verify.example.org/connect").status_code, 422)
+        self.assertEqual(self._portal(hosted_client, "http://127.0.0.1:3000/connect").status_code, 422)
+
+        _, sh_client, _ = self._client(transport, hosted=False)
+        r = self._portal(sh_client, "https://verify.example.org/connect")
         self.assertEqual(r.status_code, 422, r.text)
-        ok = self._portal(client, "http://127.0.0.1:3000/connect")
+        ok = self._portal(sh_client, "http://127.0.0.1:3000/connect")
         self.assertEqual(ok.status_code, 200, ok.text)
 
     def test_the_origin_comes_only_from_configuration(self) -> None:

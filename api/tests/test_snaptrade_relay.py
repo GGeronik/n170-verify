@@ -316,7 +316,7 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
                     json={
                         "slot_label": f"founder-{idx}",
                         "broker": "ROBINHOOD",
-                        "redirect_url": "http://127.0.0.1:3000/connect?snaptrade=connected",
+                        "redirect_url": "https://verify.example.org/connect?snaptrade=connected",
                     },
                     headers=dev_headers,
                 )

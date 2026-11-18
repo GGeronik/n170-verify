@@ -106,6 +106,15 @@ CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE = frozenset(
 )
 
 
+# PROPOSED policy (owner to confirm): in hosted mode a record made from a public address
+# without proof of ownership cannot opt into or overwrite a wallet's row on the public leaderboard.
+class LeaderboardRequiresProvenOwnershipError(GovernanceBlockedError):
+    """Raised when hosted mode is asked to list a record made without proof of account ownership."""
+
+    error_code = "leaderboard_requires_proven_ownership"
+    http_status = 403
+
+
 class ChainLinkMismatchError(ValueError):
     """Raised when a chain link's own fields disagree with the record that carries it."""
 
@@ -659,6 +668,14 @@ class ProofStore:
             )
         _refuse_invalid_holder_claim(verification)
         refuse_text_the_scanner_blocks(sanitized_bundle)
+        if (
+            self._config.hosted_multi_user_mode
+            and opt_in_leaderboard
+            and sanitized_bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+        ):
+            raise LeaderboardRequiresProvenOwnershipError(
+                "This host does not list a record made from a public address without proof of ownership on the public leaderboard"
+            )
 
         now_str = stored_at_utc or utc_now_iso()
         chain_id = (
@@ -789,6 +806,11 @@ class ProofStore:
         best_by_account: dict[str, tuple[tuple[int, datetime], StoredProofEntry]] = {}
         for r in rows:
             bundle = VerifyProofBundle.from_dict(json.loads(str(r["bundle_json"])))
+            if (
+                self._config.hosted_multi_user_mode
+                and bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+            ):
+                continue
             seq_val = int(r["sequence_number"]) if r["sequence_number"] is not None else -1
             issued_dt = parse_utc_timestamp(bundle.issued_at_utc)
             rank_key = (seq_val, issued_dt)
@@ -1212,12 +1234,14 @@ class ProofStore:
 
 
 __all__ = [
+    "CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE",
     "ChainLinkMismatchError",
     "ChainRequiresProvenOwnershipError",
     "ChainResetConflictError",
     "ChainViolationError",
     "EMPTY_TLOG_ROOT_HEX",
     "GovernanceBlockedError",
+    "LeaderboardRequiresProvenOwnershipError",
     "PaperOrSandboxRejectedError",
     "ProofAlreadyPublishedError",
     "ProofBundleInvalidError",

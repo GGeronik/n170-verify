@@ -160,13 +160,18 @@ class HostedVerifyRequestSurfaceTests(unittest.TestCase):
             "connector_fetch_kwargs": {"start_date": "2026-01-02", "end_date": "2026-02-05"},
             "disclose_leaf_names": ["core_metrics"],
             "publish_proof": True,
-            "opt_in_leaderboard": True,
+            "opt_in_leaderboard": False,
         }
         resp = self.real.post("/api/v1/verify", json=live)
         self.assertEqual(resp.status_code, 200, resp.text)
         bundle = resp.json()["proof_bundle"]
         self.assertEqual(bundle["broker_id"], "hyperliquid")
         self.assertRegex(bundle["proof_id"], r"^prf-[0-9a-f]{20}$")
+
+        # Hosted public-wallet records cannot opt into the public leaderboard without proven ownership.
+        refused_lb = self.real.post("/api/v1/verify", json={**live, "opt_in_leaderboard": True})
+        self.assertEqual(refused_lb.status_code, 403, refused_lb.text)
+        self.assertEqual(refused_lb.json()["error"], "leaderboard_requires_proven_ownership")
 
         statement = {
             "broker_id": "auto_detect",

@@ -7,7 +7,9 @@ import html
 import math
 import re
 from typing import Any
+import unicodedata
 
+from app.privacy_scanner import OutboundPrivacyScanner
 from app.store import ProofNotFoundError, ProofStore
 from n170_verify.contracts import (
     BundleVerificationResult,
@@ -30,14 +32,19 @@ SVG_RESPONSE_HEADERS: dict[str, str] = {
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
+_UNSAFE_UNICODE_CATEGORIES = frozenset({"Cf", "Cc", "Cs", "Co", "Cn", "Zl", "Zp"})
+
+
 def is_safe_xml_char(ch: str) -> bool:
     code = ord(ch)
-    return not (
+    if (
         code < 0x20
         or 0x7F <= code <= 0x9F
         or 0xD800 <= code <= 0xDFFF
         or code in {0x2028, 0x2029, 0xFFFE, 0xFFFF}
-    )
+    ):
+        return False
+    return unicodedata.category(ch) not in _UNSAFE_UNICODE_CATEGORIES
 
 
 def svg_escape(value: Any) -> str:
@@ -261,6 +268,8 @@ def handle_get_badge_svg(
 ) -> tuple[int, bytes, dict[str, str]]:
     """HTTP handler logic for ``GET /api/v1/badges/{proof_id}.svg``."""
     raw_label = query_params.get("label") if query_params else None
+    if raw_label and OutboundPrivacyScanner().scan_text(str(raw_label)):
+        raw_label = None
     try:
         entry = store.get_proof_entry(proof_id)
     except ProofNotFoundError:

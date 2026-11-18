@@ -13,7 +13,7 @@ from app.badges import (
     verified_leaf_payload,
 )
 from app.routes_proofs import refuse_caller_clock
-from app.store import ProofStore
+from app.store import CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE, ProofStore
 from n170_verify.contracts import (
     AccountScope,
     CapitalBracket,
@@ -127,6 +127,11 @@ def handle_get_leaderboard(
 
     for cand in candidates:
         bundle = cand.bundle
+        if (
+            store.config.hosted_multi_user_mode
+            and bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+        ):
+            continue
         if broker_filter and bundle.broker_id != broker_filter:
             continue
 

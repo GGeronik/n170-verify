@@ -525,6 +525,7 @@ class TestLaunchBlockersHyperliquidAndSnapTrade(unittest.TestCase):
             snaptrade_consumer_key="pers-consumer-secret-live-xyz",
             snaptrade_dev_key="dummy-founder-dev-key",
             account_blinding_salt_hex="ef" * 32,
+            site_origin="http://127.0.0.1:3000",
         )
         app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
         client = VerifyApiTestClient(app)

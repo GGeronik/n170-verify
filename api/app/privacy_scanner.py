@@ -35,13 +35,13 @@ class PrivacyLeakError(ValueError):
 #                            characters (PANW260320C00150000)
 #   tradier_account_id       6YA + 6 or more digits           (6YA123456)
 _ACCOUNT_NUMBER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("ibkr_account_id", re.compile(r"\bU\d{6,}\b")),
-    ("ibkr_paper_account_id", re.compile(r"\bDU\d{6,}\b")),
+    ("ibkr_account_id", re.compile(r"\bU\d{6,}\b", re.IGNORECASE)),
+    ("ibkr_paper_account_id", re.compile(r"\bDU\d{6,}\b", re.IGNORECASE)),
     (
         "alpaca_paper_account_id",
-        re.compile(r"\bPA(?=(?:[A-Z]*\d){2})[A-Z0-9]{8,10}\b"),
+        re.compile(r"\bPA(?=(?:[A-Z]{0,9}\d){2})[A-Z0-9]{8,10}\b", re.IGNORECASE),
     ),
-    ("tradier_account_id", re.compile(r"\b6YA\d{6,}\b")),
+    ("tradier_account_id", re.compile(r"\b6YA\d{6,}\b", re.IGNORECASE)),
     (
         "raw_account_field",
         re.compile(
@@ -53,6 +53,20 @@ _ACCOUNT_NUMBER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r'\baccountId="[A-Za-z0-9_-]{5,}"'),
     ),
 )
+
+_ISIN_UPPER_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+
+
+def is_valid_iso6166_isin(token: str) -> bool:
+    """Return True when ``token`` is an uppercase 12-char ISO 6166 ISIN with valid mod-10 check digit."""
+    if len(token) != 12 or _ISIN_UPPER_RE.match(token) is None:
+        return False
+    digits = "".join(str(ord(ch) - 55) if "A" <= ch <= "Z" else ch for ch in token)
+    total = 0
+    for idx, ch in enumerate(reversed(digits)):
+        val = (ord(ch) - 48) * (2 if idx % 2 == 1 else 1)
+        total += val - 9 if val > 9 else val
+    return total % 10 == 0
 
 _RAW_STATEMENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("flex_statement_xml", re.compile(r"<FlexStatements|<FlexStatement", re.IGNORECASE)),
@@ -102,6 +116,8 @@ class OutboundPrivacyScanner:
 
         for rule_name, pattern in _ACCOUNT_NUMBER_PATTERNS:
             matches = pattern.findall(text)
+            if rule_name == "alpaca_paper_account_id" and matches:
+                matches = [m for m in matches if not is_valid_iso6166_isin(m)]
             if matches:
                 violations.append(f"Synthetic account leak ({rule_name}): {len(matches)} match(es)")
 

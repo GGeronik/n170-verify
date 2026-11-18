@@ -179,14 +179,42 @@ def _too_large_message(limit: str) -> str:
     )
 
 
-def _line_endings(blob: bytes) -> int:
-    """Line endings of every kind: CR LF, a lone LF and a lone CR each end one row."""
-    if blob[:2] in (b"\xff\xfe", b"\xfe\xff"):  # UTF-16 export: count its characters, not bytes
+_HTML_STATEMENT_RE = re.compile(rb"(?i)<(?:!doctype\s+html|html|table|tr)[\s>/]")
+_HTML_TR_ROW_RE = re.compile(rb"(?i)<tr(?:[\s>/]|$)")
+_FLEX_XML_RE = re.compile(rb"(?i)<flex(?:queryresponse|statements|statement)[\s>/]")
+
+
+def _utf8_statement_view(blob: bytes) -> bytes:
+    """Decode UTF-16LE/BE (BOM or NUL-interleaved ASCII) to a UTF-8 byte view once."""
+    if blob[:2] in (b"\xff\xfe", b"\xfe\xff"):
         try:
-            blob = blob.decode("utf-16").encode("utf-8")
+            return blob.decode("utf-16").encode("utf-8")
         except UnicodeDecodeError:
-            pass
-    return blob.count(b"\n") + blob.count(b"\r") - blob.count(b"\r\n")
+            return blob
+    head = blob[:128]
+    if b"\x00" in head:
+        aligned = blob if len(blob) % 2 == 0 else blob[:-1]
+        even_nuls = head[0::2].count(0)
+        odd_nuls = head[1::2].count(0)
+        order = ("utf-16-be", "utf-16-le") if even_nuls > odd_nuls else ("utf-16-le", "utf-16-be")
+        for enc in order:
+            try:
+                return aligned.decode(enc).encode("utf-8")
+            except UnicodeDecodeError:
+                continue
+    return blob
+
+
+def _line_endings(u8: bytes) -> int:
+    """Line endings of every kind: CR LF, a lone LF and a lone CR each end one row."""
+    return u8.count(b"\n") + u8.count(b"\r") - u8.count(b"\r\n")
+
+
+def _markup_rows(u8: bytes) -> int:
+    """Count table rows for HTML exports and XML elements for non-HTML XML exports."""
+    if _HTML_STATEMENT_RE.search(u8) and not _FLEX_XML_RE.search(u8[:16384]):
+        return len(_HTML_TR_ROW_RE.findall(u8))
+    return u8.count(b"<") - u8.count(b"</")
 
 
 def enforce_statement_input_limits(request_payload: Mapping[str, Any]) -> None:
@@ -194,7 +222,10 @@ def enforce_statement_input_limits(request_payload: Mapping[str, Any]) -> None:
     blobs = _statement_input_bytes(request_payload)
     if sum(len(b) for b in blobs) > MAX_STATEMENT_INPUT_BYTES:
         raise WorkerInputTooLargeError(_too_large_message("bytes"))
-    rows = sum(max(_line_endings(b), b.count(b"<") - b.count(b"</")) for b in blobs)
+    rows = 0
+    for b in blobs:
+        u8 = _utf8_statement_view(b)
+        rows += max(_line_endings(u8), _markup_rows(u8))
     if rows > MAX_STATEMENT_INPUT_ROWS:
         raise WorkerInputTooLargeError(_too_large_message("rows"))
 
@@ -574,18 +605,32 @@ def default_standalone_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]
                 summary_text="Isolated worker accounting identity check completed.",
             )
 
+        is_withheld = bool(job.get("performance_withheld", False)) or bool(
+            perf.performance_withheld
+        )
         coaching_input = job.get("coaching_report")
         if isinstance(coaching_input, Mapping):
             coaching = TraderCoachingAndContextReport.from_dict(coaching_input)
         else:
             coaching = TraderCoachingAndContextReport(
-                cost_drag=CostAndDragBreakdown(
-                    commission_and_fee_drag_bps=4.0,
-                    margin_and_funding_drag_bps=0.0,
-                    fx_conversion_drag_bps=0.0,
-                    withholding_tax_drag_bps=0.0,
-                    total_friction_drag_bps=4.0,
-                    annualized_total_drag_bps=16.0,
+                cost_drag=(
+                    CostAndDragBreakdown(
+                        commission_and_fee_drag_bps=None,
+                        margin_and_funding_drag_bps=None,
+                        fx_conversion_drag_bps=None,
+                        withholding_tax_drag_bps=None,
+                        total_friction_drag_bps=None,
+                        annualized_total_drag_bps=None,
+                    )
+                    if is_withheld
+                    else CostAndDragBreakdown(
+                        commission_and_fee_drag_bps=4.0,
+                        margin_and_funding_drag_bps=0.0,
+                        fx_conversion_drag_bps=0.0,
+                        withholding_tax_drag_bps=0.0,
+                        total_friction_drag_bps=4.0,
+                        annualized_total_drag_bps=16.0,
+                    )
                 ),
                 behaviour=BehaviouralCoachingMetrics(
                     sample_eligible=False,
@@ -930,8 +975,6 @@ def _ephemeral_worker_entrypoint(
         dropped_tags: set[str] = set()
         _leave_out_journal_tags_the_scanner_blocks(dropped_tags)
         redacted_result = pipeline_fn(job_payload)
-        if dropped_tags and isinstance(redacted_result, dict):
-            redacted_result["dropped_journal_tag_count"] = len(dropped_tags)
         if _withheld_without_core_metrics(redacted_result):
             # A withheld return is always visible: disclose core_metrics with whatever
             # else the first run disclosed.
@@ -940,6 +983,8 @@ def _ephemeral_worker_entrypoint(
                 str(leaf.get("leaf_name")) for leaf in redacted_result.get("disclosed_leaves") or []
             ] + ["core_metrics"]
             redacted_result = pipeline_fn(rerun_job)
+        if dropped_tags and isinstance(redacted_result, dict):
+            redacted_result["dropped_journal_tag_count"] = len(dropped_tags)
 
         send_conn.send(
             {

@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.config import ApiConfig
-from app.routes_proofs import refuse_caller_clock
+from app.routes_proofs import parse_strict_bool, refuse_caller_clock
 from app.routes_sync import (
     resolve_clamped_provider_approval_state,
     verify_sync_authorization,
@@ -306,7 +306,9 @@ def handle_post_verify(
         if refusal is not None:
             return 422, {"error": "validation_error", "detail": refusal}
 
-    persist_sync = bool(payload.get("persist_sync", False))
+    persist_sync, sync_bool_err = parse_strict_bool(payload, "persist_sync", default=False)
+    if sync_bool_err is not None:
+        return sync_bool_err
     if persist_sync:
         auth_ok, auth_status, auth_err = verify_sync_authorization(headers, config)
         if not auth_ok:
@@ -337,8 +339,12 @@ def handle_post_verify(
                 "detail": f"request field(s) not accepted by this host: {', '.join(unlisted)}",
             }
 
-    publish_proof = bool(payload.get("publish_proof", False))
-    opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
+    publish_proof, pub_err = parse_strict_bool(payload, "publish_proof", default=False)
+    if pub_err is not None:
+        return pub_err
+    opt_in_leaderboard, opt_err = parse_strict_bool(payload, "opt_in_leaderboard", default=False)
+    if opt_err is not None:
+        return opt_err
 
     retention_mode = "opt_in_encrypted_sync" if persist_sync else "no_persistent_storage"
 
@@ -371,7 +377,11 @@ def handle_post_verify(
     except WorkerValidationError as exc:
         return 422, {"error": "validation_error", "detail": str(exc)}
     except WorkerBrokerUpstreamError as exc:
-        return 502, {"error": "broker_upstream_error", "detail": str(exc)}
+        clean_upstream = re.split(r":\s+", str(exc), maxsplit=1)[0].strip()
+        return 502, {
+            "error": "broker_upstream_error",
+            "detail": clean_upstream or "Broker upstream request failed",
+        }
     except WorkerIsolationError as exc:
         return 500, {"error": "worker_isolation_error", "detail": str(exc)}
 

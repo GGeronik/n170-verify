@@ -24,7 +24,8 @@ from app.badges import (
     verified_leaf_payload,
 )
 from app.config import ApiConfig, utc_now_iso
-from app.routes_proofs import refuse_caller_clock
+from app.privacy_scanner import OutboundPrivacyScanner
+from app.routes_proofs import parse_strict_bool, refuse_caller_clock
 from app.store import (
     GovernanceBlockedError,
     ProofBundleInvalidError,
@@ -80,10 +81,10 @@ EMBED_METADATA_HEADERS: dict[str, str] = {
 }
 
 _VALID_VS_PROOF_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s*:", re.IGNORECASE)
-_DANGEROUS_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]+\s*=", re.IGNORECASE)
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
-_DISCORD_MASS_MENTION_RE = re.compile(r"@(everyone|here)\b", re.IGNORECASE)
+_DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s{0,16}:", re.IGNORECASE)
+_DANGEROUS_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]{1,64}\s{0,16}=", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^<>]*>")
+_DISCORD_MASS_MENTION_RE = re.compile(r"@(everyone|here\b)", re.IGNORECASE)
 
 
 class _PlausibilityInputError(ValueError):
@@ -94,17 +95,28 @@ class _PlausibilityInputError(ValueError):
         self.status_code = status_code
 
 
+def _strip_dangerous_tokens_until_fixed(text: str) -> str:
+    cleaned = text
+    for _ in range(16):
+        prev = cleaned
+        cleaned = _DANGEROUS_SCHEME_RE.sub("", cleaned)
+        cleaned = _DANGEROUS_EVENT_ATTR_RE.sub("", cleaned)
+        cleaned = _DISCORD_MASS_MENTION_RE.sub(r"\1", cleaned)
+        if cleaned == prev:
+            break
+    return cleaned
+
+
 def sanitize_public_label(raw: Any, *, max_len: int = 64) -> str:
     """Strip XSS vectors, HTML delimiters, quotes, and control chars, then HTML-escape."""
     if raw is None:
         return ""
-    cleaned = "".join(ch for ch in str(raw) if is_safe_xml_char(ch))
+    bounded = str(raw)[: max_len * 8]
+    cleaned = "".join(ch for ch in bounded if is_safe_xml_char(ch))
     cleaned = _HTML_TAG_RE.sub(" ", cleaned)
-    cleaned = _DANGEROUS_SCHEME_RE.sub("", cleaned)
-    cleaned = _DANGEROUS_EVENT_ATTR_RE.sub("", cleaned)
-    cleaned = _DISCORD_MASS_MENTION_RE.sub(r"\1", cleaned)
     for forbidden_ch in ("<", ">", '"', "'", "`", "\\"):
         cleaned = cleaned.replace(forbidden_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) > max_len:
         cleaned = cleaned[:max_len].rstrip()
@@ -113,10 +125,21 @@ def sanitize_public_label(raw: Any, *, max_len: int = 64) -> str:
 
 def sanitize_markdown_text(raw: Any, *, max_len: int = 96) -> str:
     """Sanitize free-text strings for Discord/Telegram embeds (zero XSS or link injection)."""
-    base = sanitize_public_label(raw, max_len=max_len)
+    if raw is None:
+        return ""
+    bounded = str(raw)[: max_len * 8]
+    cleaned = "".join(ch for ch in bounded if is_safe_xml_char(ch))
+    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
+    for forbidden_ch in ("<", ">", '"', "'", "`", "\\"):
+        cleaned = cleaned.replace(forbidden_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
     for md_ch in ("[", "]", "(", ")", "*", "_", "~", "|"):
-        base = base.replace(md_ch, "")
-    return base.strip()
+        cleaned = cleaned.replace(md_ch, "")
+    cleaned = _strip_dangerous_tokens_until_fixed(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip()
+    return html.escape(cleaned, quote=True)
 
 
 def _reject_json_nonfinite_constant(token: str) -> Any:
@@ -818,8 +841,29 @@ def handle_get_challenge_card(
     except _PlausibilityInputError as exc:
         return exc.status_code, {"error": "validation_error", "detail": str(exc)}, dict(EMBED_METADATA_HEADERS)
 
-    safe_handle = sanitize_public_label(query_params.get("handle"), max_len=64)
-    safe_period = sanitize_public_label(query_params.get("period_label"), max_len=64)
+    raw_handle = query_params.get("handle")
+    raw_period = query_params.get("period_label")
+    safe_handle = sanitize_public_label(raw_handle, max_len=64)
+    safe_period = sanitize_public_label(raw_period, max_len=64)
+    scanner = OutboundPrivacyScanner()
+    for field_label, candidate in (
+        ("handle", raw_handle),
+        ("handle", safe_handle),
+        ("period_label", raw_period),
+        ("period_label", safe_period),
+    ):
+        if candidate and scanner.scan_text(str(candidate)):
+            return (
+                422,
+                {
+                    "error": "validation_error",
+                    "detail": (
+                        f"{field_label} contains text that looks like an account number or a "
+                        "credential and cannot be included in a challenge card"
+                    ),
+                },
+                dict(EMBED_METADATA_HEADERS),
+            )
 
     display_target = safe_handle if safe_handle else "Trader"
     claim_fragments: list[str] = []
@@ -1490,9 +1534,17 @@ def handle_post_verify_auto_detect(
         if parsed_json.get("filename"):
             filename = str(parsed_json["filename"])
         if "publish_proof" in parsed_json:
-            publish_proof = bool(parsed_json["publish_proof"])
+            publish_proof, pub_err = parse_strict_bool(
+                parsed_json, "publish_proof", default=False
+            )
+            if pub_err is not None:
+                return pub_err
         if "opt_in_leaderboard" in parsed_json:
-            opt_in_leaderboard = bool(parsed_json["opt_in_leaderboard"])
+            opt_in_leaderboard, opt_err = parse_strict_bool(
+                parsed_json, "opt_in_leaderboard", default=False
+            )
+            if opt_err is not None:
+                return opt_err
         if parsed_json.get("issued_at_utc"):
             issued_at_utc = str(parsed_json["issued_at_utc"])
         if isinstance(parsed_json.get("disclose_leaf_names"), list):
