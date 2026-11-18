@@ -22,6 +22,20 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Vite 8 replaces Rollup and esbuild with Rolldown and Oxc. Until the build
+    # and tests are migrated, a major bump cannot pass: the public module
+    # inventory in vite.config.mjs calls Rollup's getWatchFiles(), which
+    # Rolldown does not provide, and six test files import the esbuild that
+    # Vite 6 installs. @vitejs/plugin-react 6 requires Vite 8, so the two must
+    # be raised together in one change. Remove both entries with that change.
+    # Security updates are not affected by these entries.
+    ignore:
+      - dependency-name: "vite"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@vitejs/plugin-react"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
