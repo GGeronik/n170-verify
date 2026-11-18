@@ -61,7 +61,6 @@ from n170_verify.contracts import (
     ALLOWED_RETENTION_MODES,
     BundleVerificationResult,
     CanonicalPortfolioLedger,
-    CapitalBracket,
     ContractModelMixin,
     EnvironmentTier,
     IndexedCurvePoint,
@@ -566,10 +565,11 @@ def build_canonical_leaf_payloads(
         periods_per_year=periods_per_year,
     )
 
+    # A bracket is signed only when it was measured; otherwise the leaf states null.
     bracket_value = (
         performance.capital_bracket.value
         if performance.capital_bracket is not None
-        else CapitalBracket.UNDER_1K.value
+        else None
     )
 
     return {

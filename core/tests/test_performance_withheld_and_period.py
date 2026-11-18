@@ -144,6 +144,21 @@ class WithheldPerformanceTests(unittest.TestCase):
         self.assertNotIn("performance_withheld", summary.to_dict())
         self.assertNotIn("withheld_reasons", summary.to_dict())
 
+    def test_capital_bracket_is_signed_only_when_it_was_measured(self) -> None:
+        for label, navs in (("no_nav", []), ("single", _navs(_FEB, [10000.0]))):
+            with self.subTest(case=label):
+                out = verify_portfolio(ledger=_ledger(navs), issued_at_utc=_ISSUED)
+                leaf = out.proof_bundle.get_disclosed_payload("capital_bracket")
+                self.assertIsNone(leaf["capital_bracket"])
+                self.assertTrue(out.verification.signature_valid)
+                self.assertTrue(out.verification.merkle_valid)
+
+        measured = verify_portfolio(ledger=_ledger(_navs(_FEB, _COMPUTED_VALUES)), issued_at_utc=_ISSUED)
+        self.assertEqual(
+            measured.proof_bundle.get_disclosed_payload("capital_bracket")["capital_bracket"],
+            "bracket_10k_100k",
+        )
+
     def test_withheld_flag_round_trips_and_cannot_be_half_set(self) -> None:
         withheld = PerformanceSummary(twr_decimal=0.0, performance_withheld=True, withheld_reasons=["x withheld"])
         self.assertEqual(PerformanceSummary.from_dict(withheld.to_dict()), withheld)
