@@ -52,6 +52,14 @@ LARGE_INTERVAL_FLOW_FRACTION = 0.10
 # holidays (a 4-day Thursday-to-Monday gap against a 1-day median).
 UNEVEN_INTERVAL_RATIO = 5.0
 
+# Annualised figures also need at least this many intervals, none shorter than this (one day
+# less six hours, so a daily close stamped a little early or late still counts as a day).
+MIN_ANNUALISED_INTERVALS = 3
+MIN_ANNUALISED_INTERVAL_SECONDS = 18.0 * 3600.0
+
+# CAGR states a yearly rate, so it is signed only for a series spanning at least a year.
+MIN_CAGR_SPAN_DAYS = 365.0
+
 
 @dataclass(frozen=True, slots=True)
 class SubperiodReturnObservation:
@@ -546,36 +554,53 @@ def calculate_portfolio_performance_detailed(
 
     twr_decimal = wealth - 1.0
     elapsed_days = (end_ts - start_ts).total_seconds() / 86400.0
-    cagr_decimal: float | None = None
-    if elapsed_days > 0.0 and wealth > 0.0:
-        try:
-            cagr_decimal = wealth ** (365.0 / elapsed_days) - 1.0
-        except OverflowError:
-            cagr_decimal = None
-        if elapsed_days < 90.0:
-            warnings.append("CAGR over a period shorter than 90 days is highly unstable.")
 
     # The annualisation factor is the scored series' own number of intervals per year
-    # (ACT/365), unless a library caller states one. Uneven intervals have no single factor,
-    # so every annualised figure is withheld while the return itself stands.
+    # (ACT/365), unless a library caller states one. Annualised figures are signed only for a
+    # series that can carry one factor: at least MIN_ANNUALISED_INTERVALS intervals, none
+    # shorter than MIN_ANNUALISED_INTERVAL_SECONDS, and every interval within
+    # UNEVEN_INTERVAL_RATIO of the median either way. Otherwise they are withheld while the
+    # return itself stands.
     gaps_sec = [
         (curr_ts - prev_ts).total_seconds()
         for (prev_ts, _), (curr_ts, _) in zip(nav_sorted, nav_sorted[1:])
     ]
     span_years = (end_ts - start_ts).total_seconds() / SECONDS_PER_ACT365_YEAR
-    uneven_intervals = len(gaps_sec) >= 2 and max(gaps_sec) > UNEVEN_INTERVAL_RATIO * median(gaps_sec)
+    refusal: str | None = None
+    if len(gaps_sec) < MIN_ANNUALISED_INTERVALS:
+        refusal = f"fewer than {MIN_ANNUALISED_INTERVALS} valuation intervals"
+    elif min(gaps_sec) < MIN_ANNUALISED_INTERVAL_SECONDS:
+        refusal = "a valuation interval shorter than a day"
+    else:
+        med_gap = median(gaps_sec)
+        if max(gaps_sec) > UNEVEN_INTERVAL_RATIO * med_gap or min(gaps_sec) < med_gap / UNEVEN_INTERVAL_RATIO:
+            refusal = (
+                f"uneven valuation intervals (one is more than {UNEVEN_INTERVAL_RATIO:g} times "
+                "longer or shorter than the median)"
+            )
     annualization_factor: float | None
-    if uneven_intervals:
+    if refusal is not None:
         annualization_factor = None
         warnings.append(
-            "Valuation intervals are uneven (the longest is more than "
-            f"{UNEVEN_INTERVAL_RATIO:g} times the median), so the annualised figures are withheld: "
-            "volatility, Sharpe, Sortino and the probabilistic Sharpe ratio."
+            f"The annualised figures are withheld because the scored series has {refusal}: "
+            "CAGR, volatility, Sharpe, Sortino, the probabilistic Sharpe ratio and the "
+            "information ratio."
         )
     elif periods_per_year is not None:
         annualization_factor = float(periods_per_year)
     else:
         annualization_factor = len(gaps_sec) / span_years
+
+    cagr_decimal: float | None = None
+    if annualization_factor is not None and elapsed_days >= MIN_CAGR_SPAN_DAYS and wealth > 0.0:
+        try:
+            cagr_decimal = wealth ** (365.0 / elapsed_days) - 1.0
+        except OverflowError:
+            cagr_decimal = None
+    elif annualization_factor is not None:
+        warnings.append(
+            f"CAGR is withheld because the scored series spans less than {MIN_CAGR_SPAN_DAYS:g} days."
+        )
 
     ann_vol: float | None = None
     sharpe: float | None = None
@@ -704,6 +729,9 @@ def calculate_portfolio_performance(
 __all__ = [
     "CAPITAL_FLOW_KINDS_FOR_TWR",
     "LARGE_INTERVAL_FLOW_FRACTION",
+    "MIN_ANNUALISED_INTERVALS",
+    "MIN_ANNUALISED_INTERVAL_SECONDS",
+    "MIN_CAGR_SPAN_DAYS",
     "UNEVEN_INTERVAL_RATIO",
     "PerformanceCalculationResult",
     "SubperiodReturnObservation",

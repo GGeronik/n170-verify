@@ -48,6 +48,7 @@ from n170_verify.coaching import (
     match_fifo_round_trips,
     sanitize_journal_tags,
 )
+from n170_verify.coaching.behaviour_metrics import instruments_held_before_the_ledger
 from n170_verify.connectors import (
     CONNECTOR_CLASS_MAP,
     PaperOrSandboxAccountRejectedError,
@@ -225,6 +226,55 @@ def _call_adapter_fetch(
             f"Connector {type(adapter).__name__}.fetch_canonical_ledger() must return CanonicalPortfolioLedger"
         )
     return ledger
+
+
+# The earliest date a valuation, trade or flow may carry. Electronic brokerage statements and
+# exchange histories that any supported source exports start well after this; a date before it
+# is a placeholder or a damaged row, not activity.
+EARLIEST_ACTIVITY_DATE_UTC = "1980-01-01T00:00:00Z"
+
+
+def _refuse_activity_outside_issue_window(
+    ledger: CanonicalPortfolioLedger, issued_at_utc: str
+) -> None:
+    """Refuse a record holding activity dated after its issue time or before the floor."""
+    issued_dt = parse_utc_timestamp(issued_at_utc)
+    floor_dt = parse_utc_timestamp(EARLIEST_ACTIVITY_DATE_UTC)
+    dated: list[tuple[str, str]] = (
+        [("valuation", pt.timestamp_utc) for pt in ledger.nav_points]
+        + [("trade", t.timestamp_utc) for t in ledger.trades]
+        + [("cash or transfer flow", f.timestamp_utc) for f in ledger.flows]
+        + [("corporate action", c.timestamp_utc) for c in ledger.corporate_actions]
+    )
+    for label, ts in dated:
+        when = parse_utc_timestamp(ts)
+        if when > issued_dt:
+            raise ValueError(
+                f"The input holds a {label} dated {ts}, after the record's issue time "
+                f"{issued_at_utc}; a record cannot describe activity that has not happened"
+            )
+        if when < floor_dt:
+            raise ValueError(
+                f"The input holds a {label} dated {ts}, before {EARLIEST_ACTIVITY_DATE_UTC[:10]}, "
+                "the earliest date this service accepts"
+            )
+
+
+def _warn_positions_opened_before_the_ledger(
+    ledger: CanonicalPortfolioLedger,
+) -> CanonicalPortfolioLedger:
+    """State which instruments round-trip matching leaves out (see ``instruments_held_before_the_ledger``)."""
+    held_before = instruments_held_before_the_ledger(ledger)
+    if not held_before:
+        return ledger
+    ledger_dict = ledger.to_dict()
+    ledger_dict["parser_warnings"] = list(ledger.parser_warnings) + [
+        f"Trades in {len(held_before)} instrument(s) whose first trade in the ledger closes or "
+        "reduces a position held from before the input, or that the input states as an "
+        "opening position, are not matched into round trips, so no round trip is signed "
+        "against an opening trade outside the input."
+    ]
+    return CanonicalPortfolioLedger.from_dict(ledger_dict)
 
 
 def _activity_inside_scored_span(
@@ -460,6 +510,8 @@ def ingest_portfolio_ledger(
         raise PaperOrSandboxAccountRejectedError(
             f"Paper, demo, or sandbox account rejected for live verification (broker_id={resolved_ledger.broker_id!r})"
         )
+
+    resolved_ledger = _warn_positions_opened_before_the_ledger(resolved_ledger)
 
     # Apply optional non-secret metadata overrides without mutating original input instance.
     updates: dict[str, Any] = {}
@@ -766,6 +818,8 @@ def verify_portfolio(
         require_live=require_live,
         allow_filesystem_paths=allow_filesystem_paths,
     )
+
+    _refuse_activity_outside_issue_window(canonical_ledger, issued_iso)
 
     # 2. Resolve optional market reference provider (EODHD when configured, else NullReferenceProvider)
     ref_provider = (

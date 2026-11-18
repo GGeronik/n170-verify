@@ -189,14 +189,71 @@ def _snapshot_open_cost_basis(
     }
 
 
+def instruments_held_before_the_ledger(
+    ledger: CanonicalPortfolioLedger,
+) -> set[tuple[str, str, str | None, float | None, str | None]]:
+    """Instruments whose position may have been opened before the ledger's first row.
+
+    The ledger records a trade's side but no open/close indicator. When the input does not
+    state its opening positions, an instrument whose first trade in the ledger is a sale is
+    read as closing a position opened before the input (a short opened by that sale cannot be
+    told apart and is treated the same way). When the input states its opening positions
+    (an opening-positions section), an instrument listed there is held from before, and a
+    first sale in any other instrument opens a short. Round-trip matching leaves the held
+    instruments out, so no round trip that never happened is signed. A symbol change or
+    merger carries the old instrument's state to the new symbol.
+    """
+    states_openings = "PriorPeriodPositions" in set(ledger.enabled_sections)
+    held: set[tuple[str, str, str | None, float | None, str | None]] = set()
+    for pos in ledger.prior_positions:
+        if pos.asset_class != AssetClass.CASH and abs(pos.quantity) > 1e-12:
+            held.add(
+                _instrument_key(pos.symbol, pos.asset_class, pos.option_right, pos.strike, pos.expiry)
+            )
+
+    seen: set[tuple[str, str, str | None, float | None, str | None]] = set(held)
+    events: list[tuple[datetime, int, int, Any]] = []
+    for idx, ca in enumerate(ledger.corporate_actions):
+        events.append((parse_utc_timestamp(ca.timestamp_utc), 0, idx, ca))
+    for idx, tr in enumerate(ledger.trades):
+        if tr.asset_class == AssetClass.CASH or abs(tr.quantity) <= 1e-12:
+            continue
+        events.append((parse_utc_timestamp(tr.timestamp_utc), 1, idx, tr))
+    events.sort(key=lambda item: (item[0], item[1], item[2]))
+    for _, priority, _, record in events:
+        if priority == 0:
+            new_sym = getattr(record, "new_symbol", None)
+            if not new_sym:
+                continue
+            old_norm = record.symbol.strip().upper()
+            for key in [k for k in seen if k[0] == old_norm]:
+                new_key = (new_sym.strip().upper(),) + key[1:]
+                seen.add(new_key)
+                if key in held:
+                    held.add(new_key)
+            continue
+        key = _instrument_key(
+            record.symbol, record.asset_class, record.option_right, record.strike, record.expiry
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        if str(record.side).strip().lower() != "buy" and not states_openings:
+            held.add(key)
+    return held
+
+
 def _run_fifo_ledger_simulation(
     ledger: CanonicalPortfolioLedger,
 ) -> tuple[list[ClosedRoundTrip], list[_DayLiquidationSnapshot], list[_OpeningFill]]:
+    held_before = instruments_held_before_the_ledger(ledger)
     events: list[tuple[datetime, int, int, CorporateActionRecord | NormalizedTrade]] = []
     for idx, ca in enumerate(ledger.corporate_actions):
         events.append((parse_utc_timestamp(ca.timestamp_utc), 0, idx, ca))
     for idx, tr in enumerate(ledger.trades):
         if tr.asset_class == AssetClass.CASH:
+            continue
+        if _instrument_key(tr.symbol, tr.asset_class, tr.option_right, tr.strike, tr.expiry) in held_before:
             continue
         events.append((parse_utc_timestamp(tr.timestamp_utc), 1, idx, tr))
 
@@ -1205,6 +1262,7 @@ def sanitize_journal_tags(tags: Sequence[str] | None) -> list[str]:
 
 
 __all__ = [
+    "instruments_held_before_the_ledger",
     "ARCHETYPE_CATALYST_SPECIALIST",
     "ARCHETYPE_HIGH_CONVICTION_SWING",
     "ARCHETYPE_INTRADAY_LIQUIDITY",

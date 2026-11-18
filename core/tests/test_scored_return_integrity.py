@@ -489,5 +489,107 @@ class WithheldRecordDisclosureTests(unittest.TestCase):
         self.assertIs(out.proof_bundle.get_disclosed_payload("core_metrics")["performance_withheld"], True)
 
 
+
+class OpeningPositionBeforeTheLedgerTests(unittest.TestCase):
+    """An instrument whose first trade in the ledger closes a position held from before is not matched into round trips."""
+
+    def test_a_first_sale_with_nothing_bought_before_drops_the_instrument(self) -> None:
+        nov3 = datetime(2025, 11, 3, 23, 59, 59, tzinfo=timezone.utc)
+        navs = _navs([100000.0 + 10 * i for i in range(26)], start=nov3)
+        trades = [
+            _trade("AAPL", "sell", datetime(2025, 11, 5, 14, 30, tzinfo=timezone.utc), 100, 210.0, "a1"),
+            _trade("AAPL", "buy", datetime(2025, 11, 6, 14, 30, tzinfo=timezone.utc), 100, 200.0, "a2"),
+            _trade("AAPL", "sell", datetime(2025, 11, 10, 14, 30, tzinfo=timezone.utc), 100, 205.0, "a3"),
+            _trade("MSFT", "buy", datetime(2025, 11, 6, 15, 0, tzinfo=timezone.utc), 10, 400.0, "m1"),
+            _trade("MSFT", "sell", datetime(2025, 11, 12, 15, 0, tzinfo=timezone.utc), 10, 410.0, "m2"),
+        ]
+        out = verify_portfolio(ledger=_ledger(navs, trades=trades), issued_at_utc=_ISSUED)
+        trips = out.proof_bundle.get_disclosed_payload("delayed_closed_trades")["trades"]
+        self.assertEqual([t["symbol"] for t in trips], ["MSFT"])
+        self.assertTrue(any("first trade in the ledger" in w for w in out.parser_warnings))
+
+    def test_a_stated_opening_position_drops_the_instrument(self) -> None:
+        from n170_verify.contracts import NormalizedPosition
+
+        nov3 = datetime(2025, 11, 3, 23, 59, 59, tzinfo=timezone.utc)
+        navs = _navs([100000.0 + 10 * i for i in range(26)], start=nov3)
+        trades = [
+            _trade("AAPL", "buy", datetime(2025, 11, 6, 14, 30, tzinfo=timezone.utc), 100, 200.0, "a2"),
+            _trade("AAPL", "sell", datetime(2025, 11, 10, 14, 30, tzinfo=timezone.utc), 100, 205.0, "a3"),
+        ]
+        prior = [NormalizedPosition(prior_period_or_ending="prior", symbol="AAPL", asset_class=AssetClass.EQUITY,
+                                    quantity=50.0, cost_basis=9000.0, market_value=10000.0)]
+        out = verify_portfolio(ledger=_ledger(navs, trades=trades, prior_positions=prior), issued_at_utc=_ISSUED)
+        self.assertEqual(out.proof_bundle.get_disclosed_payload("delayed_closed_trades")["trades"], [])
+        self.assertTrue(any("first trade in the ledger" in w for w in out.parser_warnings))
+
+
+class RecordDatesWithinIssueTimeTests(unittest.TestCase):
+    def test_activity_after_the_issue_time_is_refused(self) -> None:
+        navs = _navs(_STEADY, start=datetime(2027, 3, 1, 21, 0, tzinfo=timezone.utc))
+        with self.assertRaises(ValueError) as ctx:
+            verify_portfolio(ledger=_ledger(navs), issued_at_utc=_ISSUED)
+        self.assertIn("after the record's issue time", str(ctx.exception))
+
+    def test_activity_before_the_earliest_accepted_date_is_refused(self) -> None:
+        old = [_trade("AAPL", "buy", datetime(1, 1, 2, tzinfo=timezone.utc), 1, 10.0, "o1")]
+        with self.assertRaises(ValueError) as ctx:
+            verify_portfolio(
+                ledger=_ledger([], trades=old, period_start_utc="0001-01-01T00:00:00Z", period_end_utc="0001-01-31T00:00:00Z"),
+                issued_at_utc=_ISSUED,
+            )
+        self.assertIn("before", str(ctx.exception))
+
+
+class AnnualisationPreconditionTests(unittest.TestCase):
+    """Annualised figures need three or more even intervals of at least a day; CAGR also a minimum span."""
+
+    _ANNUALISED = (
+        "annualized_volatility", "sharpe_ratio", "sortino_ratio", "unsmoothed_volatility",
+        "unsmoothed_sharpe_ratio", "probabilistic_sharpe_ratio", "psr_glm_unsmoothed",
+        "min_track_record_length_periods", "cagr_decimal",
+    )
+
+    def _summary(self, gaps_days: list[float]) -> Any:
+        start = datetime(2025, 1, 2, 21, 0, tzinfo=timezone.utc)
+        t, v, navs = start, 100000.0, []
+        navs.append(NormalizedNavPoint(timestamp_utc=_iso(t), nav_base=v))
+        for i, g in enumerate(gaps_days):
+            t = t + timedelta(days=g)
+            v *= 1.004 if i % 2 == 0 else 0.9968
+            navs.append(NormalizedNavPoint(timestamp_utc=_iso(t), nav_base=round(v, 2)))
+        res = calculate_portfolio_performance_detailed(_ledger(navs))
+        self.assertFalse(res.withheld)
+        return res
+
+    def _assert_withheld(self, res: Any) -> None:
+        for name in self._ANNUALISED:
+            self.assertIsNone(getattr(res.summary, name), name)
+        self.assertFalse(res.summary.psr_sample_eligible)
+        self.assertIsNone(res.annualization_periods_per_year)
+        self.assertNotEqual(res.summary.twr_decimal, 0.0)
+
+    def test_two_intervals_are_not_annualised(self) -> None:
+        self._assert_withheld(self._summary([59, 1]))
+
+    def test_mixed_long_and_short_intervals_are_not_annualised_either_way_round(self) -> None:
+        self._assert_withheld(self._summary([30] * 11 + [1] * 10))
+        self._assert_withheld(self._summary([30] * 10 + [1] * 11))
+
+    def test_intervals_shorter_than_a_day_are_not_annualised(self) -> None:
+        self._assert_withheld(self._summary([1 / 1440] * 20))
+
+    def test_cagr_needs_the_minimum_span(self) -> None:
+        res = self._summary([1] * 20)
+        self.assertIsNotNone(res.summary.annualized_volatility)
+        self.assertIsNone(res.summary.cagr_decimal)
+        long_res = self._summary([7] * 60)
+        self.assertIsNotNone(long_res.summary.cagr_decimal)
+
+    def test_a_daily_close_a_little_early_or_late_still_counts_as_a_day(self) -> None:
+        res = self._summary([1, 1 - 4 / 24, 1 + 4 / 24] * 8)
+        self.assertIsNotNone(res.summary.annualized_volatility)
+
+
 if __name__ == "__main__":
     unittest.main()
