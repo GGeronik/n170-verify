@@ -99,7 +99,6 @@ _HOSTED_WORKER_REQUEST_FIELDS: frozenset[str] = frozenset(
     {
         "broker_id",
         "wallet_address",
-        "connector_kwargs",
         "connector_fetch_kwargs",
         "csv_format",
         "disclose_leaf_names",
@@ -122,6 +121,24 @@ _HOSTED_ROUTE_ONLY_FIELDS: frozenset[str] = frozenset(
 )
 
 _HOSTED_BROKER_ID_RE = re.compile(r"[a-z0-9_]+")
+
+# On a hosted deployment this route offers a live read only for a public, permissionless
+# connector, or an uploaded statement under an offline id. Every other connector is refused
+# on this route until it has been reviewed for hosted use.
+HOSTED_VERIFY_OFFERED_APPROVAL_STATES: frozenset[ProviderApprovalState] = frozenset(
+    {ProviderApprovalState.PUBLIC_API_PERMISSIONLESS, ProviderApprovalState.OFFLINE_EXPORT_ONLY}
+)
+
+
+def _hosted_connector_not_offered(broker_id: str, config: ApiConfig) -> str | None:
+    """Hosted: a reason when this route does not offer the configured connector."""
+    state = config.connector_approval_states.get(broker_id)
+    if state is None or state in HOSTED_VERIFY_OFFERED_APPROVAL_STATES:
+        return None
+    return (
+        f"broker_id={broker_id!r} is not offered on this host through this route until it has "
+        "been reviewed for hosted use; verify a public wallet address or upload a statement instead"
+    )
 
 
 def _hosted_broker_id_refusal(raw: Any, config: ApiConfig) -> str | None:
@@ -297,6 +314,9 @@ def handle_post_verify(
         broker_refusal = _hosted_broker_id_refusal(payload.get("broker_id"), config)
         if broker_refusal is not None:
             return 422, {"error": "validation_error", "detail": broker_refusal}
+        not_offered = _hosted_connector_not_offered(broker_id, config)
+        if not_offered is not None:
+            return 422, {"error": "connector_not_offered", "detail": not_offered}
         # Client-supplied series keep their own refusal ahead of the field list.
         try:
             enforce_hosted_signing_oracle_policy(

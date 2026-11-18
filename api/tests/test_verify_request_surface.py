@@ -41,6 +41,10 @@ _HL_TRANSPORT_SPEC = (
 
 _STAND_IN_STATES = {
     "hyperliquid": (ProviderApprovalState.PUBLIC_API_PERMISSIONLESS.value, "operator_retrieved"),
+    "alpaca": (ProviderApprovalState.APPROVED_LIVE.value, "operator_retrieved"),
+    "schwab": (ProviderApprovalState.APPROVED_LIVE.value, "operator_retrieved"),
+    "snaptrade": (ProviderApprovalState.AGGREGATOR_RELAYED.value, "operator_retrieved"),
+    "tradier": (ProviderApprovalState.USER_KEY_SELF_ATTESTED.value, "operator_retrieved"),
 }
 
 
@@ -191,6 +195,29 @@ class HostedVerifyRequestSurfaceTests(unittest.TestCase):
                         pipeline_spec=_STAND_IN_SPEC,
                     )
                 self.assertIn(field_name, str(ctx.exception))
+
+    def test_hosted_route_offers_only_permissionless_reads_and_statements(self) -> None:
+        dummy_kwargs = {"api_key_id": "dummy-key-id", "api_secret_key": "dummy-secret"}
+        for broker_id in ("alpaca", "schwab", "snaptrade", "tradier"):
+            for extra in ({"connector_kwargs": dummy_kwargs}, {}):
+                with self.subTest(broker_id=broker_id, extra=sorted(extra)):
+                    resp = self.stand_in.post("/api/v1/verify", json={"broker_id": broker_id, **extra})
+                    self.assertEqual(resp.status_code, 422, resp.text)
+                    self.assertEqual(resp.json()["error"], "connector_not_offered")
+                    self.assertIn(broker_id, resp.json()["detail"])
+
+        resp = self.stand_in.post("/api/v1/verify", json={**self.base, "connector_kwargs": dummy_kwargs})
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertIn("connector_kwargs", resp.json()["detail"])
+
+        pending = self.stand_in.post("/api/v1/verify", json={"broker_id": "ibkr_oauth", "connector_kwargs": dummy_kwargs})
+        self.assertEqual(pending.status_code, 403, pending.text)
+        self.assertEqual(pending.json()["error"], "provider_approval_pending")
+
+        # The two offered inputs still verify.
+        self.assertEqual(self.stand_in.post("/api/v1/verify", json=self.base).status_code, 200)
+        stmt = self.stand_in.post("/api/v1/verify", json={"broker_id": "schwab_csv", "raw_statement_text": SCHWAB_CSV})
+        self.assertEqual(stmt.status_code, 200, stmt.text)
 
     # Finding 2 ---------------------------------------------------------------------------
     def test_hosted_broker_id_must_be_a_configured_plain_identifier(self) -> None:
