@@ -76,7 +76,23 @@ SECRET_PATTERNS = (
     ("github-token", re.compile(r"(?:ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}")),
     ("google-api-key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
-    ("snaptrade-personal-client-id", re.compile(r"\bPERS-[A-Z0-9]{16,}\b")),
+    # A SnapTrade personal client id in any issued shape: letters of either
+    # case, digits and hyphens after the PERS- prefix.
+    ("snaptrade-personal-client-id", re.compile(r"PERS-[A-Za-z0-9-]{8,}")),
+    # A SnapTrade consumer key assigned or passed under a name that says what it
+    # is (env, Python, JSON, YAML, JavaScript and TypeScript forms). A real key
+    # is a long random run of letters and digits, so the value must be at least
+    # 32 such characters with no separator; hyphenated or underscored
+    # placeholders, short tokens and variable references do not match.
+    (
+        "snaptrade-consumer-key",
+        re.compile(
+            r"(?i:consumer[_-]?key)\w*[\"'`]?\]?\s*"
+            r"(?::\s*[A-Za-z_][\w.\[\]| ]*?\s*)?"
+            r"(?:=>|:=|[=:,]|\s)\s*[rbuRBU]{0,2}[\"'`]?"
+            r"[A-Za-z0-9]{32,}(?![A-Za-z0-9_-])"
+        ),
+    ),
     ("hard-coded-home-path", re.compile(r"/(?:Users|home)/[^/\s'\"]+/")),
     ("known-development-password", re.compile("neo4j/" + "n170")),
 )
@@ -130,6 +146,30 @@ REVIEWED_NEGATIVE_TEST_FILES = {
         "reviewed_marker_snippet": '["/' + 'Users/synthetic/private.txt", "-----BEGIN ' + 'PRIVATE KEY-----"]',
     },
 }
+
+# Synthetic SnapTrade personal client ids used as test fixtures, allowed only
+# at the exact repository path listed and only as the exact whole match. Each
+# entry is the text after the "PERS-" prefix, so this file holds no full id.
+# The same id at any other path, or any other id in these files, is blocked.
+REVIEWED_SYNTHETIC_PERSONAL_CLIENT_IDS = {
+    "api/tests/test_launch_blockers_hyperliquid_snaptrade.py": frozenset(
+        {"WORKER-ISOLATION-01", "FOUNDER-LIVE-01", "BAD-MODE-01"}
+    ),
+    "api/tests/test_snaptrade_session_binding.py": frozenset({"DUMMY-OWNER-01"}),
+    "core/tests/test_hyperliquid_and_snaptrade_personal.py": frozenset(
+        {
+            "COMPAT-01",
+            "EMPTY-CHECK-01",
+            "FOUNDER-001",
+            "FOUNDER-EUR-01",
+            "FOUNDER-KEY-99",
+            "ID-OVERRIDE",
+            "N170-FOUNDER",
+        }
+    ),
+    "core/tests/test_snaptrade_nav_and_fx.py": frozenset({"DUMMY-CLIENT-01"}),
+}
+PERSONAL_CLIENT_ID_PREFIX = "PERS-"
 
 BROKER_EXPORT_SUFFIXES = {".csv", ".json", ".xml"}
 BROKER_EXPORT_NAME_TOKENS = {"flex", "ibkr"}
@@ -245,7 +285,19 @@ def _content_rules(path: Path, *, relative_path: str | None = None) -> list[str]
             return ["reviewed-negative-test-integrity"]
         text = text.replace(reviewed_neg["reviewed_marker_snippet"], "", 1)
 
-    return [name for name, pattern in SECRET_PATTERNS if pattern.search(text)]
+    reviewed_ids = REVIEWED_SYNTHETIC_PERSONAL_CLIENT_IDS.get(normalized or "", frozenset())
+    rules: list[str] = []
+    for name, pattern in SECRET_PATTERNS:
+        if name == "snaptrade-personal-client-id":
+            matched = any(
+                match.group(0)[len(PERSONAL_CLIENT_ID_PREFIX):] not in reviewed_ids
+                for match in pattern.finditer(text)
+            )
+        else:
+            matched = pattern.search(text) is not None
+        if matched:
+            rules.append(name)
+    return rules
 
 
 def _tree_entries(root: Path) -> tuple[list[tuple[str, bool]], list[Finding]]:

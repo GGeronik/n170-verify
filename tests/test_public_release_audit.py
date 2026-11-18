@@ -155,6 +155,124 @@ class PublicReleaseAuditTests(unittest.TestCase):
             (root / "config.py").write_text(f'ROOT = "{private_path}"\n', encoding="utf-8")
             self.assertIn("hard-coded-home-path", {item.rule for item in self.audit_tree(root)})
 
+    # Credential-shaped inputs below are assembled at run time so that no
+    # secret-shaped literal is committed and the audit does not flag this file.
+    PERS = "PERS" + "-"
+
+    @staticmethod
+    def _consumer_key_shaped(length: int = 50) -> str:
+        # A deterministic letters-and-digits value with no separators.
+        return (("Qm7" + "xZ2" + "pL9") * (length // 9 + 1))[:length]
+
+    def _rules_for(self, relative: str, content: str) -> tuple[set[str], str]:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            findings = self.audit_tree(root)
+            rendered = "\n".join(f"{item.path}:{item.rule}" for item in findings)
+            return {item.rule for item in findings}, rendered
+
+    def test_snaptrade_personal_client_id_is_blocked_in_every_issued_shape(self):
+        variants = {
+            "upper": self.PERS + "AB12CD34EF56GH78",
+            "lower": self.PERS + "ab12cd34ef56gh78",
+            "hyphenated": self.PERS + "ab12-cd34-ef56",
+            "mixed-hyphenated": self.PERS + "Ab12-Cd34-Ef56-Gh78",
+            "short-hyphenated": self.PERS + "a1b2-c3d4",
+        }
+        for label, client_id in variants.items():
+            with self.subTest(label):
+                rules, rendered = self._rules_for("config.py", f'CLIENT_ID = "{client_id}"\n')
+                self.assertIn("snaptrade-personal-client-id", rules)
+                self.assertNotIn(client_id, rendered)
+
+    def test_snaptrade_consumer_key_assignment_is_blocked_in_common_source_forms(self):
+        key = self._consumer_key_shaped(50)
+        self.assertRegex(key, r"^[A-Za-z0-9]{50,}$")
+        upper = "SNAPTRADE_" + "CONSUMER_KEY"
+        lower = "snaptrade_" + "consumer_key"
+        camel = "consumer" + "Key"
+        forms = {
+            "env": (".env.example", f"{upper}={key}\n"),
+            "env-export": ("deploy.sh", f"export {upper}={key}\n"),
+            "env-quoted": ("deploy.sh", f'{upper}="{key}"\n'),
+            "python-assignment": ("settings.py", f'{lower} = "{key}"\n'),
+            "python-kwarg": ("settings.py", f"build(client_id='x', consumer_key='{key}')\n"),
+            "python-annotation": ("settings.py", f'    {lower}: str = "{key}"\n'),
+            "python-environ": ("settings.py", f'os.environ["{upper}"] = "{key}"\n'),
+            "python-dict": ("settings.py", f'env = {{"{upper}": "{key}"}}\n'),
+            "json": ("config.json", f'{{"{camel}": "{key}"}}\n'),
+            "yaml-quoted": ("compose.yml", f'    {upper}: "{key}"\n'),
+            "yaml-unquoted": ("compose.yml", f"    {lower}: {key}\n"),
+            "javascript-object": ("client.js", f"const c = {{ {camel}: '{key}' }};\n"),
+            "javascript-template": ("client.js", f"const c = {{ {camel}: `{key}` }};\n"),
+            "typescript-annotation": ("client.ts", f'const {camel}: string = "{key}";\n'),
+            "javascript-env": ("client.mjs", f'process.env.{upper} = "{key}";\n'),
+        }
+        for label, (relative, content) in forms.items():
+            with self.subTest(label):
+                rules, rendered = self._rules_for(relative, content)
+                self.assertIn("snaptrade-consumer-key", rules)
+                self.assertNotIn(key, rendered)
+
+    def test_snaptrade_consumer_key_references_and_placeholders_are_not_flagged(self):
+        upper = "SNAPTRADE_" + "CONSUMER_KEY"
+        lower = "snaptrade_" + "consumer_key"
+        benign = {
+            "empty-env": f"{upper}=\n",
+            "compose-substitution": f'      {upper}: "${{{upper}:-}}"\n',
+            "environ-read": f'{lower}=os.environ.get("{upper}", "").strip(),\n',
+            "variable-reference": "adapter = build(consumer_key=consumer_key)\n",
+            "hyphenated-placeholder": f'{lower}="snap-hmac-consumer-secret-xyz-12345",\n',
+            "short-token": f'"{upper}": "N170CONSKEY",\n',
+            "short-alnum": f'consumer_key="{self._consumer_key_shaped(31)}"\n',
+            "underscore-placeholder": f"{upper}=your_consumer_key_here\n",
+        }
+        for label, content in benign.items():
+            with self.subTest(label):
+                rules, _ = self._rules_for("settings.py", content)
+                self.assertNotIn("snaptrade-consumer-key", rules)
+
+    def test_reviewed_synthetic_personal_client_ids_pass_only_at_their_reviewed_path(self):
+        reviewed_path = "api/tests/test_launch_blockers_hyperliquid_snaptrade.py"
+        fixture = self.PERS + "WORKER-" + "ISOLATION-01"
+        content = f'CLIENT_ID = "{fixture}"\n'
+
+        rules, _ = self._rules_for(reviewed_path, content)
+        self.assertNotIn("snaptrade-personal-client-id", rules)
+
+        rules, _ = self._rules_for("api/tests/test_other.py", content)
+        self.assertIn("snaptrade-personal-client-id", rules)
+
+        unreviewed = self.PERS + "ab12-cd34-ef56"
+        rules, _ = self._rules_for(reviewed_path, content + f'OTHER = "{unreviewed}"\n')
+        self.assertIn("snaptrade-personal-client-id", rules)
+
+        near_miss = fixture + "X"
+        rules, _ = self._rules_for(reviewed_path, f'CLIENT_ID = "{near_miss}"\n')
+        self.assertIn("snaptrade-personal-client-id", rules)
+
+    def test_snaptrade_rules_pass_on_the_tracked_files_that_hold_synthetic_fixtures(self):
+        relatives = (
+            "api/tests/test_launch_blockers_hyperliquid_snaptrade.py",
+            "api/tests/test_snaptrade_relay.py",
+            "api/tests/test_snaptrade_session_binding.py",
+            "core/tests/test_connectors_and_mcp_firewall.py",
+            "core/tests/test_hyperliquid_and_snaptrade_personal.py",
+            "core/tests/test_phase3_connectors.py",
+            "core/tests/test_snaptrade_nav_and_fx.py",
+            "core/n170_verify/connectors/snaptrade.py",
+            ".env.example",
+            "docker-compose.yml",
+        )
+        findings = audit.audit_release(ROOT, [(relative, False) for relative in relatives])
+        self.assertEqual(
+            [item for item in findings if item.rule.startswith("snaptrade-")],
+            [],
+        )
+
     def test_git_worktree_pointer_file_is_skipped(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
