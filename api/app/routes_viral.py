@@ -20,12 +20,13 @@ from app.badges import (
     extract_verified_reconciliation_status,
     finite_real_number,
     is_safe_xml_char,
+    return_not_computed,
     verified_leaf_payload,
 )
 from app.config import ApiConfig, utc_now_iso
+from app.routes_proofs import refuse_caller_clock
 from app.store import (
     GovernanceBlockedError,
-    PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
     ProofConflictError,
     ProofNotFoundError,
@@ -367,6 +368,30 @@ def _extract_realized_metrics_strict(bundle: VerifyProofBundle) -> dict[str, Any
             "psr_display": "Undisclosed",
             "psr_sample_eligible": False,
             "observation_count": 0,
+            "performance_withheld": False,
+        }
+
+    if return_not_computed(payload):
+        # No return was computed for this record: no number is shown for it.
+        return {
+            "disclosed": True,
+            "twr": None,
+            "twr_decimal": None,
+            "twr_pct": None,
+            "xirr": None,
+            "xirr_decimal": None,
+            "cagr": None,
+            "cagr_decimal": None,
+            "cagr_pct": None,
+            "max_drawdown": None,
+            "max_drawdown_decimal": None,
+            "max_drawdown_pct": None,
+            "sharpe_ratio": None,
+            "psr": None,
+            "psr_display": "Withheld",
+            "psr_sample_eligible": False,
+            "observation_count": 0,
+            "performance_withheld": True,
         }
 
     # Guard: strip/ignore any hypothetical or bootstrap sub-objects if present in leaf dict
@@ -439,6 +464,7 @@ def _extract_realized_metrics_strict(bundle: VerifyProofBundle) -> dict[str, Any
         "psr_display": psr_display,
         "psr_sample_eligible": psr_eligible,
         "observation_count": obs_count,
+        "performance_withheld": False,
     }
 
 
@@ -637,6 +663,7 @@ def _build_vs_summary_card(
         "psr_display": metrics["psr_display"],
         "psr_sample_eligible": metrics["psr_sample_eligible"],
         "observation_count": metrics["observation_count"],
+        "performance_withheld": metrics["performance_withheld"],
         "wealth_series": [pt.to_dict() for pt in curve_pts] if curve_pts else None,
     }
     return card, curve_pts
@@ -708,6 +735,13 @@ def handle_get_head_to_head(
 
     card_a, curve_a = _build_vs_summary_card(entry_a.bundle, ver_a)
     card_b, curve_b = _build_vs_summary_card(entry_b.bundle, ver_b)
+    withheld_ids = [c["proof_id"] for c in (card_a, card_b) if c["performance_withheld"]]
+    if withheld_ids:
+        return 422, {
+            "error": "performance_withheld",
+            "detail": "No return was computed for one or both records, so they cannot be compared",
+            "withheld_proof_ids": withheld_ids,
+        }
     sync_series = _build_synchronized_series(curve_a, curve_b)
 
     warnings: list[str] = []
@@ -930,10 +964,11 @@ def handle_get_discord_embed(
     recon_status = extract_verified_reconciliation_status(bundle)
     metrics = _extract_realized_metrics_strict(bundle)
 
+    withheld = bool(metrics["performance_withheld"])
     twr_str = (
-        f"{metrics['twr_pct']:+.2f}%"
-        if metrics["twr_pct"] is not None
-        else "Undisclosed"
+        "Withheld"
+        if withheld
+        else (f"{metrics['twr_pct']:+.2f}%" if metrics["twr_pct"] is not None else "Undisclosed")
     )
     psr_str = str(metrics["psr_display"])
 
@@ -960,11 +995,15 @@ def handle_get_discord_embed(
         "url": proof_url,
         "color": _embed_color_int(verification.effective_origin_assurance),
         "description": (
-            f"Cryptographically verified realized TWR **{twr_str}** | PSR **{psr_str}** "
-            f"({bundle.period_start_utc[:10]} to {bundle.period_end_utc[:10]})"
+            (
+                "Return withheld: no return was computed for this record "
+                if withheld
+                else f"Cryptographically verified realized TWR **{twr_str}** | PSR **{psr_str}** "
+            )
+            + f"({bundle.period_start_utc[:10]} to {bundle.period_end_utc[:10]})"
         ),
         "fields": [
-            {"name": "Realized TWR", "value": twr_str, "inline": True},
+            {"name": "Return" if withheld else "Realized TWR", "value": twr_str, "inline": True},
             {"name": "Probabilistic Sharpe (PSR)", "value": psr_str, "inline": True},
             {"name": "OriginAssurance", "value": origin_val, "inline": True},
             {"name": "SignerTrust", "value": signer_val, "inline": True},
@@ -979,10 +1018,13 @@ def handle_get_discord_embed(
 
     telegram_markdown = (
         f"*N170 Verified Performance* ({safe_broker_label})\n"
-        f"• Realized TWR: `{twr_str}`\n"
-        f"• PSR: `{psr_str}`\n"
-        f"• OriginAssurance: `{origin_val}`\n"
-        f"• SignerTrust: `{signer_val}`\n"
+        + (
+            "• Return: withheld (not computed)\n"
+            if withheld
+            else f"• Realized TWR: `{twr_str}`\n• PSR: `{psr_str}`\n"
+        )
+        + f"• OriginAssurance: `{origin_val}`\n"
+        + f"• SignerTrust: `{signer_val}`\n"
         f"• ReconciliationStatus: `{recon_status}`\n"
         f"• AccountScope: `{scope_val}`\n"
         f"• Verify: {proof_url}"
@@ -1003,6 +1045,7 @@ def handle_get_discord_embed(
                 "psr_numeric": metrics["psr"],
                 "observation_count": metrics["observation_count"],
                 "psr_sample_eligible": metrics["psr_sample_eligible"],
+                "performance_withheld": withheld,
             },
             "embeds": [discord_embed],
             "allowed_mentions": {"parse": []},
@@ -1056,9 +1099,9 @@ def handle_get_qr_payload(
     }
 
     twr_str = (
-        f"{metrics['twr_pct']:+.2f}%"
-        if metrics["twr_pct"] is not None
-        else "Undisclosed"
+        "Withheld"
+        if metrics["performance_withheld"]
+        else (f"{metrics['twr_pct']:+.2f}%" if metrics["twr_pct"] is not None else "Undisclosed")
     )
     psr_str = str(metrics["psr_display"])
     safe_broker = sanitize_public_label(bundle.broker_id, max_len=32)
@@ -1069,6 +1112,7 @@ def handle_get_qr_payload(
         "period_end_utc": bundle.period_end_utc,
         "twr": twr_str,
         "psr": psr_str,
+        "performance_withheld": bool(metrics["performance_withheld"]),
         "merkle_root": bundle.merkle_root,
         "ed25519_key_id": bundle.publisher_kid,
         "signature_fingerprint": sig_fp,
@@ -1290,6 +1334,8 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
         disclose_leaf_names=job.get("disclose_leaf_names"),
     )
 
+    core_leaf = leaf_payloads.get("core_metrics") or {}
+    performance_withheld = core_leaf.get("performance_withheld") is True
     final_recon_status = str(leaf_payloads["reconciliation"]["status"])
     final_tags = list(leaf_payloads["coaching_and_context"].get("imported_journal_tags") or [])
     safe_format = sanitize_public_label(detected_format, max_len=64)
@@ -1313,6 +1359,10 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
         "disclosed_leaves": [leaf.to_dict() for leaf in bundle.disclosed_leaves],
         "undisclosed_leaf_hashes": dict(bundle.undisclosed_leaf_hashes),
         "stripped_recent_closed_trades_count": stripped_count,
+        "performance_withheld": performance_withheld,
+        "withheld_reasons": (
+            [str(r) for r in core_leaf.get("withheld_reasons") or []] if performance_withheld else []
+        ),
         "bundle": bundle.to_dict(),
     }
 
@@ -1503,11 +1553,11 @@ def handle_post_verify_auto_detect(
 
     # The host sets the issue time of the records it signs; only a test
     # configuration accepts one from the caller.
-    if issued_at_utc and not config.allow_caller_clock_for_tests:
-        return 400, {
-            "error": "caller_clock_not_accepted",
-            "detail": "This host sets the time itself; the request field 'issued_at_utc' is not accepted",
-        }
+    clock_refusal = refuse_caller_clock(
+        config, {"issued_at_utc": issued_at_utc} if issued_at_utc else {}, field_name="issued_at_utc"
+    )
+    if clock_refusal is not None:
+        return clock_refusal
 
     if stmt_bytes is None or not stmt_bytes.strip():
         return 422, {
@@ -1539,6 +1589,7 @@ def handle_post_verify_auto_detect(
     if disclose_leaf_names is not None:
         worker_request["disclose_leaf_names"] = list(disclose_leaf_names)
 
+    result_meta: dict[str, Any] = {}
     try:
         bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
             worker_request,
@@ -1546,9 +1597,8 @@ def handle_post_verify_auto_detect(
             pipeline_spec="app.routes_viral:auto_detect_worker_pipeline",
             retention_mode="no_persistent_storage",
             persistent_rows_written=0,
+            result_meta=result_meta,
         )
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ReadOnlyCapabilityViolationError as exc:
@@ -1593,7 +1643,7 @@ def handle_post_verify_auto_detect(
                 imported_tags.append(clean_t)
 
     bundle_dict = bundle.to_dict()
-    return 200, {
+    response_body: dict[str, Any] = {
         "detected_format": detected_format,
         "broker_id": bundle.broker_id,
         "origin_assurance": verification.effective_origin_assurance.value,
@@ -1604,7 +1654,12 @@ def handle_post_verify_auto_detect(
         "verification": verification.to_dict(),
         "isolation_receipt": receipt.to_dict(),
         "stripped_recent_closed_trades_count": stripped_trades,
+        # Whether a return was computed, as POST /api/v1/verify states it.
+        "performance_withheld": bool(result_meta.get("performance_withheld", False)),
     }
+    if response_body["performance_withheld"]:
+        response_body["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
+    return 200, response_body
 
 
 def handle_get_ibkr_flex_guide() -> tuple[int, dict[str, Any]]:

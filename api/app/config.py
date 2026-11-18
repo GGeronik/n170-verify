@@ -47,6 +47,55 @@ def _check_snaptrade_session_ttl(value: object, *, source: str) -> float:
     return seconds
 
 
+SITE_ORIGIN_ENV = "N170_VERIFY_SITE_ORIGIN"
+HOSTED_MODE_ENV = "N170_VERIFY_HOSTED_MODE"
+# SnapTrade auth-mode values that select the build (commercial) key path.
+_SNAPTRADE_BUILD_MODES = frozenset({"commercial", "build", "developer_5_slot"})
+
+
+def check_site_origin(value: str, *, source: str = SITE_ORIGIN_ENV) -> str:
+    """Return a bare ``http(s)://host[:port]`` origin ('' when empty), or raise ``ValueError``."""
+    from urllib.parse import urlsplit
+
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    trimmed = raw[:-1] if raw.endswith("/") else raw
+    try:
+        parts = urlsplit(trimmed)
+        port = parts.port
+    except ValueError:
+        raise ValueError(f"{source} must be a bare http(s) origin, got {raw!r}") from None
+    if (
+        parts.scheme not in {"http", "https"}
+        or not parts.hostname
+        or parts.path
+        or parts.query
+        or parts.fragment
+        or "?" in trimmed
+        or "#" in trimmed
+        or parts.username is not None
+        or parts.password is not None
+    ):
+        raise ValueError(
+            f"{source} must be a bare http(s) origin such as https://verify.example.org, got {raw!r}"
+        )
+    host = parts.hostname
+    return f"{parts.scheme}://{host}" + (f":{port}" if port is not None else "")
+
+
+def _parse_hosted_mode(raw: str | None) -> bool:
+    """Unset means hosted; otherwise only 'true' or 'false' (trimmed, any case) is accepted."""
+    if raw is None:
+        return True
+    norm = raw.strip().lower()
+    if norm == "true":
+        return True
+    if norm == "false":
+        return False
+    raise ValueError(f"{HOSTED_MODE_ENV} must be 'true' or 'false', got {raw!r}")
+
+
 def utc_now_iso() -> str:
     """Return current UTC timestamp formatted as ISO-8601 with trailing Z."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -137,11 +186,14 @@ class ApiConfig:
     snaptrade_dev_key: str = ""
     snaptrade_auth_mode: str = "auto"
     snaptrade_session_ttl_seconds: float = SNAPTRADE_SESSION_TTL_DEFAULT_SECONDS
+    # Public origin of the site (for example https://verify.example.org); '' when unset.
+    site_origin: str = ""
 
     worker_timeout_seconds: float = 30.0
     delayed_trade_guard_days: int = 7
 
     def __post_init__(self) -> None:
+        self.site_origin = check_site_origin(self.site_origin, source="ApiConfig.site_origin")
         if not self.publisher_kid.strip():
             self.publisher_kid = f"n170-pub-{self.publisher_keypair.key_id}"
         self.vault_master_kek_hex = validate_hex_digest(
@@ -168,6 +220,7 @@ class ApiConfig:
     @classmethod
     def from_env(cls) -> ApiConfig:
         """Construct ``ApiConfig`` from environment variables or external secret file."""
+        hosted = _parse_hosted_mode(os.environ.get(HOSTED_MODE_ENV))
         seed_hex = os.environ.get("N170_VERIFY_SIGNING_SEED_HEX", "").strip()
         if not seed_hex:
             seed_file = os.environ.get("N170_VERIFY_SIGNING_SEED_FILE", "").strip()
@@ -202,12 +255,21 @@ class ApiConfig:
                 seed_hex, field_name="N170_VERIFY_SIGNING_SEED_HEX", num_bytes=32
             )
             keypair = generate_ed25519_keypair(bytes.fromhex(norm_seed))
+        elif hosted:
+            # The hosted signer must be the same key after every restart.
+            raise RuntimeError(
+                "Hosted mode needs a signing seed: set N170_VERIFY_SIGNING_SEED_FILE "
+                "(or N170_VERIFY_SIGNING_SEED_HEX)"
+            )
         else:
             keypair = generate_ed25519_keypair()
 
-        kek_hex = os.environ.get("N170_VERIFY_VAULT_KEK_HEX", "").strip() or secrets.token_hex(32)
-        hosted_raw = os.environ.get("N170_VERIFY_HOSTED_MODE", "true").strip().lower()
-        hosted = hosted_raw in {"1", "true", "yes", "on"}
+        kek_hex = os.environ.get("N170_VERIFY_VAULT_KEK_HEX", "").strip()
+        if not kek_hex:
+            if hosted:
+                # Vault contents must stay readable after a restart.
+                raise RuntimeError("N170_VERIFY_VAULT_KEK_HEX is required in hosted mode")
+            kek_hex = secrets.token_hex(32)
         salt_hex = os.environ.get("N170_VERIFY_ACCOUNT_SALT_HEX", "").strip()
         if not salt_hex:
             if hosted:
@@ -246,6 +308,19 @@ class ApiConfig:
             else SNAPTRADE_SESSION_TTL_DEFAULT_SECONDS
         )
 
+        site_origin = check_site_origin(os.environ.get(SITE_ORIGIN_ENV, ""))
+        snaptrade_client_id = os.environ.get("SNAPTRADE_CLIENT_ID", "").strip()
+        snaptrade_auth_mode = os.environ.get("SNAPTRADE_AUTH_MODE", "auto").strip().lower() or "auto"
+        if (
+            snaptrade_client_id.upper().startswith("PERS-")
+            and snaptrade_auth_mode in _SNAPTRADE_BUILD_MODES
+        ):
+            # A personal key belongs to one owner; it is never served as a build key.
+            raise RuntimeError(
+                "SNAPTRADE_CLIENT_ID is a SnapTrade personal key, but SNAPTRADE_AUTH_MODE "
+                f"{snaptrade_auth_mode!r} selects the build key path; use 'auto' or 'personal'"
+            )
+
         return cls(
             publisher_keypair=keypair,
             publisher_kid=os.environ.get("N170_VERIFY_PUBLISHER_KID", "").strip(),
@@ -264,19 +339,19 @@ class ApiConfig:
             ),
             account_blinding_salt_hex=salt_hex,
             eodhd_api_key=eodhd_key,
-            snaptrade_client_id=os.environ.get("SNAPTRADE_CLIENT_ID", "").strip(),
+            snaptrade_client_id=snaptrade_client_id,
             snaptrade_consumer_key=os.environ.get("SNAPTRADE_CONSUMER_KEY", "").strip(),
             snaptrade_dev_key=os.environ.get("N170_SNAPTRADE_DEV_KEY", "").strip(),
-            snaptrade_auth_mode=(
-                os.environ.get("SNAPTRADE_AUTH_MODE", "auto").strip().lower() or "auto"
-            ),
+            snaptrade_auth_mode=snaptrade_auth_mode,
             snaptrade_session_ttl_seconds=snaptrade_session_ttl,
+            site_origin=site_origin,
         )
 
 
 __all__ = [
     "ApiConfig",
     "DEFAULT_CONNECTOR_APPROVAL_STATES",
+    "check_site_origin",
     "default_pinned_notaries",
     "utc_now_iso",
 ]

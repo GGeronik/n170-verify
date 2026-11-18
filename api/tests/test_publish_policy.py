@@ -177,6 +177,8 @@ class _Base(unittest.TestCase):
             issued_at_utc=link.issued_at_utc,
             period_start_utc=link.period_start_utc,
             period_end_utc=link.period_end_utc,
+            # The signed return matches the link's period return.
+            leaf_payloads=_build_leaf_payloads(twr_decimal=link.period_twr_decimal),
         )
 
 
@@ -273,7 +275,7 @@ class TestHostSetsTheVerificationClock(_Base):
         self.assertFalse(ApiConfig().allow_caller_clock_for_tests)
         with mock.patch.dict(
             os.environ,
-            {"N170_VERIFY_ACCOUNT_SALT_HEX": "cd" * 32, "ALLOW_CALLER_CLOCK_FOR_TESTS": "true"},
+            {**TestStartUpKeysAndSalt.HOSTED, "ALLOW_CALLER_CLOCK_FOR_TESTS": "true"},
             clear=True,
         ):
             self.assertFalse(ApiConfig.from_env().allow_caller_clock_for_tests)
@@ -624,7 +626,9 @@ class TestStatementUploadPublishRefusalKeepsItsStatus(unittest.TestCase):
 
 
 class TestStartUpKeysAndSalt(unittest.TestCase):
-    SALT = {"N170_VERIFY_ACCOUNT_SALT_HEX": "cd" * 32}
+    # Hosted start-up needs the account salt, the vault key and a signing seed.
+    SALT = {"N170_VERIFY_ACCOUNT_SALT_HEX": "cd" * 32, "N170_VERIFY_VAULT_KEK_HEX": "ef" * 32}
+    HOSTED = {**SALT, "N170_VERIFY_SIGNING_SEED_HEX": "42" * 32}
 
     def test_configured_seed_file_that_does_not_exist_stops_start_up(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -660,17 +664,86 @@ class TestStartUpKeysAndSalt(unittest.TestCase):
         self.assertEqual(cfg.publisher_keypair.public_key_hex, expected)
 
     def test_hosted_mode_without_account_salt_stops_start_up(self) -> None:
-        for env in ({}, {"N170_VERIFY_HOSTED_MODE": "true"}):
-            with self.subTest(env=env):
+        no_salt = {k: v for k, v in self.HOSTED.items() if k != "N170_VERIFY_ACCOUNT_SALT_HEX"}
+        for env in (no_salt, {**no_salt, "N170_VERIFY_HOSTED_MODE": "true"}):
+            with self.subTest(env=sorted(env)):
                 with mock.patch.dict(os.environ, env, clear=True):
                     with self.assertRaises(RuntimeError) as ctx:
                         ApiConfig.from_env()
                 self.assertIn("N170_VERIFY_ACCOUNT_SALT_HEX", str(ctx.exception))
 
     def test_hosted_mode_uses_the_configured_salt(self) -> None:
-        with mock.patch.dict(os.environ, self.SALT, clear=True):
+        with mock.patch.dict(os.environ, self.HOSTED, clear=True):
             cfg = ApiConfig.from_env()
         self.assertEqual(cfg.account_blinding_salt_hex, "cd" * 32)
+
+    def test_hosted_mode_without_a_signing_seed_stops_start_up(self) -> None:
+        env = {k: v for k, v in self.HOSTED.items() if k != "N170_VERIFY_SIGNING_SEED_HEX"}
+        for extra in ({}, {"N170_VERIFY_HOSTED_MODE": "true"}):
+            with self.subTest(extra=extra):
+                with mock.patch.dict(os.environ, {**env, **extra}, clear=True):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        ApiConfig.from_env()
+                self.assertIn("N170_VERIFY_SIGNING_SEED", str(ctx.exception))
+
+    def test_hosted_mode_without_the_vault_key_stops_start_up(self) -> None:
+        env = {k: v for k, v in self.HOSTED.items() if k != "N170_VERIFY_VAULT_KEK_HEX"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(RuntimeError) as ctx:
+                ApiConfig.from_env()
+        self.assertIn("N170_VERIFY_VAULT_KEK_HEX", str(ctx.exception))
+
+    def test_hosted_mode_setting_accepts_only_true_or_false(self) -> None:
+        for raw, expected in (("true", True), (" TRUE ", True), ("False", False), ("false", False)):
+            with self.subTest(raw=raw):
+                with mock.patch.dict(os.environ, {**self.HOSTED, "N170_VERIFY_HOSTED_MODE": raw}, clear=True):
+                    self.assertIs(ApiConfig.from_env().hosted_multi_user_mode, expected)
+        for raw in ("ture", "1", "yes", "on", "0", "off", "no"):
+            with self.subTest(raw=raw):
+                with mock.patch.dict(os.environ, {**self.HOSTED, "N170_VERIFY_HOSTED_MODE": raw}, clear=True):
+                    with self.assertRaises(ValueError) as ctx:
+                        ApiConfig.from_env()
+                self.assertIn("N170_VERIFY_HOSTED_MODE", str(ctx.exception))
+
+    def test_site_origin_is_read_and_validated(self) -> None:
+        with mock.patch.dict(os.environ, self.HOSTED, clear=True):
+            self.assertEqual(ApiConfig.from_env().site_origin, "")
+        for good in ("https://verify.example.org", "http://localhost:3000", "https://verify.example.org/"):
+            with self.subTest(good=good):
+                with mock.patch.dict(os.environ, {**self.HOSTED, "N170_VERIFY_SITE_ORIGIN": good}, clear=True):
+                    self.assertEqual(ApiConfig.from_env().site_origin, good.rstrip("/"))
+        for bad in (
+            "verify.example.org",
+            "ftp://verify.example.org",
+            "https://verify.example.org/path",
+            "https://verify.example.org?x=1",
+            "https://verify.example.org#frag",
+            "https://someone@verify.example.org",
+            "https://",
+        ):
+            with self.subTest(bad=bad):
+                with mock.patch.dict(os.environ, {**self.HOSTED, "N170_VERIFY_SITE_ORIGIN": bad}, clear=True):
+                    with self.assertRaises(ValueError) as ctx:
+                        ApiConfig.from_env()
+                self.assertIn("N170_VERIFY_SITE_ORIGIN", str(ctx.exception))
+
+    def test_a_personal_snaptrade_client_id_with_a_build_mode_override_stops_start_up(self) -> None:
+        try:
+            from tests.test_snaptrade_session_binding import PERSONAL_CLIENT_ID
+        except ImportError:
+            from test_snaptrade_session_binding import PERSONAL_CLIENT_ID
+        for client_id in (PERSONAL_CLIENT_ID, PERSONAL_CLIENT_ID.lower()):
+            for mode in ("commercial", "build", "developer_5_slot", " Build "):
+                with self.subTest(client_id=client_id, mode=mode):
+                    env = {**self.HOSTED, "SNAPTRADE_CLIENT_ID": client_id, "SNAPTRADE_AUTH_MODE": mode}
+                    with mock.patch.dict(os.environ, env, clear=True):
+                        with self.assertRaises(RuntimeError) as ctx:
+                            ApiConfig.from_env()
+                    self.assertIn("SNAPTRADE_AUTH_MODE", str(ctx.exception))
+        for mode in ("auto", "personal"):
+            env = {**self.HOSTED, "SNAPTRADE_CLIENT_ID": PERSONAL_CLIENT_ID, "SNAPTRADE_AUTH_MODE": mode}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(ApiConfig.from_env().snaptrade_client_id, PERSONAL_CLIENT_ID)
 
     def test_self_hosted_mode_without_salt_still_starts(self) -> None:
         with mock.patch.dict(os.environ, {"N170_VERIFY_HOSTED_MODE": "false"}, clear=True):

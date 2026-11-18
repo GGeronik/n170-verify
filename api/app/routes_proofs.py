@@ -7,10 +7,10 @@ from typing import Any
 
 from app.config import ApiConfig
 from app.store import (
+    ChainLinkMismatchError,
     ChainResetConflictError,
     ChainViolationError,
     GovernanceBlockedError,
-    PaperOrSandboxRejectedError,
     ProofBundleInvalidError,
     ProofConflictError,
     ProofNotFoundError,
@@ -62,13 +62,11 @@ def handle_post_proof(
     opt_in_leaderboard = bool(payload.get("opt_in_leaderboard", False))
     now_utc = payload.get("now_utc")
     try:
-        stored_bundle, verification = store.store_proof(
+        stored_bundle, verification, created = store.publish_proof(
             bundle,
             opt_in_leaderboard=opt_in_leaderboard,
             now_utc=now_utc,
         )
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ProofConflictError as exc:
@@ -76,7 +74,9 @@ def handle_post_proof(
     except ProofBundleInvalidError as exc:
         return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
 
-    return 201, {
+    # A repeated post of a published record changes nothing: 200 with the stored
+    # record and the stored record's own verification.
+    return 201 if created else 200, {
         "proof_id": stored_bundle.proof_id,
         "proof_hash": stored_bundle.proof_hash(),
         "proof_bundle": stored_bundle.to_dict(),
@@ -165,8 +165,6 @@ def handle_post_enroll_chain(
             allow_retrospective_backfill=allow_backfill,
             now_utc=now_utc,
         )
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ChainResetConflictError as exc:
@@ -183,6 +181,10 @@ def handle_post_enroll_chain(
             "violation_codes": [c.value for c in exc.chain_result.violation_codes],
             "details": exc.chain_result.details,
         }
+    except ChainLinkMismatchError as exc:
+        return exc.http_status, {"error": exc.error_code, "detail": str(exc), "errors": exc.errors}
+    except ProofConflictError as exc:
+        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ProofBundleInvalidError as exc:
         return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
 
@@ -230,8 +232,6 @@ def handle_post_append_chain(
         )
     except ProofNotFoundError as exc:
         return 404, {"error": "chain_not_found", "detail": str(exc)}
-    except PaperOrSandboxRejectedError as exc:
-        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ChainResetConflictError as exc:
@@ -248,6 +248,10 @@ def handle_post_append_chain(
             "violation_codes": [c.value for c in exc.chain_result.violation_codes],
             "details": exc.chain_result.details,
         }
+    except ChainLinkMismatchError as exc:
+        return exc.http_status, {"error": exc.error_code, "detail": str(exc), "errors": exc.errors}
+    except ProofConflictError as exc:
+        return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except ProofBundleInvalidError as exc:
         return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
 

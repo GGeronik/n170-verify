@@ -9,6 +9,7 @@ from app.badges import (
     extract_verified_capital_bracket,
     extract_verified_reconciliation_status,
     finite_real_number,
+    return_not_computed,
     verified_leaf_payload,
 )
 from app.routes_proofs import refuse_caller_clock
@@ -51,15 +52,23 @@ _LISTED_SIGNER_STATUSES = frozenset(
 )
 
 
-def _performance_not_computed(bundle: VerifyProofBundle) -> bool:
-    """True when the disclosed, Merkle-proven performance section says no return was computed."""
+def has_rankable_return(bundle: VerifyProofBundle) -> bool:
+    """True only when the record has a computed return the cohort list may rank.
+
+    The ``core_metrics`` leaf must be disclosed and Merkle-proven, its return
+    must be a finite number, ``observation_count`` must be an integer above 0,
+    and the return must not be withheld. Anything else is not listed.
+    """
     payload = verified_leaf_payload(bundle, "core_metrics")
-    if not isinstance(payload, Mapping):
+    if not isinstance(payload, Mapping) or return_not_computed(payload):
         return False
-    if payload.get("performance_withheld") is True:
-        return True
     obs = payload.get("observation_count")
-    return isinstance(obs, (int, float)) and not isinstance(obs, bool) and obs == 0
+    if not isinstance(obs, int) or isinstance(obs, bool) or obs <= 0:
+        return False
+    twr = finite_real_number(payload.get("twr_decimal"))
+    if twr is None:
+        twr = finite_real_number(payload.get("twr_pct"))
+    return twr is not None
 
 
 def _parse_enum_csv_filter(
@@ -112,13 +121,23 @@ def handle_get_leaderboard(
 
     candidates = store.list_leaderboard_candidates()
     entries: list[dict[str, Any]] = []
+    # One registry document and one copy of the continuity log for the whole request.
+    registry_doc = store.build_registry_document()
+    continuity_leaves = store.list_all_continuity_leaves()
 
     for cand in candidates:
         bundle = cand.bundle
         if broker_filter and bundle.broker_id != broker_filter:
             continue
 
-        verification = store.verify_bundle_against_live_state(bundle, now_utc=now_utc)
+        if not has_rankable_return(bundle):
+            continue
+        verification = store.verify_bundle_against_live_state(
+            bundle,
+            now_utc=now_utc,
+            registry_doc=registry_doc,
+            continuity_leaves=continuity_leaves,
+        )
         if not verification.valid:
             continue
         # The hosted list shows only records whose signer this host's registry
@@ -128,10 +147,6 @@ def handle_get_leaderboard(
             and verification.signer_trust_status not in _LISTED_SIGNER_STATUSES
         ):
             continue
-        # A return that was not computed is never ranked.
-        if _performance_not_computed(bundle):
-            continue
-
         # Filter strictly on verifier-computed assurance axes (never raw claimed_origin_assurance)
         if origin_filter and verification.effective_origin_assurance not in origin_filter:
             continue

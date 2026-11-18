@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -89,6 +91,93 @@ _REGISTRY_SIGNER_STATUSES = frozenset(
 )
 
 
+class ChainRequiresProvenOwnershipError(GovernanceBlockedError):
+    """Raised when hosted mode is asked to chain a record made without proof of account ownership."""
+
+    error_code = "chain_requires_proven_ownership"
+    http_status = 403
+
+
+# PROPOSED policy (owner to confirm): in hosted mode a record made from a public
+# address without proof of ownership is not enrolled in or appended to a
+# continuity chain, so nobody can start a chain for an account that is not theirs.
+CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE = frozenset(
+    {ProviderApprovalState.PUBLIC_API_PERMISSIONLESS}
+)
+
+
+class ChainLinkMismatchError(ValueError):
+    """Raised when a chain link's own fields disagree with the record that carries it."""
+
+    error_code = "chain_link_mismatch"
+    http_status = 422
+
+    def __init__(self, message: str, *, errors: list[str]) -> None:
+        super().__init__(message)
+        self.errors = list(errors)
+
+
+# Tolerance for comparing a link's period return with the record's proven return.
+CHAIN_LINK_RETURN_ABS_TOL = 1e-9
+
+
+def check_chain_link_matches_record(bundle: VerifyProofBundle) -> None:
+    """Refuse a chain link whose fields are not those of the record that carries it.
+
+    Compared: account tag, period start and end, and issue time against the signed
+    header; the period return against the record's disclosed, Merkle-proven
+    ``core_metrics`` return; and the link's index values against its own return.
+    """
+    from app.badges import return_not_computed, verified_leaf_payload
+
+    link = bundle.prospective_chain_link
+    if link is None:
+        return
+    errors: list[str] = []
+    if link.blinded_account_tag.lower() != bundle.blinded_account_tag.lower():
+        errors.append("chain link blinded_account_tag differs from the record's account tag")
+    for name in ("period_start_utc", "period_end_utc", "issued_at_utc"):
+        if parse_utc_timestamp(getattr(link, name)) != parse_utc_timestamp(getattr(bundle, name)):
+            errors.append(f"chain link {name} differs from the record's {name}")
+
+    core = verified_leaf_payload(bundle, "core_metrics")
+    record_twr: float | None = None
+    if not isinstance(core, Mapping):
+        errors.append("the record does not disclose a proven core_metrics return to tie the link to")
+    elif return_not_computed(core):
+        errors.append("no return was computed for the record, so it cannot carry a chain link")
+    else:
+        raw = core.get("twr_decimal")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw):
+            record_twr = float(raw)
+        else:
+            errors.append("the record's proven core_metrics carries no finite return")
+    link_twr = float(link.period_twr_decimal)
+    if record_twr is not None and not math.isclose(
+        link_twr, record_twr, rel_tol=0.0, abs_tol=CHAIN_LINK_RETURN_ABS_TOL
+    ):
+        errors.append("chain link period_twr_decimal differs from the record's proven return")
+    begin = float(link.beginning_index_value)
+    end = float(link.ending_index_value)
+    if not (math.isfinite(begin) and math.isfinite(end) and begin > 0.0) or not math.isclose(
+        end / begin - 1.0, link_twr, rel_tol=0.0, abs_tol=1e-6
+    ):
+        errors.append("chain link index values do not match its period return")
+    if errors:
+        raise ChainLinkMismatchError(
+            "The chain link does not match the record that carries it", errors=errors
+        )
+
+
+def refuse_chain_without_proven_ownership(bundle: VerifyProofBundle, *, hosted: bool) -> None:
+    """PROPOSED: hosted mode does not chain a record made without proof of ownership."""
+    if hosted and bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE:
+        raise ChainRequiresProvenOwnershipError(
+            "This host does not enrol a record made from a public address without proof of "
+            "ownership in a continuity chain"
+        )
+
+
 class ProofNotFoundError(KeyError):
     """Raised when a proof bundle or enrolled chain ID does not exist."""
 
@@ -98,6 +187,12 @@ class ProofConflictError(RuntimeError):
 
     http_status: int = 409
     error_code: str = "proof_id_conflict"
+
+
+class ProofAlreadyPublishedError(ProofConflictError):
+    """Raised when a chain enrolment or append carries a record that is already published."""
+
+    error_code = "proof_already_published"
 
 
 class ProofBundleInvalidError(ValueError):
@@ -452,10 +547,19 @@ class ProofStore:
         *,
         chain_history: list[VerifyProofBundle] | None = None,
         now_utc: str | datetime | None = None,
+        registry_doc: PublisherKeyRegistryDocument | None = None,
+        continuity_leaves: list[ContinuityLogLeaf] | None = None,
     ) -> BundleVerificationResult:
-        """Dynamically verify ``bundle`` against live publisher registry, chain history, and continuity log."""
-        registry_doc = self.build_registry_document()
-        all_leaves = self.list_all_continuity_leaves()
+        """Dynamically verify ``bundle`` against live publisher registry, chain history, and continuity log.
+
+        A caller verifying many records in one request may pass the registry
+        document and continuity leaves it built once for that request.
+        """
+        if registry_doc is None:
+            registry_doc = self.build_registry_document()
+        all_leaves = (
+            continuity_leaves if continuity_leaves is not None else self.list_all_continuity_leaves()
+        )
 
         resolved_history = chain_history
         if resolved_history is None and bundle.prospective_chain_link is not None:
@@ -491,6 +595,27 @@ class ProofStore:
         now_utc: str | datetime | None = None,
     ) -> tuple[VerifyProofBundle, BundleVerificationResult]:
         """Validate governance & cryptography, enforce 7-day trade guard, and persist redacted proof."""
+        stored, verification, _ = self.publish_proof(
+            bundle,
+            opt_in_leaderboard=opt_in_leaderboard,
+            stored_at_utc=stored_at_utc,
+            now_utc=now_utc,
+        )
+        return stored, verification
+
+    def publish_proof(
+        self,
+        bundle: VerifyProofBundle,
+        *,
+        opt_in_leaderboard: bool = False,
+        stored_at_utc: str | None = None,
+        now_utc: str | datetime | None = None,
+    ) -> tuple[VerifyProofBundle, BundleVerificationResult, bool]:
+        """Like ``store_proof``, and also say whether this post created the record.
+
+        For a record that is already published the stored record is returned
+        with its own verification, and the flag is False.
+        """
         if self._config.hosted_multi_user_mode and bundle.proof_id.strip().lower().startswith(
             "specimen-"
         ):
@@ -551,7 +676,10 @@ class ProofStore:
                     stored_bundle = VerifyProofBundle.from_dict(
                         json.loads(str(existing_row["bundle_json"]))
                     )
-                    return stored_bundle, verification
+                    stored_verification = self.verify_bundle_against_live_state(
+                        stored_bundle, now_utc=now_utc
+                    )
+                    return stored_bundle, stored_verification, False
 
                 self._conn.execute(
                     """
@@ -585,7 +713,18 @@ class ProofStore:
                 self._conn.execute("ROLLBACK;")
                 raise
 
-        return sanitized_bundle, verification
+        return sanitized_bundle, verification, True
+
+    def _refuse_already_published(self, proof_id: str, proof_hash: str) -> None:
+        row = self._conn.execute(
+            "SELECT 1 FROM proofs WHERE proof_id = ? OR proof_hash = ?",
+            (proof_id, proof_hash),
+        ).fetchone()
+        if row is not None:
+            raise ProofAlreadyPublishedError(
+                f"Record {proof_id!r} is already published; a published record cannot be "
+                "enrolled in or appended to a chain afterwards"
+            )
 
     def get_proof_entry(self, proof_id: str) -> StoredProofEntry:
         """Retrieve a stored redacted ``VerifyProofBundle`` by ``proof_id``."""
@@ -661,6 +800,10 @@ class ProofStore:
             hosted_multi_user_mode=self._config.hosted_multi_user_mode,
         )
         self.require_registry_signer(genesis_bundle)
+        refuse_chain_without_proven_ownership(
+            genesis_bundle, hosted=self._config.hosted_multi_user_mode
+        )
+        check_chain_link_matches_record(genesis_bundle)
 
         sanitized_bundle, _ = enforce_bundle_seven_day_trade_guard(
             genesis_bundle,
@@ -757,6 +900,7 @@ class ProofStore:
 
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
+                self._refuse_already_published(sanitized_bundle.proof_id, p_hash)
                 idx_row = self._conn.execute(
                     "SELECT COALESCE(MAX(log_index), -1) + 1 AS next_idx FROM continuity_log"
                 ).fetchone()
@@ -866,6 +1010,8 @@ class ProofStore:
             hosted_multi_user_mode=self._config.hosted_multi_user_mode,
         )
         self.require_registry_signer(next_bundle)
+        refuse_chain_without_proven_ownership(next_bundle, hosted=self._config.hosted_multi_user_mode)
+        check_chain_link_matches_record(next_bundle)
         sanitized_bundle, _ = enforce_bundle_seven_day_trade_guard(
             next_bundle,
             min_delay_days=self._config.delayed_trade_guard_days,
@@ -953,6 +1099,7 @@ class ProofStore:
 
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
+                self._refuse_already_published(sanitized_bundle.proof_id, p_hash)
                 idx_row = self._conn.execute(
                     "SELECT COALESCE(MAX(log_index), -1) + 1 AS next_idx FROM continuity_log"
                 ).fetchone()
@@ -1043,11 +1190,14 @@ class ProofStore:
 
 
 __all__ = [
+    "ChainLinkMismatchError",
+    "ChainRequiresProvenOwnershipError",
     "ChainResetConflictError",
     "ChainViolationError",
     "EMPTY_TLOG_ROOT_HEX",
     "GovernanceBlockedError",
     "PaperOrSandboxRejectedError",
+    "ProofAlreadyPublishedError",
     "ProofBundleInvalidError",
     "ProofConflictError",
     "ProofNotFoundError",
