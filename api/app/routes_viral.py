@@ -37,7 +37,6 @@ from app.worker_isolation import (
     WorkerValidationError,
     run_isolated_one_shot_verification,
 )
-from n170_verify.coaching import sanitize_journal_tags
 from n170_verify.connectors import (
     PaperOrSandboxAccountRejectedError,
     detect_and_parse_statement,
@@ -116,18 +115,6 @@ def sanitize_markdown_text(raw: Any, *, max_len: int = 96) -> str:
     for md_ch in ("[", "]", "(", ")", "*", "_", "~", "|"):
         base = base.replace(md_ch, "")
     return base.strip()
-
-
-def sanitize_journal_tag(raw: Any) -> str | None:
-    """Clean one journal tag with the shared pipeline's cleaner; ``None`` when it is dropped.
-
-    The upload route does not call this: the shared pipeline cleans imported tags
-    once, and the route signs what it returns. Kept only for existing importers.
-    """
-    if not isinstance(raw, str):
-        return None
-    cleaned = sanitize_journal_tags([raw])
-    return cleaned[0] if cleaned else None
 
 
 def _reject_json_nonfinite_constant(token: str) -> Any:
@@ -247,6 +234,8 @@ def handle_post_plausibility(
             return exc.status_code, {"error": "validation_error", "detail": str(exc)}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return 400, {"error": "invalid_json", "detail": f"Malformed JSON body: {exc}"}
+        except (RecursionError, ValueError):
+            return 400, {"error": "invalid_json", "detail": "Malformed JSON body"}
     else:
         parsed = raw_body_or_payload
 
@@ -1162,7 +1151,6 @@ def build_and_sign_proof_bundle(
     reconciliation_status_override: ReconciliationStatus | None = None,
     origin_assurance: OriginAssurance = OriginAssurance.SELF_REPORTED,
     imported_journal_tags: Sequence[str] = (),
-    include_journal_tags: bool = True,
     disclose_leaf_names: Sequence[str] | None = None,
     publisher_kid: str = "ephemeral-worker-auto-detect",
     publisher_private_key_hex: str | None = None,
@@ -1198,13 +1186,8 @@ def build_and_sign_proof_bundle(
     delayed_trades = pipeline_out.delayed_closed_trades
     stripped_count = pipeline_out.stripped_recent_closed_trades_count
 
-    # Journal tags are cleaned once, by the shared pipeline; the upload signs them as
-    # returned, or none at all when the caller asked to leave them out.
+    # Journal tags are cleaned once, by the shared pipeline; the upload signs them as returned.
     coaching_report = pipeline_out.coaching
-    if not include_journal_tags:
-        coaching_dict = coaching_report.to_dict()
-        coaching_dict["imported_journal_tags"] = []
-        coaching_report = coaching_report.from_dict(coaching_dict)
 
     leaf_payloads = build_canonical_leaf_payloads(
         performance=perf_summary,
@@ -1278,16 +1261,13 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
 
     filename = str(job["filename"]).strip() if job.get("filename") else None
     blinding_salt_hex = str(job["account_blinding_salt_hex"])
-    base_currency = str(job.get("base_currency") or "USD").strip().upper()
     issued_at_utc = str(job.get("issued_at_utc") or utc_now_iso())
     embargo_days = int(job.get("delayed_trade_guard_days", 7))
-    include_journal_tags = bool(job.get("include_journal_tags", True))
 
     det = detect_and_parse_statement(
         raw_bytes,
         filename=filename,
         blinding_salt_hex=blinding_salt_hex,
-        base_currency=base_currency,
         require_live=True,
     )
     ledger = det.ledger
@@ -1313,7 +1293,6 @@ def auto_detect_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]:
         reconciliation_status_override=recon_override,
         origin_assurance=OriginAssurance.SELF_REPORTED,
         imported_journal_tags=det.imported_journal_tags,
-        include_journal_tags=include_journal_tags,
         disclose_leaf_names=job.get("disclose_leaf_names"),
     )
 
@@ -1395,6 +1374,29 @@ def _extract_multipart_upload(
     return file_bytes, fields_map
 
 
+# Choices the statement upload does not take from a caller: the currency label
+# comes from the file or the parser that read it, and the signed journal tags are
+# the shared pipeline's.
+_UPLOAD_REFUSED_FIELDS: tuple[str, ...] = (
+    "base_currency",
+    "include_journal_tags",
+    "forward_journal_tags",
+)
+
+
+def _refuse_upload_choice_fields(carried: Mapping[str, Any]) -> tuple[int, dict[str, Any]] | None:
+    present = [name for name in _UPLOAD_REFUSED_FIELDS if name in carried]
+    if not present:
+        return None
+    return 400, {
+        "error": "field_not_accepted",
+        "detail": (
+            f"The statement upload does not accept {', '.join(present)}: the currency label "
+            "comes from the statement and the journal tags are the ones the host signs"
+        ),
+    }
+
+
 def handle_post_verify_auto_detect(
     raw_body: bytes,
     *,
@@ -1422,12 +1424,9 @@ def handle_post_verify_auto_detect(
 
     stmt_bytes: bytes | None = None
     filename: str | None = q_map.get("filename") or hdrs.get("X-Filename") or hdrs.get("x-filename")
-    base_currency = (q_map.get("base_currency") or "USD").strip().upper()
-    include_journal_tags = q_map.get("include_journal_tags", "true").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-    }
+    refusal = _refuse_upload_choice_fields(q_map)
+    if refusal is not None:
+        return refusal
     publish_proof = q_map.get("publish_proof", "false").strip().lower() in {"1", "true", "yes"}
     opt_in_leaderboard = q_map.get("opt_in_leaderboard", "false").strip().lower() in {
         "1",
@@ -1445,16 +1444,11 @@ def handle_post_verify_auto_detect(
         except ValueError as exc:
             return 400, {"error": "invalid_multipart", "detail": str(exc)}
 
+        refusal = _refuse_upload_choice_fields(form_fields)
+        if refusal is not None:
+            return refusal
         if form_fields.get("filename"):
             filename = form_fields["filename"]
-        if form_fields.get("base_currency"):
-            base_currency = form_fields["base_currency"].upper()
-        if "include_journal_tags" in form_fields:
-            include_journal_tags = form_fields["include_journal_tags"].lower() not in {
-                "0",
-                "false",
-                "no",
-            }
         if "publish_proof" in form_fields:
             publish_proof = form_fields["publish_proof"].lower() in {"1", "true", "yes"}
         if "opt_in_leaderboard" in form_fields:
@@ -1466,8 +1460,13 @@ def handle_post_verify_auto_detect(
             parsed_json = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             return 400, {"error": "invalid_json", "detail": f"Malformed JSON body: {exc}"}
+        except (RecursionError, ValueError):
+            return 400, {"error": "invalid_json", "detail": "Malformed JSON body"}
         if not isinstance(parsed_json, Mapping):
             return 400, {"error": "invalid_request", "detail": "JSON body must be an object"}
+        refusal = _refuse_upload_choice_fields(parsed_json)
+        if refusal is not None:
+            return refusal
 
         if bool(parsed_json.get("is_paper", False)) or bool(parsed_json.get("is_sandbox", False)):
             return 422, {
@@ -1488,12 +1487,6 @@ def handle_post_verify_auto_detect(
 
         if parsed_json.get("filename"):
             filename = str(parsed_json["filename"])
-        if parsed_json.get("base_currency"):
-            base_currency = str(parsed_json["base_currency"]).strip().upper()
-        if "include_journal_tags" in parsed_json:
-            include_journal_tags = bool(parsed_json["include_journal_tags"])
-        elif "forward_journal_tags" in parsed_json:
-            include_journal_tags = bool(parsed_json["forward_journal_tags"])
         if "publish_proof" in parsed_json:
             publish_proof = bool(parsed_json["publish_proof"])
         if "opt_in_leaderboard" in parsed_json:
@@ -1552,20 +1545,12 @@ def handle_post_verify_auto_detect(
             "error": "payload_too_large",
             "detail": f"Decoded statement exceeds maximum 25 MB ({MAX_STATEMENT_UPLOAD_BYTES} bytes) limit",
         }
-    if not (2 <= len(base_currency) <= 12) or not base_currency.isalnum():
-        return 422, {
-            "error": "validation_error",
-            "detail": "base_currency must be a 2-12 character alphanumeric currency code",
-        }
-
     worker_request: dict[str, Any] = {
         "broker_id": "auto_detect",
         "provider_approval_state": ProviderApprovalState.OFFLINE_EXPORT_ONLY.value,
         "environment_tier": EnvironmentTier.LIVE_PRODUCTION.value,
         "raw_statement_b64": base64.b64encode(stmt_bytes).decode("ascii"),
         "filename": sanitize_public_label(filename, max_len=128) if filename else None,
-        "base_currency": base_currency,
-        "include_journal_tags": include_journal_tags,
     }
     if issued_at_utc:
         worker_request["issued_at_utc"] = issued_at_utc
@@ -1661,7 +1646,6 @@ __all__ = [
     "handle_get_qr_payload",
     "handle_post_plausibility",
     "handle_post_verify_auto_detect",
-    "sanitize_journal_tag",
     "sanitize_markdown_text",
     "sanitize_public_label",
     "validate_comparison_proof_id",

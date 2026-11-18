@@ -149,6 +149,23 @@ def _parse_json_body(raw_body: bytes) -> tuple[bool, Any]:
         return True, parsed
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return False, f"Malformed JSON request body: {exc}"
+    except (RecursionError, ValueError):
+        # Too deeply nested, or otherwise not parsable as JSON.
+        return False, "Malformed JSON request body"
+
+
+_ERROR_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _error_code_of(body: bytes) -> str:
+    """The route's own error code, when it is a plain code; otherwise a generic one."""
+    try:
+        code = json.loads(body.decode("utf-8")).get("error")
+    except Exception:
+        return "request_refused"
+    if isinstance(code, str) and _ERROR_CODE_RE.fullmatch(code):
+        return code
+    return "request_refused"
 
 
 def _flatten_query_params(query_string: str) -> dict[str, str]:
@@ -248,6 +265,20 @@ class VerifyApiApplication:
             scanner = OutboundPrivacyScanner()
             body_text = resp.body.decode("utf-8", errors="replace")
             violations = scanner.scan_text(body_text)
+            if violations and 400 <= resp.status_code < 500:
+                # An error that would repeat a caller's own text (a field name, a path
+                # id) in a form the scanner blocks keeps its status and names only the
+                # kind of problem.
+                return ApiResponse.json_response(
+                    resp.status_code,
+                    {
+                        "error": _error_code_of(resp.body),
+                        "detail": (
+                            "The request was refused. The details are not shown because they "
+                            "would repeat text that looks like an account number or a credential."
+                        ),
+                    },
+                )
             if violations:
                 return ApiResponse.json_response(
                     500,
@@ -1137,7 +1168,17 @@ def run_cli(argv: list[str] | None = None) -> int:
         return 0
 
 
-app = create_app()
+def __getattr__(name: str) -> Any:
+    """``app`` for ASGI servers (``uvicorn app.main:app``), built from the environment.
+
+    Nothing is built at import time. The application is built on first use through
+    ``ApiConfig.from_env()``, so every start-up check applies, as with ``python -m app.main``.
+    """
+    if name == "app":
+        built = create_app(ApiConfig.from_env())
+        globals()["app"] = built
+        return built
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
@@ -1146,7 +1187,6 @@ __all__ = [
     "TestClientResponse",
     "VerifyApiApplication",
     "VerifyApiTestClient",
-    "app",
     "create_app",
     "create_stdlib_http_server",
     "mount_onto_fastapi",

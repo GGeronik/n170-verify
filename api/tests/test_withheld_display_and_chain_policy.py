@@ -37,11 +37,21 @@ from n170_verify.crypto import (
 try:
     from tests.test_api_lifecycle_and_security import _build_leaf_payloads
     from tests.test_publish_policy import _holder_claim
-    from tests.test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML, SYNTHETIC_TRADERSYNC_CSV
+    from tests.test_viral_routes import (
+        SYNTHETIC_LIVE_IBKR_FLEX_XML,
+        SYNTHETIC_ROBINHOOD_CSV,
+        SYNTHETIC_TRADERSYNC_CSV,
+        _build_multipart_body,
+    )
 except ImportError:  # run with api/tests on the path, as CI does
     from test_api_lifecycle_and_security import _build_leaf_payloads
     from test_publish_policy import _holder_claim
-    from test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML, SYNTHETIC_TRADERSYNC_CSV
+    from test_viral_routes import (
+        SYNTHETIC_LIVE_IBKR_FLEX_XML,
+        SYNTHETIC_ROBINHOOD_CSV,
+        SYNTHETIC_TRADERSYNC_CSV,
+        _build_multipart_body,
+    )
 
 HOST_KID = "n170-active-2026"
 LEADERBOARD_ALL = "/api/v1/leaderboard?include_private_bracket=1&min_capital_bracket=under_1k"
@@ -451,14 +461,16 @@ def _journal_statement_with_hard_tags() -> str:
 class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
     """For one statement, the upload route and POST /api/v1/verify sign the same leaves and period."""
 
-    def _both(self, text: str, filename: str = "ibkr.xml") -> tuple[dict, dict]:
+    def _both(
+        self, text: str, filename: str = "ibkr.xml", broker_id: str = "auto_detect"
+    ) -> tuple[dict, dict]:
         upload = self.client.post(
             "/api/v1/verify/auto-detect",
             json={"raw_statement_text": text, "filename": filename, "issued_at_utc": "2026-02-10T00:00:00Z"},
         )
         verify = self.client.post(
             "/api/v1/verify",
-            json={"broker_id": "auto_detect", "raw_statement_text": text, "issued_at_utc": "2026-02-10T00:00:00Z"},
+            json={"broker_id": broker_id, "raw_statement_text": text, "issued_at_utc": "2026-02-10T00:00:00Z"},
         )
         self.assertEqual(upload.status_code, 200, upload.text)
         self.assertEqual(verify.status_code, 200, verify.text)
@@ -504,6 +516,18 @@ class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
         bundle = upload["bundle"]
         self.assertEqual(bundle["period_start_utc"], bundle["period_end_utc"])
 
+    def test_a_named_broker_on_the_verify_route_signs_what_the_upload_signs(self) -> None:
+        for text, filename, broker_id in (
+            (SYNTHETIC_LIVE_IBKR_FLEX_XML, "ibkr.xml", "ibkr_flex"),
+            (SYNTHETIC_ROBINHOOD_CSV, "rh.csv", "robinhood_csv"),
+        ):
+            with self.subTest(broker_id=broker_id):
+                upload, verify = self._both(text, filename=filename, broker_id=broker_id)
+                self._assert_same(upload, verify)
+                self.assertEqual(
+                    upload["bundle"]["base_currency"], verify["proof_bundle"]["base_currency"]
+                )
+
     def test_journal_tags_with_an_ampersand_and_a_long_digit_run_are_signed_alike(self) -> None:
         upload, verify = self._both(_journal_statement_with_hard_tags(), filename="tradersync_trades.csv")
         self._assert_same(upload, verify)
@@ -517,6 +541,53 @@ class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
         self._assert_same(upload, verify)
         self.assertTrue(upload["performance_withheld"])
         self.assertTrue(any("cash flows" in r for r in upload["withheld_reasons"]))
+
+
+class TestUploadTakesNoCurrencyOrTagChoiceFromTheCaller(_Case):
+    """The statement upload takes its currency label from the file and signs the pipeline's tags."""
+
+    UPLOAD = "/api/v1/verify/auto-detect"
+
+    def _assert_refused(self, resp, field: str) -> None:
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertEqual(resp.json()["error"], "field_not_accepted")
+        self.assertIn(field, resp.json()["detail"])
+
+    def test_the_fields_are_refused_wherever_they_are_sent(self) -> None:
+        for field, value in (("base_currency", "JPY"), ("include_journal_tags", "false")):
+            with self.subTest(field=field, place="query"):
+                self._assert_refused(
+                    self.client.post(
+                        f"{self.UPLOAD}?{field}={value}",
+                        content=SYNTHETIC_ROBINHOOD_CSV.encode("utf-8"),
+                        headers={"Content-Type": "text/csv"},
+                    ),
+                    field,
+                )
+            with self.subTest(field=field, place="json"):
+                self._assert_refused(
+                    self.client.post(
+                        self.UPLOAD, json={"raw_statement_text": SYNTHETIC_ROBINHOOD_CSV, field: value}
+                    ),
+                    field,
+                )
+            with self.subTest(field=field, place="form"):
+                body, ctype = _build_multipart_body(
+                    boundary="----N170Boundary42",
+                    file_field="file",
+                    filename="rh.csv",
+                    file_bytes=SYNTHETIC_ROBINHOOD_CSV.encode("utf-8"),
+                    extra_fields={field: value},
+                )
+                self._assert_refused(
+                    self.client.post(self.UPLOAD, content=body, headers={"Content-Type": ctype}), field
+                )
+        self.assertEqual(self._counts(), {"proofs": 0, "chains": 0, "continuity_log": 0})
+
+    def test_without_the_fields_the_label_comes_from_the_statement(self) -> None:
+        resp = self.client.post(self.UPLOAD, json={"raw_statement_text": SYNTHETIC_ROBINHOOD_CSV})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["bundle"]["base_currency"], "USD")
 
 
 if __name__ == "__main__":

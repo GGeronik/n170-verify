@@ -284,6 +284,25 @@ def enforce_bundle_seven_day_trade_guard(
     return bundle, False
 
 
+def refuse_text_the_scanner_blocks(bundle: VerifyProofBundle) -> None:
+    """Refuse, before anything is stored, a record that the outbound scanner would block.
+
+    A stored record must always be readable, so text that looks like an account
+    number, a raw statement excerpt or a credential is refused here. The reason
+    does not repeat the text.
+    """
+    from app.privacy_scanner import OutboundPrivacyScanner
+
+    if OutboundPrivacyScanner().scan_payload(bundle.to_dict()):
+        raise ProofBundleInvalidError(
+            "The record cannot be published",
+            errors=[
+                "The record contains text that looks like an account number, a raw statement "
+                "excerpt or a credential; remove it from the statement or journal and try again"
+            ],
+        )
+
+
 def _refuse_invalid_holder_claim(result: BundleVerificationResult) -> None:
     """The store never publishes a holder attestation that does not verify."""
     if result.holder_claim_status == HolderClaimStatus.INVALID:
@@ -639,6 +658,7 @@ class ProofStore:
                 errors=verification.errors,
             )
         _refuse_invalid_holder_claim(verification)
+        refuse_text_the_scanner_blocks(sanitized_bundle)
 
         now_str = stored_at_utc or utc_now_iso()
         chain_id = (
@@ -875,6 +895,7 @@ class ProofStore:
                     errors=bundle_ver.errors,
                 )
             _refuse_invalid_holder_claim(bundle_ver)
+            refuse_text_the_scanner_blocks(sanitized_bundle)
 
             chain_res = verify_prospective_chain(
                 [sanitized_bundle],
@@ -1087,6 +1108,7 @@ class ProofStore:
                     errors=bundle_ver.errors,
                 )
             _refuse_invalid_holder_claim(bundle_ver)
+            refuse_text_the_scanner_blocks(sanitized_bundle)
 
             resolved_opt_in = (
                 bool(chain_row["opt_in_leaderboard"])

@@ -49,8 +49,22 @@ def _check_snaptrade_session_ttl(value: object, *, source: str) -> float:
 
 SITE_ORIGIN_ENV = "N170_VERIFY_SITE_ORIGIN"
 HOSTED_MODE_ENV = "N170_VERIFY_HOSTED_MODE"
-# SnapTrade auth-mode values that select the build (commercial) key path.
-_SNAPTRADE_BUILD_MODES = frozenset({"commercial", "build", "developer_5_slot"})
+
+
+def _snaptrade_mode_overrides_personal_key(client_id: str, auth_mode: str) -> bool:
+    """True when a personal client id is configured with a mode that selects the build key path.
+
+    The connector's own ``is_snaptrade_personal_key`` decides both: the id alone, and
+    the id with the configured mode. An unknown mode is left to the connector to refuse.
+    """
+    from n170_verify.connectors import SnapTradeAuthenticationError, is_snaptrade_personal_key
+
+    if not is_snaptrade_personal_key(client_id):
+        return False
+    try:
+        return not is_snaptrade_personal_key(client_id, auth_mode=auth_mode)
+    except SnapTradeAuthenticationError:
+        return False
 
 
 def check_site_origin(value: str, *, source: str = SITE_ORIGIN_ENV) -> str:
@@ -311,10 +325,7 @@ class ApiConfig:
         site_origin = check_site_origin(os.environ.get(SITE_ORIGIN_ENV, ""))
         snaptrade_client_id = os.environ.get("SNAPTRADE_CLIENT_ID", "").strip()
         snaptrade_auth_mode = os.environ.get("SNAPTRADE_AUTH_MODE", "auto").strip().lower() or "auto"
-        if (
-            snaptrade_client_id.upper().startswith("PERS-")
-            and snaptrade_auth_mode in _SNAPTRADE_BUILD_MODES
-        ):
+        if _snaptrade_mode_overrides_personal_key(snaptrade_client_id, snaptrade_auth_mode):
             # A personal key belongs to one owner; it is never served as a build key.
             raise RuntimeError(
                 "SNAPTRADE_CLIENT_ID is a SnapTrade personal key, but SNAPTRADE_AUTH_MODE "

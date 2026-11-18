@@ -26,7 +26,6 @@ for _p in (str(REPO_ROOT), str(REPO_ROOT / "core"), str(REPO_ROOT / "api")):
 
 from app.config import ApiConfig
 from app.main import VerifyApiTestClient, create_app
-from app.routes_viral import sanitize_journal_tag
 from app.worker_isolation import (
     WorkerIsolationError,
     WorkerValidationError,
@@ -1257,8 +1256,6 @@ class TestWave5ParserXxeSsrfFormulaInjectionAndDos(unittest.TestCase):
 
         # Second-order formula prefix emergence after $ / long-digit redaction
         for second_order in ("$100=cmd", "-12345+cmd", "'=cmd", "|=cmd"):
-            tag_out = sanitize_journal_tag(second_order)
-            _assert_clean_cell(tag_out, f"sanitize_journal_tag({second_order!r})")
             for core_tag in sanitize_journal_tags([second_order]):
                 _assert_clean_cell(core_tag, f"sanitize_journal_tags({second_order!r})")
 
