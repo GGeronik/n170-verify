@@ -56,9 +56,13 @@ DEFAULT_HYPERLIQUID_TIMEOUT_SECONDS: float = 15.0
 MAX_HYPERLIQUID_TIMEOUT_SECONDS: float = 30.0
 MAX_HYPERLIQUID_RESPONSE_BYTES: int = 10 * 1024 * 1024
 HYPERLIQUID_LEDGER_PAGE_SIZE: int = 2000
-MAX_HYPERLIQUID_LEDGER_PAGES: int = 5
+# Ledger history is read up to this many entries; more withholds the record.
+MAX_HYPERLIQUID_LEDGER_ENTRIES: int = 10_000
+# Safety bound on calls; with the documented 500-element responses it allows twice the entry ceiling.
+MAX_HYPERLIQUID_LEDGER_PAGES: int = 40
 HYPERLIQUID_FILLS_PAGE_SIZE: int = 2000
-MAX_HYPERLIQUID_FILL_PAGES: int = 10
+# Safety bound on calls; with the documented 500-element responses it allows twice the 10,000-fill limit.
+MAX_HYPERLIQUID_FILL_PAGES: int = 40
 # `userFillsByTime` serves only the 10,000 most recent fills (documented service limit).
 HYPERLIQUID_FILLS_BY_TIME_AVAILABLE: int = 10_000
 # Documented minimum number of elements a time-range response returns before it is cut.
@@ -264,7 +268,13 @@ def _extract_nav_points_from_history(
     *,
     start_bound: datetime | None = None,
     end_bound: datetime | None = None,
+    complete_before: datetime | None = None,
 ) -> list[NormalizedNavPoint]:
+    """Return one close per completed UTC date (plus any wipe-out point), oldest first.
+
+    Snapshots at or after ``complete_before`` (the start of the current, unfinished UTC date,
+    or of a date the end bound cuts short) contribute no point.
+    """
     if not isinstance(raw_history, list):
         return []
     all_by_ts: dict[str, float] = {}
@@ -289,6 +299,8 @@ def _extract_nav_points_from_history(
             continue
         if end_bound is not None and ts_dt > end_bound:
             continue
+        if complete_before is not None and ts_dt >= complete_before:
+            continue
 
         val = _parse_finite_float(raw_v, field_name="accountValueHistory.value", default=0.0)
         all_by_ts[ts_iso] = val
@@ -306,38 +318,28 @@ def _extract_nav_points_from_history(
     for idx in range(first_pos_idx, last_pos_idx + 1):
         last_idx_by_day[ordered_ts[idx][:10]] = idx
 
-    if len(last_idx_by_day) >= 2:
-        # Bucket intraday `day`/`week`/`month` windows to 1 UTC daily close per calendar day
-        # while retaining `first_pos_idx` (`V_0`) so Day-1 PnL is preserved and `T >= 30` PSR
-        # and annualized `sqrt(252)` volatility reflect genuine daily return intervals.
-        kept_indices: list[int] = [first_pos_idx]
-        for _, day_close_idx in sorted(last_idx_by_day.items(), key=lambda kv: kv[0]):
-            if day_close_idx != first_pos_idx:
-                kept_indices.append(day_close_idx)
-    else:
-        # Single-UTC-day history: cap to [open, optional intraday trough, close] (<= 3 points)
-        # so brand-new 1-day wallets preserve total return & max drawdown without spoofing T >= 30 PSR.
-        kept_indices = [first_pos_idx]
-        if last_pos_idx != first_pos_idx:
-            trough_idx = min(pos_indices, key=lambda i: all_by_ts[ordered_ts[i]])
-            end_min = min(
-                all_by_ts[ordered_ts[first_pos_idx]],
-                all_by_ts[ordered_ts[last_pos_idx]],
-            )
-            if (
-                first_pos_idx < trough_idx < last_pos_idx
-                and all_by_ts[ordered_ts[trough_idx]] < end_min
-            ):
-                kept_indices.append(trough_idx)
-            kept_indices.append(last_pos_idx)
+    # Every scored interval runs from one UTC date's close to the next date's close: the
+    # last snapshot of each date is its close, and an opening snapshot followed by a later
+    # snapshot on the same date is not a scored point.
+    kept_indices: list[int] = list(last_idx_by_day.values())
 
-    # Keep every transition from positive equity to <= 0.0, not only a final one, so a 100%
-    # wipe-out stays a -100% interval (and withholds the record) even when a later deposit
-    # brings equity back. After the last positive snapshot only the first zero is kept, so a
-    # clean 100% withdrawal still reconciles against its outflow.
-    for idx in range(first_pos_idx + 1, len(ordered_ts)):
+    # Keep every transition from positive equity to <= 0.0 between positive snapshots, even
+    # inside a date, so a 100% wipe-out stays a -100% interval (and withholds the record)
+    # when a later deposit brings equity back. After the last positive snapshot only the
+    # close of the date equity first reached zero is kept. (A full withdrawal is a cash flow
+    # of 100% of the opening value inside one interval, so the calculator withholds it too.)
+    for idx in range(first_pos_idx + 1, last_pos_idx + 1):
         if all_by_ts[ordered_ts[idx]] <= 0.0 and all_by_ts[ordered_ts[idx - 1]] > 0.0:
             kept_indices.append(idx)
+    if last_pos_idx + 1 < len(ordered_ts):
+        zero_date = ordered_ts[last_pos_idx + 1][:10]
+        terminal_idx = last_pos_idx + 1
+        while terminal_idx + 1 < len(ordered_ts) and ordered_ts[terminal_idx + 1][:10] == zero_date:
+            terminal_idx += 1
+        if zero_date == ordered_ts[last_pos_idx][:10]:
+            # The date's close is the zero, not the earlier positive snapshot on that date.
+            kept_indices.remove(last_idx_by_day[zero_date])
+        kept_indices.append(terminal_idx)
 
     return [
         NormalizedNavPoint(timestamp_utc=ordered_ts[idx], nav_base=all_by_ts[ordered_ts[idx]])
@@ -405,18 +407,38 @@ def _entry_time_ms(entry: Mapping[str, Any]) -> int | None:
     return None
 
 
-def _page_is_stuck(page: list[Any], cursor_ms: int, longest_prior_page: int) -> bool:
-    """True when a page cannot move the cursor and may have been cut inside one timestamp.
+def _page_cannot_be_paged(page: list[Any], cursor_ms: int, new_entries: int) -> bool:
+    """True when a page adds new entries but every entry on it sits at the cursor's millisecond.
 
-    Every entry sits exactly at the cursor, so the next query would return the same page.
-    When the page is as long as the longest page seen so far and as long as the documented
-    minimum response size, the response cap may have cut entries sharing that timestamp, and
-    the rest cannot be reached.
+    The next query would start at the same millisecond and return the same entries, so any
+    further entries sharing that millisecond cannot be reached, whatever the page length.
     """
-    times = [t for t in (_entry_time_ms(e) for e in page if isinstance(e, Mapping)) if t is not None]
-    if not times or min(times) != cursor_ms or max(times) != cursor_ms:
+    if new_entries == 0:
         return False
-    return len(page) >= max(longest_prior_page, HYPERLIQUID_MIN_DOCUMENTED_RESPONSE_ELEMENTS)
+    times = [t for t in (_entry_time_ms(e) for e in page if isinstance(e, Mapping)) if t is not None]
+    return bool(times) and min(times) == cursor_ms and max(times) == cursor_ms
+
+
+def _page_repeats_a_cut_block(page: list[Any], cursor_ms: int) -> bool:
+    """True when a page that adds nothing is a block of at least the documented response size
+    sitting at the cursor's millisecond: the response cap may have cut that block."""
+    times = [t for t in (_entry_time_ms(e) for e in page if isinstance(e, Mapping)) if t is not None]
+    return (
+        bool(times)
+        and min(times) == cursor_ms
+        and max(times) == cursor_ms
+        and len(page) >= HYPERLIQUID_MIN_DOCUMENTED_RESPONSE_ELEMENTS
+    )
+
+
+def _completed_dates_before(as_of: datetime, end_bound: datetime | None) -> datetime:
+    """Start of the first UTC date whose close is not yet known (today, or a cut end date)."""
+    cutoff = as_of.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    if end_bound is not None:
+        end_day_start = end_bound.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        if end_bound < end_day_start.replace(hour=23, minute=59, second=59):
+            cutoff = min(cutoff, end_day_start)
+    return cutoff
 
 
 def _select_scored_nav_series(
@@ -424,6 +446,7 @@ def _select_scored_nav_series(
     *,
     start_bound: datetime | None,
     end_bound: datetime | None,
+    as_of: datetime | None = None,
 ) -> tuple[str, list[NormalizedNavPoint], bool, str | None]:
     """Select the portfolio window and return (window, scored NAV points, truncated, warning).
 
@@ -431,6 +454,7 @@ def _select_scored_nav_series(
     the same response; the merged series is then restricted to daily closes.
     """
     windows = _extract_portfolio_windows(raw_portfolio)
+    complete_before = _completed_dates_before(as_of or datetime.now(timezone.utc), end_bound)
     selected_window = "allTime"
     nav_points: list[NormalizedNavPoint] = []
     window_groups: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -453,6 +477,7 @@ def _select_scored_nav_series(
             merged_history,
             start_bound=start_bound,
             end_bound=end_bound,
+            complete_before=complete_before,
         )
         if len(pts) >= 2:
             selected_window = primary_win
@@ -464,7 +489,8 @@ def _select_scored_nav_series(
 
     if len(nav_points) < 2:
         raise HyperliquidValidationError(
-            "Hyperliquid wallet has fewer than 2 positive accountValueHistory snapshots in the requested window"
+            "Hyperliquid wallet has fewer than 2 completed daily closes in the requested window; a record "
+            "needs at least one full UTC day between two closes"
         )
 
     nav_points, truncated, spacing_warning = _restrict_to_daily_closes(nav_points)
@@ -741,6 +767,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         start_date: str | None = None,
         end_date: str | None = None,
         require_live: bool = True,
+        as_of_utc: str | None = None,
     ) -> CanonicalPortfolioLedger:
         """Normalize Hyperliquid ``portfolio``, ``userNonFundingLedgerUpdates``, and ``userFills`` into ``CanonicalPortfolioLedger``."""
         norm_address = validate_hyperliquid_wallet_address(wallet_address)
@@ -783,18 +810,15 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         blinded_tag = compute_blinded_account_tag("hyperliquid", norm_address, blinding_salt_hex)
 
         # 1. Extract the scored NAV curve from `portfolio` (daily closes only)
-        selected_window, nav_points, series_truncated, spacing_warning = _select_scored_nav_series(
-            raw_portfolio, start_bound=start_bound, end_bound=end_bound
+        as_of = parse_utc_timestamp(as_of_utc, field_name="as_of_utc") if as_of_utc else None
+        selected_window, nav_points, _, spacing_warning = _select_scored_nav_series(
+            raw_portfolio, start_bound=start_bound, end_bound=end_bound, as_of=as_of
         )
         parser_warnings: list[str] = [spacing_warning] if spacing_warning else []
-        # When earlier snapshots were excluded, ledger entries and fills dated before the first
-        # scored close belong to no reported period and are dropped, as entries before an
-        # explicit start date already are.
-        entry_start_bound = (
-            parse_utc_timestamp(nav_points[0].timestamp_utc, field_name="nav_points.timestamp_utc")
-            if series_truncated
-            else start_bound
-        )
+        # The ledger describes one period, the span of the scored closes: ledger entries and
+        # fills dated before the first scored close or after the last one are dropped.
+        entry_start_bound = parse_utc_timestamp(nav_points[0].timestamp_utc, field_name="nav_points.timestamp_utc")
+        entry_end_bound = parse_utc_timestamp(nav_points[-1].timestamp_utc, field_name="nav_points.timestamp_utc")
 
         perp_only_window = selected_window.startswith("perp")
 
@@ -818,9 +842,9 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 continue
             ts_iso = _format_epoch_or_iso_utc(raw_time, field_name="ledgerUpdate.time")
             ts_dt = parse_utc_timestamp(ts_iso, field_name="ledgerUpdate.time")
-            if entry_start_bound is not None and ts_dt < entry_start_bound:
+            if ts_dt < entry_start_bound:
                 continue
-            if end_bound is not None and ts_dt > end_bound:
+            if ts_dt > entry_end_bound:
                 continue
 
             explicit_usdc_raw = (
@@ -1262,9 +1286,9 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 continue
             ts_iso = _format_epoch_or_iso_utc(raw_time, field_name="userFills.time")
             ts_dt = parse_utc_timestamp(ts_iso, field_name="userFills.time")
-            if entry_start_bound is not None and ts_dt < entry_start_bound:
+            if ts_dt < entry_start_bound:
                 continue
-            if end_bound is not None and ts_dt > end_bound:
+            if ts_dt > entry_end_bound:
                 continue
 
             sz = abs(_parse_finite_float(fill.get("sz") if fill.get("sz") is not None else fill.get("quantity"), field_name="userFills.sz", default=0.0))
@@ -1385,19 +1409,9 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         )
                     )
 
-        # A record whose earlier snapshots were excluded covers only the scored series.
-        period_start_utc = (
-            start_bound.strftime("%Y-%m-%dT%H:%M:%SZ")
-            if start_bound is not None and not series_truncated
-            else nav_points[0].timestamp_utc
-        )
-        period_end_utc = (
-            end_bound.strftime("%Y-%m-%dT%H:%M:%SZ")
-            if end_bound is not None
-            else nav_points[-1].timestamp_utc
-        )
-        if period_end_utc < period_start_utc:
-            period_end_utc = period_start_utc
+        # The record covers exactly the span of the scored closes.
+        period_start_utc = nav_points[0].timestamp_utc
+        period_end_utc = nav_points[-1].timestamp_utc
 
         return CanonicalPortfolioLedger(
             blinded_account_tag=blinded_tag,
@@ -1427,6 +1441,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         start_date: str | None = None,
         end_date: str | None = None,
         require_live: bool = True,
+        as_of_utc: str | None = None,
     ) -> CanonicalPortfolioLedger:
         """Fetch read-only Hyperliquid L1 portfolio, non-funding ledger updates, and fills."""
         raw_addr = wallet_address if wallet_address is not None else self.wallet_address
@@ -1447,27 +1462,24 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             redact_tokens=redact_list,
         )
 
-        # The scored series decides where paging starts: when earlier snapshots are excluded,
-        # ledger entries and fills before the first scored close are not needed (and are
-        # dropped by `parse_payload`). A portfolio without a scorable series is withheld here.
-        _, scored_nav, scored_truncated, _ = _select_scored_nav_series(
-            portfolio_data, start_bound=start_bound, end_bound=end_bound
+        # The scored series decides where paging starts: ledger entries and fills before the
+        # first scored close are not needed (and are dropped by `parse_payload`). A portfolio
+        # without a scorable series is withheld here, before any ledger call.
+        as_of = parse_utc_timestamp(as_of_utc, field_name="as_of_utc") if as_of_utc else None
+        _, scored_nav, _, _ = _select_scored_nav_series(
+            portfolio_data, start_bound=start_bound, end_bound=end_bound, as_of=as_of
         )
-        scored_start_ms = (
-            int(parse_utc_timestamp(scored_nav[0].timestamp_utc).timestamp() * 1000)
-            if scored_truncated
-            else None
-        )
+        scored_start_ms = int(parse_utc_timestamp(scored_nav[0].timestamp_utc).timestamp() * 1000)
 
-        cursor_ms = int(start_bound.timestamp() * 1000) if start_bound is not None else 0
-        if scored_start_ms is not None:
-            cursor_ms = max(cursor_ms, scored_start_ms)
+        cursor_ms = scored_start_ms
+        if start_bound is not None:
+            cursor_ms = max(cursor_ms, int(start_bound.timestamp() * 1000))
         end_ms = int(end_bound.timestamp() * 1000) if end_bound is not None else None
         ledger_updates_data: list[Any] = []
         seen_ledger_keys: set[tuple[str, str, str, int]] = set()
-        longest_ledger_page = 0
         # A page is final only when it adds no new entries: the service's page size is not
-        # contractual, so a short page is not taken as the end of the history.
+        # contractual, so a short page is not taken as the end of the history. The ceiling
+        # counts entries read, not pages.
         for _ in range(MAX_HYPERLIQUID_LEDGER_PAGES):
             ledger_query: dict[str, Any] = {
                 "type": "userNonFundingLedgerUpdates",
@@ -1506,12 +1518,18 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 else:
                     ledger_updates_data.append(entry)
                     new_unique_count += 1
-            if _page_is_stuck(page_items, cursor_ms, longest_ledger_page):
+            if _page_cannot_be_paged(page_items, cursor_ms, new_unique_count) or (
+                new_unique_count == 0 and _page_repeats_a_cut_block(page_items, cursor_ms)
+            ):
                 raise HyperliquidValidationError(
-                    "Hyperliquid ledger history could not be paged past a full page of entries "
-                    "sharing one timestamp; the record is withheld because the ledger is incomplete"
+                    "Hyperliquid ledger history could not be paged past entries sharing one timestamp; "
+                    "the record is withheld because the ledger is incomplete"
                 )
-            longest_ledger_page = max(longest_ledger_page, len(page_items))
+            if len(ledger_updates_data) >= MAX_HYPERLIQUID_LEDGER_ENTRIES:
+                raise HyperliquidValidationError(
+                    f"Hyperliquid ledger history reaches {MAX_HYPERLIQUID_LEDGER_ENTRIES} entries in the "
+                    "period; the record is withheld because the ledger may be incomplete"
+                )
             if new_unique_count == 0:
                 break
             cursor_ms = max_page_ms if max_page_ms > cursor_ms else cursor_ms + 1
@@ -1528,26 +1546,19 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         )
         merged_fills: list[Any] = list(_require_list_page(fills_data, "userFills"))
 
-        fill_cursor_ms = int(start_bound.timestamp() * 1000) if start_bound is not None else 0
-        if scored_start_ms is not None:
-            fill_cursor_ms = max(fill_cursor_ms, scored_start_ms)
-        if fill_cursor_ms == 0:
-            windows_probe = _extract_portfolio_windows(portfolio_data)
-            all_hist = (windows_probe.get("allTime") or {}).get("accountValueHistory")
-            if isinstance(all_hist, list) and all_hist:
-                first_pt = all_hist[0]
-                raw_ft = first_pt[0] if isinstance(first_pt, (list, tuple)) and first_pt else None
-                if not isinstance(raw_ft, bool) and isinstance(raw_ft, (int, float)) and raw_ft > 0:
-                    fill_cursor_ms = int(raw_ft)
+        fill_cursor_ms = scored_start_ms
+        if start_bound is not None:
+            fill_cursor_ms = max(scored_start_ms, int(start_bound.timestamp() * 1000))
         recent_times = [
             t for t in (_entry_time_ms(f) for f in merged_fills if isinstance(f, Mapping)) if t is not None
         ]
-        recent_reach_start = bool(recent_times) and min(recent_times) < fill_cursor_ms
 
-        # `userFills` returns at most the 2,000 most recent fills. When it returns that many and
-        # they do not reach back past the period start, older fills are paged with
-        # `userFillsByTime`; a record is never built from the most recent fills alone.
-        if len(merged_fills) >= HYPERLIQUID_FILLS_PAGE_SIZE and not recent_reach_start:
+        # `userFills` returns only the most recent fills. Whenever the oldest of them is later
+        # than the start of the scored period, whatever their count, older fills are paged with
+        # `userFillsByTime`; a record is never built from the most recent fills alone. Paging
+        # runs without an end time, so a wallet whose fills reach the service's availability
+        # limit is refused whatever window is asked for (`parse_payload` applies the end bound).
+        if recent_times and min(recent_times) > fill_cursor_ms:
 
             def _fill_fp(item: Mapping[str, Any]) -> tuple[str, str, str, str, str, str]:
                 return (
@@ -1562,7 +1573,6 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             seen_fill_keys: set[tuple[str, str, str, str, str, str, int]] = set()
             base_counts: dict[tuple[str, str, str, str, str, str], int] = {}
             paged_fills: list[Any] = []
-            longest_fill_page = 0
             # A failed fills page propagates as HyperliquidServiceError.
             for _ in range(MAX_HYPERLIQUID_FILL_PAGES):
                 fill_query: dict[str, Any] = {
@@ -1571,8 +1581,6 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     "startTime": fill_cursor_ms,
                     "aggregateByTime": False,
                 }
-                if end_ms is not None:
-                    fill_query["endTime"] = end_ms
                 fill_page_raw = self._execute_bounded_post(
                     HYPERLIQUID_INFO_PATH,
                     fill_query,
@@ -1599,15 +1607,16 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 if len(paged_fills) >= HYPERLIQUID_FILLS_BY_TIME_AVAILABLE:
                     raise HyperliquidValidationError(
                         f"Hyperliquid serves only the {HYPERLIQUID_FILLS_BY_TIME_AVAILABLE} most recent fills "
-                        "and this wallet's fills reach that limit; the record is withheld because older "
-                        "fills are unreachable"
+                        "and this wallet's fills since the period start reach that limit; the record is "
+                        "withheld because older fills are unreachable"
                     )
-                if _page_is_stuck(fill_page, fill_cursor_ms, longest_fill_page):
+                if _page_cannot_be_paged(fill_page, fill_cursor_ms, new_fills) or (
+                    new_fills == 0 and _page_repeats_a_cut_block(fill_page, fill_cursor_ms)
+                ):
                     raise HyperliquidValidationError(
-                        "Hyperliquid fill history could not be paged past a full page of fills "
-                        "sharing one timestamp; the record is withheld because the fills are incomplete"
+                        "Hyperliquid fill history could not be paged past fills sharing one timestamp; "
+                        "the record is withheld because the fills are incomplete"
                     )
-                longest_fill_page = max(longest_fill_page, len(fill_page))
                 if new_fills == 0:
                     break
                 fill_cursor_ms = max_fill_ms if max_fill_ms > fill_cursor_ms else fill_cursor_ms + 1
@@ -1619,7 +1628,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
             if not paged_fills:
                 raise HyperliquidValidationError(
-                    "Hyperliquid returned its cap of recent fills but no earlier fills could be paged; "
+                    "Hyperliquid returned recent fills but no earlier fills could be paged; "
                     "the record is withheld because the fills are incomplete"
                 )
             for f_entry in merged_fills:
@@ -1644,6 +1653,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             start_date=start_date,
             end_date=end_date,
             require_live=require_live,
+            as_of_utc=as_of_utc,
         )
 
 

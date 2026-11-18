@@ -75,26 +75,27 @@ def _build_hyperliquid_mock_transport(
         assert parsed_body.get("user") == wallet_lower
 
         if q_type == "portfolio":
-            # Day 0: 10,000. Day 1: +10% trading gain -> 11,000, plus +5,000 deposit -> 16,000.
-            # Day 2: +5% trading gain -> 16,800, minus 2,000 withdrawal -> 14,800.
-            # Day 3: +10% trading gain -> 16,280.
-            # True flow-adjusted TWR = 1.10 * 1.05 * 1.10 - 1 = +27.05% (0.2705)
+            # Day 0: 10,000. Day 1: +10% trading gain -> 11,000, plus +500 deposit -> 11,500.
+            # Day 2: +5% trading gain -> 12,075, minus 500 withdrawal (499 + 1 fee) -> 11,575.
+            # Day 3: +10% trading gain -> 12,732.50.
+            # Every interval's gross cash flows stay at or under 10% of its opening value.
+            # True flow-adjusted TWR = 1.10 * ((11,575 + 499) / 11,500) * 1.10 - 1 = +27.04% (0.2704)
             return (
                 200,
                 {"Content-Type": "application/json"},
                 [
                     [
                         "day",
-                        {"accountValueHistory": [[t2, "14800.0"], [t3, "16280.0"]]},
+                        {"accountValueHistory": [[t2, "11575.0"], [t3, "12732.5"]]},
                     ],
                     [
                         "allTime",
                         {
                             "accountValueHistory": [
                                 [t0, "10000.00"],
-                                [t1, "16000.00"],
-                                [t2, "14800.00"],
-                                [t3, "16280.00"],
+                                [t1, "11500.00"],
+                                [t2, "11575.00"],
+                                [t3, "12732.50"],
                             ]
                         },
                     ],
@@ -106,20 +107,20 @@ def _build_hyperliquid_mock_transport(
                 200,
                 {"Content-Type": "application/json"},
                 [
-                    {"time": t1, "delta": {"type": "deposit", "usdc": "5000.00"}},
+                    {"time": t1, "delta": {"type": "deposit", "usdc": "500.00"}},
                     {
                         "time": t1 + 3600_000,
-                        "delta": {"type": "accountClassTransfer", "usdc": "3000.00", "toPerp": True},
+                        "delta": {"type": "accountClassTransfer", "usdc": "300.00", "toPerp": True},
                     },
                     {
                         "time": t2,
-                        "delta": {"type": "withdraw", "usdc": "1999.00", "fee": "1.00"},
+                        "delta": {"type": "withdraw", "usdc": "499.00", "fee": "1.00"},
                     },
                     {
                         "time": t2 + 1000,
                         "delta": {
                             "type": "subAccountTransfer",
-                            "usdc": "500.00",
+                            "usdc": "100.00",
                             "user": wallet_lower,
                             "destination": OTHER_WALLET,
                         },
@@ -128,7 +129,7 @@ def _build_hyperliquid_mock_transport(
                         "time": t2 + 2000,
                         "delta": {
                             "type": "subAccountTransfer",
-                            "usdc": "500.00",
+                            "usdc": "100.00",
                             "user": OTHER_WALLET,
                             "destination": wallet_lower,
                         },
@@ -137,7 +138,7 @@ def _build_hyperliquid_mock_transport(
                         "time": t2 + 3000,
                         "delta": {
                             "type": "internalTransfer",
-                            "usdc": "250.00",
+                            "usdc": "50.00",
                             "user": OTHER_WALLET,
                             "destination": wallet_lower,
                         },
@@ -146,7 +147,7 @@ def _build_hyperliquid_mock_transport(
                         "time": t2 + 4000,
                         "delta": {
                             "type": "internalTransfer",
-                            "usdc": "250.00",
+                            "usdc": "50.00",
                             "fee": "0.0",
                             "user": wallet_lower,
                             "destination": OTHER_WALLET,
@@ -155,13 +156,14 @@ def _build_hyperliquid_mock_transport(
                 ],
             )
 
-        if q_type == "userFills":
-            # Closed trade 1: 2026-01-12 (> 7 days before issued_at 2026-01-26) -> kept
+        if q_type in {"userFills", "userFillsByTime"}:
+            # Both round trips lie inside the scored closes (2026-01-10 .. 2026-01-13).
+            # Closed trade 1: 2026-01-12 14:00 (> 7 days before issued_at 2026-01-19 17:00) -> kept
             old_in = int(dt.datetime(2026, 1, 11, 10, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
             old_out = int(dt.datetime(2026, 1, 12, 14, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-            # Closed trade 2: 2026-01-24 (< 7 days before issued_at 2026-01-26) -> stripped by 7-day guard
-            recent_in = int(dt.datetime(2026, 1, 24, 9, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-            recent_out = int(dt.datetime(2026, 1, 24, 15, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+            # Closed trade 2: 2026-01-12 20:00 (< 7 days before issued_at) -> stripped by 7-day guard
+            recent_in = int(dt.datetime(2026, 1, 12, 16, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+            recent_out = int(dt.datetime(2026, 1, 12, 20, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
             return (
                 200,
                 {"Content-Type": "application/json"},
@@ -345,14 +347,21 @@ class TestHyperliquidPublicReadOnlyAdapter(unittest.TestCase):
         )
         ledger = adapter.fetch_canonical_ledger(blinding_salt_hex=TEST_SALT_HEX)
 
-        # The second ledger query confirms the history is complete (a page is final only when it adds nothing).
+        # The second ledger query confirms the history is complete (a page is final only when it adds
+        # nothing); older fills are paged because the oldest recent fill is later than the first close.
         self.assertEqual([c["body"]["type"] for c in calls], [
             "portfolio",
             "userNonFundingLedgerUpdates",
             "userNonFundingLedgerUpdates",
             "userFills",
+            "userFillsByTime",
+            "userFillsByTime",
         ])
-        self.assertEqual(calls[1]["body"]["startTime"], 0)
+        # Paging starts at the first scored close.
+        self.assertEqual(
+            calls[1]["body"]["startTime"],
+            int(dt.datetime(2026, 1, 10, tzinfo=dt.timezone.utc).timestamp() * 1000),
+        )
         self.assertEqual(ledger.broker_id, "hyperliquid")
         self.assertEqual(ledger.base_currency, "USD")
         self.assertEqual(ledger.provider_approval_state, ProviderApprovalState.PUBLIC_API_PERMISSIONLESS)
@@ -371,20 +380,20 @@ class TestHyperliquidPublicReadOnlyAdapter(unittest.TestCase):
         out = verify_portfolio(
             ledger=ledger,
             blinding_salt_hex=TEST_SALT_HEX,
-            issued_at_utc="2026-01-26T12:00:00Z",
+            issued_at_utc="2026-01-19T17:00:00Z",
             embargo_days=7,
             allow_filesystem_paths=False,
         )
         self.assertTrue(out.verification.valid, out.verification.errors)
-        # External +5000 deposit and -1999 withdrawal stripped out of TWR; true trading TWR ~ +27.05%
-        self.assertAlmostEqual(out.performance.twr_decimal, 0.2705, delta=0.001)
+        # External +500 deposit and -499 withdrawal stripped out of TWR; true trading TWR ~ +27.04%
+        self.assertAlmostEqual(out.performance.twr_decimal, 0.2704, delta=0.001)
         # 1 recent BTC round-trip stripped (< 7d old), 1 older ETH round-trip preserved
         self.assertEqual(out.stripped_recent_closed_trades_count, 1)
         self.assertEqual(len(out.delayed_closed_trades), 1)
         self.assertEqual(out.delayed_closed_trades[0].symbol, "ETH")
         bundle_json = json.dumps(out.proof_bundle.to_dict())
         self.assertNotIn(VALID_WALLET_LOWER, bundle_json.lower())
-        self.assertNotIn("16280", bundle_json)
+        self.assertNotIn("12732", bundle_json)
 
 
 class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
@@ -651,8 +660,8 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         ledger_dust_and_merged = adapter.parse_payload(
             {
                 "portfolio": [
-                    ["allTime", {"accountValueHistory": [[t1, "1000.0"], [t2, "1500.0"]]}],
-                    ["week", {"accountValueHistory": [[t_mid, "1250.0"], [t2, "1500.0"]]}],
+                    ["allTime", {"accountValueHistory": [[t1, "1000.0"], [t3, "1500.0"]]}],
+                    ["week", {"accountValueHistory": [[t2, "1250.0"], [t3, "1500.0"]]}],
                 ],
                 "ledger_updates": [
                     {
@@ -704,7 +713,8 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         perf_liq = calculate_portfolio_performance_detailed(ledger_liq)
         self.assertTrue(perf_liq.withheld)
 
-        # 3b. Clean 100% withdrawal to 0.0 reconciles outflow and preserves +50% TWR
+        # 3b. A clean 100% withdrawal to 0.0 is a cash flow of 100% of the opening value inside one
+        # valuation interval, so that interval's return cannot be computed and the return is withheld
         ledger_full_wd = adapter.parse_payload(
             {
                 "portfolio": [
@@ -729,8 +739,13 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
             blinding_salt_hex=TEST_SALT_HEX,
         )
         perf_wd = calculate_portfolio_performance_detailed(ledger_full_wd)
-        self.assertFalse(perf_wd.withheld)
-        self.assertAlmostEqual(perf_wd.summary.twr_decimal, 0.50, places=6)
+        self.assertTrue(perf_wd.withheld)
+        self.assertTrue(
+            any(
+                "cash flows of 100.0% of the opening value fall inside the valuation interval" in w
+                for w in perf_wd.summary.warnings
+            )
+        )
 
     def test_snaptrade_auth_mode_override_and_performance_custom_equity_curve(self) -> None:
         from n170_verify.connectors import SnapTradeAuthenticationError
@@ -1036,6 +1051,11 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
                 "hash": "0xboundaryB",
                 "delta": {"type": "deposit", "usdc": "3000.0"},
             },
+            {
+                "time": t_boundary + 60_000,
+                "hash": "0xafterBoundary",
+                "delta": {"type": "accountClassTransfer", "usdc": "1.0", "toPerp": True},
+            },
         ]
 
         def paginated_transport(
@@ -1070,7 +1090,7 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
                 if len(ledger_queries) == 1:
                     return (200, {"Content-Type": "application/json"}, page_1)
                 return (200, {"Content-Type": "application/json"}, page_2)
-            if q_type == "userFills":
+            if q_type in {"userFills", "userFillsByTime"}:
                 return (
                     200,
                     {"Content-Type": "application/json"},
@@ -1105,17 +1125,17 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
             },
             blinding_salt_hex=TEST_SALT_HEX,
             period_start_utc="2026-01-10T00:00:00Z",
-            period_end_utc="2026-01-12T00:00:00Z",
+            period_end_utc="2026-01-12T23:59:59Z",
         )
 
         # Explicit period bounds were forwarded to startTime / endTime on POST /info
         # Page 3 confirms the history is complete (a page is final only when it adds nothing).
         self.assertEqual(len(ledger_queries), 3)
         self.assertEqual(ledger_queries[0]["startTime"], t0)
-        self.assertEqual(ledger_queries[0]["endTime"], t_end)
+        self.assertEqual(ledger_queries[0]["endTime"], t_end + 86_399_000)
         # Page 2 used inclusive boundary cursor `t_boundary` (NOT `t_boundary + 1`)
         self.assertEqual(ledger_queries[1]["startTime"], t_boundary)
-        self.assertEqual(ledger_queries[1]["endTime"], t_end)
+        self.assertEqual(ledger_queries[1]["endTime"], t_end + 86_399_000)
 
         # Both deposits at t_boundary ($2,000 + $3,000) were captured without duplicating 0xboundaryA!
         deposit_amounts = [f.amount for f in ledger.flows if f.kind == FlowKind.DEPOSIT]
@@ -1312,8 +1332,8 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         self.assertAlmostEqual(ledger_fb.nav_points[0].cash_base or 0.0, 59000.0, places=4)
         self.assertAlmostEqual(ledger_fb.nav_points[0].nav_base, 101450.0, places=4)
 
-        # 2. With multi-day curve: USD deposit (9,000 EUR) does NOT withhold TWR, and capital_bracket
-        # converts 101,450 EUR -> $112,722 USD (`100k_to_1m`), NOT `under_1k`!
+        # 2. With multi-day curve: the USD deposit inside the series has no conversion rate for its own
+        # date (only today's rate is offered), so the return is withheld and no capital bracket is measured.
         adapter_curve = SnapTradeReadOnlyAdapter(
             client_id="PERS-FOUNDER-EUR-01",
             consumer_key="pers-eur-secret",
@@ -1322,8 +1342,12 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         )
         ledger_curve = adapter_curve.fetch_live_ledger("founder", "", blinding_salt_hex=TEST_SALT_HEX)
         perf_curve = calculate_portfolio_performance_detailed(ledger_curve)
-        self.assertFalse(perf_curve.withheld)
-        self.assertGreater(perf_curve.summary.twr_decimal, 0.05)
+        self.assertTrue(perf_curve.withheld)
+        self.assertIn(
+            "A deposit, withdrawal or transfer in a currency other than the base currency has no "
+            "conversion rate for its own date; returns are withheld.",
+            ledger_curve.parser_warnings,
+        )
 
         out = verify_portfolio(
             ledger=ledger_curve,
@@ -1333,7 +1357,7 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         bracket_leaf = next(
             lf.payload for lf in out.proof_bundle.disclosed_leaves if lf.leaf_name == "capital_bracket"
         )
-        self.assertEqual(bracket_leaf["capital_bracket"], "bracket_100k_1m")
+        self.assertIsNone(bracket_leaf["capital_bracket"])
         self.assertEqual(bracket_leaf["valuation_currency"], "EUR")
 
     def test_hyperliquid_intraday_daily_bucketing_fill_pagination_and_modified_dietz_default(self) -> None:
@@ -1343,21 +1367,19 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
 
         adapter = HyperliquidPublicReadOnlyAdapter()
 
-        # 1. Brand-new 1-day wallet with 40 15-minute snapshots must NOT spoof T >= 30 PSR eligibility
+        # 1. Brand-new 1-day wallet with 40 15-minute snapshots must NOT spoof T >= 30 PSR eligibility:
+        # one UTC date has one close and no scored interval, so the record is withheld
         day0_ms = int(dt.datetime(2026, 3, 1, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
         intraday_40 = [
             [day0_ms + i * 15 * 60_000, str(10000.0 - 200.0 if i == 10 else 10000.0 + i * 25.0)]
             for i in range(40)
         ]
-        ledger_1d = adapter.parse_payload(
-            {"portfolio": [["day", {"accountValueHistory": intraday_40}]], "ledger_updates": [], "fills": []},
-            wallet_address=VALID_WALLET_MIXED,
-            blinding_salt_hex=TEST_SALT_HEX,
-        )
-        self.assertLessEqual(len(ledger_1d.nav_points), 3)
-        perf_1d = calculate_portfolio_performance_detailed(ledger_1d)
-        self.assertFalse(perf_1d.summary.psr_sample_eligible)
-        self.assertLess(perf_1d.summary.observation_count, 30)
+        with self.assertRaises(HyperliquidValidationError):
+            adapter.parse_payload(
+                {"portfolio": [["day", {"accountValueHistory": intraday_40}]], "ledger_updates": [], "fills": []},
+                wallet_address=VALID_WALLET_MIXED,
+                blinding_salt_hex=TEST_SALT_HEX,
+            )
 
         # 2. Multi-day wallet with `allTime` + intraday `day`/`week` buckets to 1 UTC close per day,
         # and `verify_portfolio` defaults `cash_flow_timing` to `modified_dietz` for `hyperliquid`

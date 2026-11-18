@@ -107,7 +107,8 @@ def test_wipe_out_spanning_several_zero_days_before_deposit_withholds_record() -
     assert perf.withheld
 
 
-def test_clean_full_withdrawal_then_redeposit_computes_under_default_timing() -> None:
+@pytest.mark.parametrize("timing", ["modified_dietz", "end_of_day", "start_of_day"])
+def test_full_withdrawal_followed_by_redeposit_is_withheld_under_every_timing(timing: str) -> None:
     history = [
         [_ms(2026, 1, 1), "10000"],
         [_ms(2026, 1, 2), "15000"],
@@ -125,9 +126,10 @@ def test_clean_full_withdrawal_then_redeposit_computes_under_default_timing() ->
             "fills": [],
         }
     )
-    perf = calculate_portfolio_performance_detailed(ledger, cash_flow_timing="modified_dietz")
-    assert not perf.withheld
-    assert perf.summary.twr_decimal == pytest.approx(0.8, abs=1e-9)
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 15000.0, 0.0, 10000.0, 12000.0]
+    assert len(ledger.flows) == 2
+    perf = calculate_portfolio_performance_detailed(ledger, cash_flow_timing=timing)
+    assert perf.withheld
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +179,7 @@ def test_ledger_history_longer_than_page_limit_withholds_record() -> None:
 
     with pytest.raises(HyperliquidValidationError, match="ledger"):
         _adapter(transport).fetch_canonical_ledger(blinding_salt_hex=SALT)
-    assert len(calls) == MAX_HYPERLIQUID_LEDGER_PAGES
+    assert len(calls) * HYPERLIQUID_LEDGER_PAGE_SIZE == hyperliquid_module.MAX_HYPERLIQUID_LEDGER_ENTRIES
 
 
 def test_ledger_full_page_with_no_new_entries_withholds_record() -> None:
@@ -347,7 +349,7 @@ def test_capped_recent_fills_with_no_paged_fills_withholds_record() -> None:
 
 def test_recent_fills_reaching_back_past_the_period_start_need_no_paging() -> None:
     queries: list[dict[str, Any]] = []
-    before_start = _ms(2025, 12, 20)
+    before_start = _ms(2026, 1, 1) - 600_000
     recent = [_fill(before_start + i * 1000, 10_000 + i) for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)]
     ledger = _adapter(
         _ranged_transport(fills=[], recent_fills=recent, cap=2000, queries=queries)
@@ -363,7 +365,7 @@ def test_short_final_pages_still_produce_a_record() -> None:
             return 200, {}, _portfolio_response()
         if req["type"] == "userNonFundingLedgerUpdates":
             return 200, {}, [_ledger_entry(_ms(2026, 1, 3), 1)]
-        if req["type"] == "userFills":
+        if req["type"] in {"userFills", "userFillsByTime"}:
             return 200, {}, [_fill(_ms(2026, 1, 3), 1)]
         raise AssertionError(req["type"])
 
@@ -598,3 +600,191 @@ def test_unknown_ledger_type_without_value_fields_is_ignored() -> None:
         }
     )
     assert ledger.flows == []
+
+
+# ---------------------------------------------------------------------------
+# Scored period: completed UTC-date closes only, entries inside it only
+# ---------------------------------------------------------------------------
+
+AS_OF = "2026-11-18T07:43:00Z"
+
+
+def _real_shape_portfolio(days: int = 30, *, now_ms: int | None = None, account_start_ms: int | None = None):
+    """Spacing modelled on the service: one month close per day near 23:30, a "now" point,
+    3-hourly week points and 14-day allTime points. Values are synthetic."""
+    now_ms = now_ms if now_ms is not None else _ms(2026, 11, 18, 7) + 43 * 60_000
+    start = account_start_ms if account_start_ms is not None else _ms(2025, 1, 1)
+    first_close = _ms(2026, 11, 17, 23) + 30 * 60_000 - (days - 1) * DAY_MS
+
+    def nav(t: int) -> str:
+        return f"{10_000.0 * (1.0 + (t - start) / (400 * DAY_MS)):.4f}"
+
+    month = [first_close + i * DAY_MS for i in range(days)] + [now_ms]
+    week = [now_ms - 7 * DAY_MS + i * 3 * 3_600_000 for i in range(57)]
+    all_time = list(range(start, now_ms, 14 * DAY_MS)) + [now_ms]
+
+    def pts(ts: list[int]) -> list[list[Any]]:
+        return [[t, nav(t)] for t in ts if t >= start]
+
+    return [
+        ["week", {"accountValueHistory": pts(week)}],
+        ["month", {"accountValueHistory": pts(month)}],
+        ["allTime", {"accountValueHistory": pts(all_time)}],
+    ]
+
+
+def test_unfinished_current_date_contributes_no_point_and_later_entries_are_dropped() -> None:
+    after_last_close = _ms(2026, 11, 18, 2)
+    ledger = _parse(
+        {
+            "portfolio": _real_shape_portfolio(),
+            "ledger_updates": [{"time": after_last_close, "delta": {"type": "deposit", "usdc": "100"}}],
+            "fills": [_fill(after_last_close, 7)],
+        },
+        as_of_utc=AS_OF,
+    )
+    assert ledger.nav_points[-1].timestamp_utc.startswith("2026-11-17T2")
+    assert ledger.period_end_utc == ledger.nav_points[-1].timestamp_utc
+    assert ledger.flows == []
+    assert ledger.trades == []
+    dates = [p.timestamp_utc[:10] for p in ledger.nav_points]
+    assert len(dates) == len(set(dates))
+
+
+def test_thirty_closes_and_a_partial_day_give_twenty_nine_scored_intervals() -> None:
+    ledger = _parse({"portfolio": _real_shape_portfolio(30), "ledger_updates": [], "fills": []}, as_of_utc=AS_OF)
+    perf = calculate_portfolio_performance_detailed(ledger)
+    assert perf.summary.observation_count == 29
+
+
+def test_opening_snapshot_followed_by_the_same_dates_close_is_not_scored() -> None:
+    history = [
+        [_ms(2026, 1, 1, 10), "10000"],
+        [_ms(2026, 1, 1, 23), "10100"],
+        [_ms(2026, 1, 2, 23), "10200"],
+        [_ms(2026, 1, 3, 23), "10300"],
+    ]
+    ledger = _parse(
+        {
+            "portfolio": [["allTime", {"accountValueHistory": history}]],
+            "ledger_updates": [{"time": _ms(2026, 1, 1, 12), "delta": {"type": "deposit", "usdc": "50"}}],
+            "fills": [_fill(_ms(2026, 1, 1, 12), 3)],
+        }
+    )
+    assert [p.nav_base for p in ledger.nav_points] == [10100.0, 10200.0, 10300.0]
+    assert ledger.flows == [] and ledger.trades == []
+
+
+def test_history_within_one_date_withholds_record() -> None:
+    history = [[_ms(2026, 3, 1) + i * 15 * 60_000, str(10000.0 + i)] for i in range(40)]
+    with pytest.raises(HyperliquidValidationError):
+        _parse({"portfolio": [["day", {"accountValueHistory": history}]], "ledger_updates": [], "fills": []})
+
+
+def test_entries_between_requested_start_and_first_scored_close_are_dropped() -> None:
+    day = _ms(2026, 11, 10)
+    ledger = _parse(
+        {
+            "portfolio": _real_shape_portfolio(),
+            "ledger_updates": [{"time": day + 9 * 3_600_000, "delta": {"type": "deposit", "usdc": "100"}}],
+            "fills": [_fill(day + 10 * 3_600_000, 1), _fill(_ms(2026, 11, 12, 10), 2)],
+        },
+        start_date="2026-11-10",
+        as_of_utc=AS_OF,
+    )
+    first_close = ledger.nav_points[0].timestamp_utc
+    assert first_close.startswith("2026-11-10T23")
+    assert ledger.period_start_utc == first_close
+    assert ledger.flows == []
+    assert [t.native_entry_id for t in ledger.trades] == ["hl-tid-2"]
+
+
+def _fills_service(fills: list[dict[str, Any]], *, recent_cap: int = 2000, page: int = 2000, available: int = 10_000):
+    """Fills served like the documented service: `userFills` returns the most recent ones,
+    `userFillsByTime` honours startTime/endTime and serves only the most recent `available`."""
+    fills = sorted(fills, key=lambda f: f["time"])
+    queries: list[dict[str, Any]] = []
+
+    def serve(req: dict[str, Any]):
+        if req["type"] == "userFills":
+            return fills[-recent_cap:]
+        avail = fills[-available:]
+        lo, hi = req.get("startTime", 0), req.get("endTime", 1 << 62)
+        return [f for f in avail if lo <= f["time"] <= hi][:page]
+
+    return serve, queries
+
+
+def _transport_with(portfolio: list[Any], serve_fills: Any, queries: list[dict[str, Any]]):
+    def transport(method: str, url: str, headers: dict[str, str], body: bytes):
+        req = json.loads(body.decode("utf-8"))
+        queries.append(req)
+        if req["type"] == "portfolio":
+            return 200, {}, portfolio
+        if req["type"] == "userNonFundingLedgerUpdates":
+            return 200, {}, []
+        if req["type"] in {"userFills", "userFillsByTime"}:
+            return 200, {}, serve_fills(req)
+        raise AssertionError(req["type"])
+
+    return transport
+
+
+def _dense_fills(days: int, per_day: int) -> list[dict[str, Any]]:
+    start = _ms(2026, 10, 10)
+    step = DAY_MS // per_day
+    return [_fill(start + i * step, i + 1) for i in range(days * per_day)]
+
+
+def test_past_end_date_does_not_hide_the_fill_availability_limit() -> None:
+    serve, queries = _fills_service(_dense_fills(39, 600))
+    adapter = _adapter(_transport_with(_real_shape_portfolio(), serve, queries))
+    with pytest.raises(HyperliquidValidationError, match="most recent"):
+        adapter.fetch_canonical_ledger(
+            blinding_salt_hex=SALT, start_date="2026-10-25", end_date="2026-11-05", as_of_utc=AS_OF
+        )
+
+
+def test_older_fills_are_paged_whatever_the_recent_fills_count() -> None:
+    fills = [_fill(_ms(2026, 11, 10, 1) + i * 60_000, i + 1) for i in range(4000)]
+    serve, queries = _fills_service(fills, recent_cap=500)
+    ledger = _adapter(_transport_with(_real_shape_portfolio(), serve, queries)).fetch_canonical_ledger(
+        blinding_salt_hex=SALT, start_date="2026-11-10", as_of_utc=AS_OF
+    )
+    first_close = ledger.nav_points[0].timestamp_utc
+    last_close = ledger.nav_points[-1].timestamp_utc
+    expected = [
+        f for f in fills
+        if first_close <= dt.datetime.fromtimestamp(f["time"] / 1000, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") <= last_close
+    ]
+    assert len(ledger.trades) == len(expected) > 500
+
+
+def test_short_page_of_new_entries_all_at_the_cursor_withholds_record() -> None:
+    base = _ms(2026, 1, 2)
+    same_ms = _ms(2026, 1, 3)
+    entries = [_ledger_entry(base + i, i) for i in range(100)] + [
+        _ledger_entry(same_ms, 100 + i) for i in range(600)
+    ]
+    with pytest.raises(HyperliquidValidationError, match="one timestamp"):
+        _adapter(_ranged_transport(ledger_entries=entries, cap=300)).fetch_canonical_ledger(
+            blinding_salt_hex=SALT
+        )
+
+
+def test_documented_500_entry_pages_read_a_3000_entry_ledger() -> None:
+    base = _ms(2026, 1, 2)
+    entries = [_ledger_entry(base + i, i) for i in range(3000)]
+    ledger = _adapter(_ranged_transport(ledger_entries=entries, cap=500)).fetch_canonical_ledger(
+        blinding_salt_hex=SALT
+    )
+    assert len(ledger.flows) == 3000
+
+
+def test_ledger_longer_than_the_entry_ceiling_withholds_record() -> None:
+    base = _ms(2026, 1, 2)
+    entries = [_ledger_entry(base + i, i) for i in range(10_500)]
+    with pytest.raises(HyperliquidValidationError, match="10000"):
+        _adapter(_ranged_transport(ledger_entries=entries, cap=2000)).fetch_canonical_ledger(
+            blinding_salt_hex=SALT
+        )
