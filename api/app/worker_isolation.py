@@ -879,6 +879,7 @@ def run_isolated_one_shot_verification(
     _trusted_internal_input: bool = False,
     _hyperliquid_http_transport: Any = None,
     _snaptrade_http_transport: Any = None,
+    result_meta: dict[str, Any] | None = None,
 ) -> tuple[VerifyProofBundle, WorkerIsolationReceipt, int]:
     """Execute portfolio parsing & Merkle commitment in a single-use ``spawn`` worker subprocess.
 
@@ -1180,6 +1181,18 @@ def run_isolated_one_shot_verification(
         ),
     )
     stripped_count = int(redacted.get("stripped_recent_closed_trades_count", 0))
+    if result_meta is not None:
+        # Whether a return was computed, stated by the worker or by the signed core_metrics leaf.
+        core_leaf = next(
+            (leaf.payload for leaf in disclosed_objs if leaf.leaf_name == "core_metrics"), None
+        )
+        leaf_withheld = isinstance(core_leaf, Mapping) and core_leaf.get("performance_withheld") is True
+        withheld = bool(redacted.get("performance_withheld")) or leaf_withheld
+        result_meta["performance_withheld"] = withheld
+        reasons = redacted.get("withheld_reasons") or (
+            core_leaf.get("withheld_reasons") if leaf_withheld else None
+        )
+        result_meta["withheld_reasons"] = [str(r) for r in reasons] if withheld and reasons else []
     return draft, receipt, stripped_count
 
 

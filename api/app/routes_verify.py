@@ -232,6 +232,7 @@ def handle_post_verify(
     normalized_payload["provider_approval_state"] = approval_state.value
     normalized_payload["environment_tier"] = env_tier.value
 
+    result_meta: dict[str, Any] = {}
     try:
         bundle, receipt, stripped_trades = run_isolated_one_shot_verification(
             normalized_payload,
@@ -240,6 +241,7 @@ def handle_post_verify(
             retention_mode=retention_mode,
             persistent_rows_written=0,
             _hyperliquid_http_transport=hyperliquid_http_transport,
+            result_meta=result_meta,
         )
     except PaperOrSandboxRejectedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
@@ -308,7 +310,10 @@ def handle_post_verify(
         "verification": verification.to_dict(),
         "isolation_receipt": receipt.to_dict(),
         "stripped_recent_closed_trades_count": stripped_trades,
+        "performance_withheld": bool(result_meta.get("performance_withheld", False)),
     }
+    if response_body["performance_withheld"]:
+        response_body["withheld_reasons"] = list(result_meta.get("withheld_reasons") or [])
     if sync_record_dict is not None:
         response_body["sync_connection"] = sync_record_dict
 

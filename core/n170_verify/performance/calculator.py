@@ -331,6 +331,30 @@ def _build_daily_calendar_cells(
     return cells
 
 
+def _withheld_result(
+    warnings: list[str],
+    *,
+    psr_benchmark_sr: float,
+    methodology: str,
+) -> PerformanceCalculationResult:
+    """Return a summary that states no return was computed; its numeric fields are placeholders."""
+    reason = warnings[-1]
+    summary = PerformanceSummary(
+        twr_decimal=0.0,
+        psr_benchmark_sr=psr_benchmark_sr,
+        methodology=methodology,
+        warnings=list(dict.fromkeys(warnings)),
+        performance_withheld=True,
+        withheld_reasons=[reason],
+    )
+    return PerformanceCalculationResult(
+        summary=summary,
+        return_observations=(),
+        econometrics=None,
+        withheld=True,
+    )
+
+
 def calculate_portfolio_performance_detailed(
     ledger: CanonicalPortfolioLedger,
     *,
@@ -358,18 +382,7 @@ def calculate_portfolio_performance_detailed(
 
     if len(ledger.nav_points) < 2:
         warnings.append("At least two NAV observations are required to compute portfolio returns.")
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     nav_sorted: list[tuple[datetime, NormalizedNavPoint]] = sorted(
         ((parse_utc_timestamp(pt.timestamp_utc), pt) for pt in ledger.nav_points),
@@ -378,18 +391,7 @@ def calculate_portfolio_performance_detailed(
     nav_timestamps = [ts for ts, _ in nav_sorted]
     if len(set(nav_timestamps)) != len(nav_timestamps):
         warnings.append("Performance metrics were withheld due to duplicate NAV timestamps.")
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     start_ts = nav_timestamps[0]
     end_ts = nav_timestamps[-1]
@@ -417,18 +419,7 @@ def calculate_portfolio_performance_detailed(
             "Performance metrics were withheld because at least one in-period external or in-kind "
             "capital flow lacks base-currency valuation."
         )
-        summary = PerformanceSummary(
-            twr_decimal=0.0,
-            psr_benchmark_sr=psr_benchmark_sr,
-            methodology=methodology,
-            warnings=list(dict.fromkeys(warnings)),
-        )
-        return PerformanceCalculationResult(
-            summary=summary,
-            return_observations=(),
-            econometrics=None,
-            withheld=True,
-        )
+        return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
     observations: list[SubperiodReturnObservation] = []
     for (prev_ts, prev_pt), (curr_ts, curr_pt) in zip(nav_sorted, nav_sorted[1:]):
@@ -461,18 +452,7 @@ def calculate_portfolio_performance_detailed(
                 f"Performance metrics were withheld because the flow-adjusted sub-period return ending "
                 f"{curr_pt.timestamp_utc} is non-positive or invalid."
             )
-            summary = PerformanceSummary(
-                twr_decimal=0.0,
-                psr_benchmark_sr=psr_benchmark_sr,
-                methodology=methodology,
-                warnings=list(dict.fromkeys(warnings)),
-            )
-            return PerformanceCalculationResult(
-                summary=summary,
-                return_observations=(),
-                econometrics=None,
-                withheld=True,
-            )
+            return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
         observations.append(
             SubperiodReturnObservation(

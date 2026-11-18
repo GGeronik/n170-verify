@@ -222,6 +222,26 @@ class VerifyInputAllowlistTests(unittest.TestCase):
         )
         self.assertEqual(bundle.provider_approval_state, ProviderApprovalState.OFFLINE_EXPORT_ONLY)
 
+    # Withheld performance --------------------------------------------------------------
+    def test_response_states_whether_the_return_was_withheld(self) -> None:
+        computed = self.client.post("/api/v1/verify", json=self.base)
+        self.assertEqual(computed.status_code, 200, computed.text)
+        self.assertIs(computed.json().get("performance_withheld"), False)
+        self.assertNotIn("withheld_reasons", computed.json())
+
+        trade_only = self.client.post(
+            "/api/v1/verify",
+            json={"broker_id": "tradersync", "raw_statement_text": TRADERSYNC_CSV, "issued_at_utc": ISSUED_AT},
+        )
+        self.assertEqual(trade_only.status_code, 200, trade_only.text)
+        body = trade_only.json()
+        self.assertIs(body.get("performance_withheld"), True)
+        self.assertTrue(body.get("withheld_reasons"))
+        core = next(
+            lf["payload"] for lf in body["proof_bundle"]["disclosed_leaves"] if lf["leaf_name"] == "core_metrics"
+        )
+        self.assertIs(core.get("performance_withheld"), True)
+
     # O6 -------------------------------------------------------------------------------
     def test_hosted_bundle_scope_and_origin_come_from_the_worker(self) -> None:
         resp = self.client.post(

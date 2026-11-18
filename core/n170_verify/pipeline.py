@@ -74,6 +74,7 @@ from n170_verify.contracts import (
     VerifyProofBundle,
     compute_blinded_account_tag,
     create_signed_proof_bundle,
+    parse_utc_timestamp,
     verify_proof_bundle,
 )
 from n170_verify.crypto import (
@@ -416,10 +417,31 @@ def ingest_portfolio_ledger(
             raw_account_id_override,
             salt_hex,
         )
-    if period_start_utc is not None:
-        updates["period_start_utc"] = period_start_utc
-    if period_end_utc is not None:
-        updates["period_end_utc"] = period_end_utc
+    # A requested period may narrow the record, never widen its claim beyond the NAV series
+    # that is scored. A ledger without NAV points keeps the requested period as before.
+    req_start, req_end = period_start_utc, period_end_utc
+    if resolved_ledger.nav_points and (req_start is not None or req_end is not None):
+        nav_sorted = sorted(
+            resolved_ledger.nav_points, key=lambda pt: parse_utc_timestamp(pt.timestamp_utc)
+        )
+        first_ts, last_ts = nav_sorted[0].timestamp_utc, nav_sorted[-1].timestamp_utc
+        if req_start is not None and parse_utc_timestamp(req_start) < parse_utc_timestamp(first_ts):
+            req_start = first_ts
+        if req_end is not None and parse_utc_timestamp(req_end) > parse_utc_timestamp(last_ts):
+            req_end = last_ts
+        eff_start = req_start if req_start is not None else resolved_ledger.period_start_utc
+        eff_end = req_end if req_end is not None else resolved_ledger.period_end_utc
+        if parse_utc_timestamp(eff_start) > parse_utc_timestamp(eff_end) or (
+            parse_utc_timestamp(eff_start) > parse_utc_timestamp(last_ts)
+            or parse_utc_timestamp(eff_end) < parse_utc_timestamp(first_ts)
+        ):
+            raise ValueError(
+                "The requested period does not overlap the NAV series that can be scored"
+            )
+    if req_start is not None:
+        updates["period_start_utc"] = req_start
+    if req_end is not None:
+        updates["period_end_utc"] = req_end
     if base_currency is not None:
         updates["base_currency"] = base_currency.strip().upper()
 
@@ -595,6 +617,8 @@ class PortfolioVerificationOutput(ContractModelMixin):
     period_end_utc: str = ""
     source_body_sha256: str = ""
     parser_warnings: list[str] = field(default_factory=list)
+    performance_withheld: bool = False
+    withheld_reasons: list[str] = field(default_factory=list)
 
 
 def verify_portfolio(
@@ -813,6 +837,8 @@ def verify_portfolio(
         period_end_utc=canonical_ledger.period_end_utc,
         source_body_sha256=canonical_ledger.source_body_sha256,
         parser_warnings=list(canonical_ledger.parser_warnings),
+        performance_withheld=bool(performance_summary.performance_withheld),
+        withheld_reasons=list(performance_summary.withheld_reasons),
     )
 
 
@@ -1258,6 +1284,8 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         "disclosed_leaves": [leaf.to_dict() for leaf in bundle.disclosed_leaves],
         "undisclosed_leaf_hashes": dict(bundle.undisclosed_leaf_hashes),
         "stripped_recent_closed_trades_count": output.stripped_recent_closed_trades_count,
+        "performance_withheld": output.performance_withheld,
+        "withheld_reasons": list(output.withheld_reasons),
     }
 
 
