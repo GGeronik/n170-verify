@@ -38,7 +38,8 @@ services:
       EODHD_API_KEY: "${EODHD_API_KEY:-}"
       N170_VERIFY_LLM_BASE_URL: "${N170_VERIFY_LLM_BASE_URL:-http://ollama:11434/v1}"
       N170_VERIFY_LLM_MODEL: "${N170_VERIFY_LLM_MODEL:-qwen2.5:7b-instruct}"
-      N170_VERIFY_SEC_USER_AGENT: "${N170_VERIFY_SEC_USER_AGENT:-}"
+      # The core reads SEC_EDGAR_USER_AGENT; an empty setting keeps the core's own default.
+      SEC_EDGAR_USER_AGENT: "${N170_VERIFY_SEC_USER_AGENT:-N170VerifyResearch/0.3 (research-compliance@example.com)}"
       FRED_API_KEY: "${FRED_API_KEY:-}"
     volumes:
       # External publisher signing key directory located strictly outside the git repository tree.
