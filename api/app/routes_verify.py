@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.config import ApiConfig
+from app.routes_proofs import refuse_caller_clock
 from app.routes_sync import (
     resolve_clamped_provider_approval_state,
     verify_sync_authorization,
@@ -189,6 +190,10 @@ def handle_post_verify(
     if not isinstance(payload, Mapping):
         return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
 
+    clock_refusal = refuse_caller_clock(config, payload, field_name="issued_at_utc")
+    if clock_refusal is not None:
+        return clock_refusal
+
     broker_id = str(payload.get("broker_id", "")).strip().lower()
     if not broker_id:
         return 422, {"error": "validation_error", "detail": "broker_id is required"}
@@ -300,6 +305,8 @@ def handle_post_verify(
             return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
         except ProofBundleInvalidError as exc:
             return 422, {"error": "invalid_proof_bundle", "errors": exc.errors}
+        except GovernanceBlockedError as exc:
+            return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     else:
         verification = store.verify_bundle_against_live_state(bundle)
 

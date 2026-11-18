@@ -106,6 +106,7 @@ class VerifyInputAllowlistTests(unittest.TestCase):
             hosted_multi_user_mode=True,
             allow_hosted_signing=False,
             account_blinding_salt_hex=SERVER_SALT_HEX,
+            allow_caller_clock_for_tests=True,
         )
         self.app = create_app(
             self.cfg,
@@ -241,6 +242,46 @@ class VerifyInputAllowlistTests(unittest.TestCase):
             lf["payload"] for lf in body["proof_bundle"]["disclosed_leaves"] if lf["leaf_name"] == "core_metrics"
         )
         self.assertIs(core.get("performance_withheld"), True)
+
+    # Issue time and publish refusals ---------------------------------------------------
+    def test_a_caller_may_not_set_the_issue_time_of_a_signed_record(self) -> None:
+        import dataclasses
+
+        host_clock_cfg = dataclasses.replace(self.cfg, allow_caller_clock_for_tests=False)
+        app = create_app(
+            host_clock_cfg,
+            hyperliquid_http_transport=f"{__name__}:picklable_dummy_hyperliquid_transport",
+            prefer_fastapi=False,
+        )
+        client = VerifyApiTestClient(app)
+        try:
+            refused = client.post("/api/v1/verify", json=self.base)
+            self.assertEqual(refused.status_code, 400, refused.text)
+            self.assertEqual(refused.json()["error"], "caller_clock_not_accepted")
+            no_clock = {k: v for k, v in self.base.items() if k != "issued_at_utc"}
+            accepted = client.post("/api/v1/verify", json=no_clock)
+            self.assertEqual(accepted.status_code, 200, accepted.text)
+            self.assertNotEqual(accepted.json()["proof_bundle"]["issued_at_utc"], ISSUED_AT)
+        finally:
+            app.verify_app.close()
+
+        # With the test-only setting on, the supplied time is used as before.
+        allowed = self.client.post("/api/v1/verify", json=self.base)
+        self.assertEqual(allowed.status_code, 200, allowed.text)
+        self.assertEqual(allowed.json()["proof_bundle"]["issued_at_utc"], ISSUED_AT)
+
+    def test_a_record_the_host_may_not_publish_is_refused_with_its_own_status(self) -> None:
+        from unittest import mock
+
+        from app.store import PublisherKeyNotInRegistryError
+
+        with mock.patch(
+            "app.store.ProofStore.store_proof",
+            side_effect=PublisherKeyNotInRegistryError("signing key is not in this host's registry"),
+        ):
+            resp = self.client.post("/api/v1/verify", json={**self.base, "publish_proof": True})
+        self.assertEqual(resp.status_code, 403, resp.text)
+        self.assertEqual(resp.json()["error"], "publisher_key_not_in_registry")
 
     # O6 -------------------------------------------------------------------------------
     def test_hosted_bundle_scope_and_origin_come_from_the_worker(self) -> None:
