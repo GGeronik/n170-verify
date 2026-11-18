@@ -282,6 +282,33 @@ class TestLeftoverUpstreamUsersAreCleanedOnce(_AppCase):
         self.assertEqual(len(seen), 1)
         self.assertEqual(_deleted_user_ids(recorded), [leftover])
 
+    def test_sweep_keeps_a_user_registered_while_it_runs(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+        leftover = "n170-st-" + "c" * 24
+        state: dict[str, Any] = {}
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            path = urllib.parse.urlsplit(url).path
+            if method == "GET" and path == "/api/v1/snapTrade/listUsers":
+                # A portal session is created after the sweep started and before the
+                # upstream list comes back, so the list already contains its user.
+                portal = state["client"].post(PORTAL, json={})
+                state["portal"] = portal
+                new_ids = _registered_user_ids(recorded)
+                return (200, {"Content-Type": "application/json"}, [leftover, *new_ids])
+            return inner(method, url, headers, body)
+
+        _, client, relay = self._client(transport)
+        state["client"] = client
+
+        self.assertEqual(client.get(STATUS).status_code, 200)
+        self.assertEqual(state["portal"].status_code, 200, state["portal"].text)
+        live_user = _registered_user_ids(recorded)[0]
+        self.assertEqual(_deleted_user_ids(recorded), [leftover])
+        self.assertNotIn(live_user, _deleted_user_ids(recorded))
+        self.assertIsNotNone(relay.get_session(state["portal"].json()["session_token"]))
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 1)
+
     def test_upstream_error_is_recorded_and_the_relay_keeps_working(self) -> None:
         inner, _ = _make_mock_snaptrade_transport()
         transport, seen = _with_list_users(inner, {"detail": "unavailable"}, status=503)

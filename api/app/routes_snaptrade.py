@@ -317,6 +317,10 @@ class SnapTradeRelayCoordinator:
         or released. Only build (non-personal) keys are touched, only ids carrying
         ``SNAPTRADE_RELAY_USER_PREFIX`` are deleted, users with a live session here are kept,
         and any upstream failure is recorded as a warning without stopping the API.
+
+        The whole sweep holds the relay lock, so no portal call can register a user while it
+        runs; each id is also re-checked against live sessions and registered slots right
+        before it is deleted, so a user known to this process is never removed.
         """
         with self._lock:
             if self._startup_cleanup_done:
@@ -324,33 +328,36 @@ class SnapTradeRelayCoordinator:
             self._startup_cleanup_done = True
             if adapter.is_personal_key:
                 return 0
-            active_users = {s.user_id for s in self._sessions.values()}
-        try:
-            resp = adapter._execute_signed("GET", "/api/v1/snapTrade/listUsers")
-            listed = adapter._decode_json_or_raise(resp, api_path="/api/v1/snapTrade/listUsers")
-        except Exception as exc:  # noqa: BLE001 - start-up clean-up must never stop the API
-            self._record_cleanup_warning("listing upstream users failed", exc, adapter)
-            return 0
-        if not isinstance(listed, list):
-            self.startup_cleanup_warnings.append(
-                "SnapTrade start-up clean-up skipped: listUsers returned a non-list response"
-            )
-            _LOG.warning(self.startup_cleanup_warnings[-1])
-            return 0
-        deleted = 0
-        for uid in listed:
-            if (
-                not isinstance(uid, str)
-                or not uid.startswith(SNAPTRADE_RELAY_USER_PREFIX)
-                or uid in active_users
-            ):
-                continue
             try:
-                adapter.delete_user_and_release_slot(uid)
-                deleted += 1
-            except Exception as exc:  # noqa: BLE001
-                self._record_cleanup_warning("deleting a leftover upstream user failed", exc, adapter)
-        return deleted
+                resp = adapter._execute_signed("GET", "/api/v1/snapTrade/listUsers")
+                listed = adapter._decode_json_or_raise(
+                    resp, api_path="/api/v1/snapTrade/listUsers"
+                )
+            except Exception as exc:  # noqa: BLE001 - start-up clean-up must never stop the API
+                self._record_cleanup_warning("listing upstream users failed", exc, adapter)
+                return 0
+            if not isinstance(listed, list):
+                self.startup_cleanup_warnings.append(
+                    "SnapTrade start-up clean-up skipped: listUsers returned a non-list response"
+                )
+                _LOG.warning(self.startup_cleanup_warnings[-1])
+                return 0
+            deleted = 0
+            for uid in listed:
+                if not isinstance(uid, str) or not uid.startswith(SNAPTRADE_RELAY_USER_PREFIX):
+                    continue
+                if self.slot_manager.is_user_registered(uid) or any(
+                    s.user_id == uid for s in self._sessions.values()
+                ):
+                    continue
+                try:
+                    adapter.delete_user_and_release_slot(uid)
+                    deleted += 1
+                except Exception as exc:  # noqa: BLE001
+                    self._record_cleanup_warning(
+                        "deleting a leftover upstream user failed", exc, adapter
+                    )
+            return deleted
 
     def _record_cleanup_warning(
         self,
