@@ -403,7 +403,10 @@ def parse_journal_migration_csv(
         ending_positions=ending_positions,
         nav_points=[],
         trades=sorted(trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
-        enabled_sections=[f"{detected_format}_csv"],
+        # Every journal row states its own entry (and exit, once closed), so no position can be
+        # held from before the file within these trades: the file accounts for its opening
+        # positions (there are none), and a first sale is a genuine short.
+        enabled_sections=[f"{detected_format}_csv", "PriorPeriodPositions"],
         parser_warnings=list(warnings),
     )
 

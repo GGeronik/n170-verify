@@ -499,5 +499,109 @@ class TestCsvLineEndingsAndLimits(unittest.TestCase):
         self.assertIn("cannot be read as CSV", str(ctx.exception))
 
 
+# --------------------------------------------------------------------------- opening positions
+
+
+def _round_trip_sides(ledger) -> list[str]:
+    from n170_verify.coaching.behaviour_metrics import match_fifo_round_trips
+
+    return sorted(rt.side for rt in match_fifo_round_trips(ledger))
+
+
+class TestFormatsCompleteByConstruction(unittest.TestCase):
+    """A file whose every trade row is a finished round trip accounts for its own opening
+    positions, so a first sale in it is a genuine short; a fills or transactions export does
+    not, so a first sale in it may close a position held from before and is not matched."""
+
+    def test_tradovate_performance_short_round_trip_is_matched(self) -> None:
+        perf = (
+            "symbol,buyFillId,sellFillId,qty,buyPrice,sellPrice,pnl,boughtTimestamp,soldTimestamp\n"
+            "NQM26,BF-NQ,SF-NQ,1,21025.00,21000.00,$(500.00),01/13/2026 11:15:00,01/13/2026 10:45:00\n"
+        )
+        self.assertEqual(_round_trip_sides(parse_tradovate_csv(perf, blinding_salt_hex=_SALT)), ["short"])
+
+    def test_tradovate_orders_first_sale_is_not_matched(self) -> None:
+        orders = (
+            "orderId,Account,B/S,Contract,avgPrice,filledQty,Fill Time,Status\n"
+            "101,ACCTX01,Sell,ESH6,5810.00,1,2026-01-15 14:30:00,Filled\n"
+            "102,ACCTX01,Buy,ESH6,5800.00,1,2026-01-15 14:35:00,Filled\n"
+        )
+        self.assertEqual(_round_trip_sides(parse_tradovate_csv(orders, blinding_salt_hex=_SALT)), [])
+
+    def test_mt4_closed_short_trade_is_matched(self) -> None:
+        short = (
+            "<tr><td>2</td><td>2026.02.03 08:00:00</td><td>sell</td><td>1.00</td><td>EURUSD</td><td>1.09100</td>"
+            "<td>0</td><td>0</td><td>2026.02.04 10:00:00</td><td>1.08500</td><td>0.00</td><td>0.00</td><td>0.00</td>"
+            "<td>600.00</td></tr>\n"
+        )
+        html = _mt4(
+            _mt4_dep(1, "2026.02.02 08:00:00", "10 000.00") + short,
+            "<td>Balance:</td><td>10 600.00</td><td>Equity:</td><td>10 600.00</td>",
+        )
+        self.assertEqual(_round_trip_sides(parse_mt4_statement(html, blinding_salt_hex=_SALT)), ["short"])
+
+    def test_mt5_positions_short_round_trip_is_matched(self) -> None:
+        tsv = (
+            "Time\tPosition\tSymbol\tType\tVolume\tPrice\tS / L\tT / P\tTime\tPrice\tCommission\tSwap\tProfit\n"
+            "2026.01.03 09:00:00\t1\tEURUSD\tsell\t1.00\t1.09100\t\t\t2026.01.04 10:00:00\t1.08500\t0.00\t0.00\t600.00\n"
+        )
+        self.assertEqual(_round_trip_sides(parse_mt5_statement(tsv, blinding_salt_hex=_SALT)), ["short"])
+
+    def test_mt5_deals_first_sale_is_not_matched(self) -> None:
+        tsv = (
+            "Time\tDeal\tSymbol\tType\tDirection\tVolume\tPrice\tOrder\tCommission\tFee\tSwap\tProfit\tBalance\tComment\n"
+            "2026.01.02 09:00:00\t9000\t\tbalance\t\t\t\t\t0.00\t0.00\t0.00\t10000.00\t10000.00\tFunding\n"
+            "2026.01.03 09:00:00\t9001\tEURUSD\tsell\tin\t1.00\t1.09100\t1\t0.00\t0.00\t0.00\t0.00\t10000.00\t\n"
+            "2026.01.04 10:00:00\t9002\tEURUSD\tbuy\tout\t1.00\t1.08500\t2\t0.00\t0.00\t0.00\t600.00\t10600.00\t\n"
+        )
+        self.assertEqual(_round_trip_sides(parse_mt5_statement(tsv, blinding_salt_hex=_SALT)), [])
+
+    def test_journal_short_round_trips_are_matched(self) -> None:
+        from n170_verify.connectors.journal_migration import parse_journal_migration_csv
+
+        for name, text in (
+            (
+                "tradersync",
+                "Status,Symbol,Size,Open Date,Open Time,Close Date,Close Time,Entry Price,Exit Price,Return $,Side\n"
+                "WIN,NVDA,50,2026-01-08,09:35:00,2026-01-08,10:20:00,145.00,140.00,250.00,SHORT\n",
+            ),
+            (
+                "tradezella",
+                "Symbol,Side,Open Date,Close Date,Entry Price,Exit Price,Quantity,Net P&L\n"
+                "NVDA,Short,2026-01-05 09:35:00,2026-01-06 15:50:00,108.00,100.00,10,80.00\n",
+            ),
+        ):
+            with self.subTest(fmt=name):
+                ledger = parse_journal_migration_csv(text, blinding_salt_hex=_SALT).ledger
+                self.assertEqual(_round_trip_sides(ledger), ["short"])
+
+    def test_transaction_exports_first_sale_is_not_matched(self) -> None:
+        from n170_verify.connectors.statement_csv import parse_robinhood_csv, parse_schwab_csv
+
+        robinhood = (
+            "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
+            "01/06/2026,01/06/2026,01/07/2026,NVDA,NVIDIA Corp,Sell,20,$148.50,$2970.00\n"
+            "01/14/2026,01/14/2026,01/15/2026,NVDA,NVIDIA Corp,Buy,20,$135.00,-$2700.00\n"
+        )
+        schwab = (
+            '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+            '"01/06/2026","Sell","AAPL","Apple Inc","10","$210.00","$1.00","$2,099.00"\n'
+            '"01/10/2026","Buy","AAPL","Apple Inc","10","$200.00","$1.00","-$2,001.00"\n'
+        )
+        degiro = (
+            "Date,Time,Product,ISIN,Reference exchange,Quantity,Price,,Local value,,Value,,Exchange rate,Order ID\n"
+            "06-01-2026,10:00,ASML HOLDING,NL0010273215,EAM,-5,712.80,EUR,3564.00,EUR,3564.00,EUR,,o1\n"
+            "08-01-2026,10:00,ASML HOLDING,NL0010273215,EAM,5,680.40,EUR,-3402.00,EUR,-3402.00,EUR,,o2\n"
+        )
+        for name, ledger in (
+            ("robinhood", parse_robinhood_csv(robinhood, blinding_salt_hex=_SALT)),
+            ("schwab", parse_schwab_csv(schwab, blinding_salt_hex=_SALT)),
+            ("degiro", parse_degiro_csv_bundle(transactions_csv=degiro, blinding_salt_hex=_SALT)),
+        ):
+            with self.subTest(fmt=name):
+                self.assertGreaterEqual(len(ledger.trades), 2)
+                self.assertEqual(_round_trip_sides(ledger), [])
+
+
 if __name__ == "__main__":
     unittest.main()

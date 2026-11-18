@@ -380,6 +380,8 @@ def _detect_mt_report_time(rows: list[list[str]]) -> str | None:
 
 
 _MT_STILL_OPEN = "9999-12-31T23:59:59Z"
+# The section the round-trip matcher reads as "this input states its opening positions".
+_OPENINGS_ACCOUNTED_FOR_SECTION = "PriorPeriodPositions"
 
 
 def _points_while_flat(
@@ -733,6 +735,14 @@ def parse_mt4_statement(
             cash_base=round(running_bal, 6),
         )
         end_ts = report_ts
+
+    # Every trade here comes from a row that is a finished round trip with its own entry
+    # and exit, so no position can be held from before the file within these trades: the
+    # file accounts for its opening positions (there are none), and a first sale is a
+    # genuine short. A fills or deals export, where a row is one side of a trade, never
+    # makes this claim.
+    if trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
 
     tag_seed = raw_acct_id or f"offline:{source_sha[:16]}"
     return CanonicalPortfolioLedger(
@@ -1195,6 +1205,13 @@ def parse_mt5_statement(
         nav_by_ts[report_ts] = NormalizedNavPoint(timestamp_utc=report_ts, nav_base=summary_equity)
         end_ts = report_ts
 
+    # When trades come from the Positions table, every trade comes from a row that is a
+    # finished round trip with its own open and close, so no position can be held from
+    # before the file within these trades: a first sale is a genuine short. Trades from the
+    # Deals table (one row per side) never make this claim.
+    if final_trades and not deals_trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
+
     tag_seed = raw_acct_id or f"offline:{source_sha[:16]}"
     return CanonicalPortfolioLedger(
         blinded_account_tag=compute_blinded_account_tag("mt5", tag_seed, blinding_salt_hex),
@@ -1537,6 +1554,12 @@ def parse_tradovate_csv(
     start_ts = min(all_ts) if all_ts else "2025-01-01T00:00:00Z"
     end_ts = max(all_ts) if all_ts else start_ts
     tag_seed = ",".join(sorted(seen_accounts)) if seen_accounts else f"offline:{source_sha[:16]}"
+    # When trades come from the Performance export, every row pairs a buy fill with a sell
+    # fill, so no position can be held from before the file within these trades: a first
+    # sale is a genuine short. Trades from the Orders export (one fill per row) never make
+    # this claim.
+    if perf_trades:
+        enabled_sections.append(_OPENINGS_ACCOUNTED_FOR_SECTION)
 
     return CanonicalPortfolioLedger(
         blinded_account_tag=compute_blinded_account_tag("tradovate", tag_seed, blinding_salt_hex),
