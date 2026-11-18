@@ -73,7 +73,13 @@ class _AppCase(unittest.TestCase):
         env_patch = mock.patch.dict(os.environ, {}, clear=False)
         env_patch.start()
         self.addCleanup(env_patch.stop)
-        for name in (SITE_ORIGIN_ENV, "N170_SNAPTRADE_DEV_KEY"):
+        for name in (
+            SITE_ORIGIN_ENV,
+            "N170_SNAPTRADE_DEV_KEY",
+            "SNAPTRADE_CLIENT_ID",
+            "SNAPTRADE_CONSUMER_KEY",
+            "SNAPTRADE_AUTH_MODE",
+        ):
             os.environ.pop(name, None)
 
     def _client(
@@ -85,6 +91,8 @@ class _AppCase(unittest.TestCase):
         hosted: bool = True,
         allow_caller_clock: bool = False,
         clock: Any = None,
+        site_origin: str = "",
+        client_secret: str = CONSUMER_KEY,
     ) -> tuple[Any, VerifyApiTestClient, SnapTradeRelayCoordinator]:
         relay = (
             SnapTradeRelayCoordinator(http_transport=transport, monotonic_clock=clock)
@@ -95,8 +103,9 @@ class _AppCase(unittest.TestCase):
             publisher_keypair=self.kp,
             publisher_kid="n170-binding-test-kid",
             snaptrade_client_id=client_id,
-            snaptrade_consumer_key=CONSUMER_KEY,
+            snaptrade_consumer_key=client_secret,
             snaptrade_dev_key=dev_key,
+            site_origin=site_origin,
             account_blinding_salt_hex=TEST_SALT_HEX,
             hosted_multi_user_mode=hosted,
             allow_caller_clock_for_tests=allow_caller_clock,
@@ -351,9 +360,8 @@ class TestRedirectLimitedToSiteOrigin(_AppCase):
         return client.post(PORTAL, json={"redirect_url": url})
 
     def test_redirect_must_match_the_configured_origin_or_local_loopback(self) -> None:
-        os.environ[SITE_ORIGIN_ENV] = "https://verify.example.org"
         transport, _ = _make_mock_snaptrade_transport()
-        _, client, _ = self._client(transport)
+        _, client, _ = self._client(transport, site_origin="https://verify.example.org")
 
         for bad in (
             "https://evil.example.com/connect",
@@ -381,6 +389,43 @@ class TestRedirectLimitedToSiteOrigin(_AppCase):
         self.assertEqual(r.status_code, 422, r.text)
         ok = self._portal(client, "http://127.0.0.1:3000/connect")
         self.assertEqual(ok.status_code, 200, ok.text)
+
+    def test_the_origin_comes_only_from_configuration(self) -> None:
+        # An environment value is never consulted at request time.
+        os.environ[SITE_ORIGIN_ENV] = "https://verify.example.org"
+        transport, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport)
+        r = self._portal(client, "https://verify.example.org/connect")
+        self.assertEqual(r.status_code, 422, r.text)
+
+    def test_a_configured_origin_holds_while_the_environment_is_empty(self) -> None:
+        # A verification worker start briefly empties the process environment.
+        transport, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport, site_origin="https://verify.example.org")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            r = self._portal(client, "https://verify.example.org/connect")
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_a_configured_http_origin_is_matched_exactly(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport, site_origin="http://verify.example.org:8080")
+        self.assertEqual(self._portal(client, "http://verify.example.org:8080/cb").status_code, 200)
+        self.assertEqual(self._portal(client, "http://verify.example.org/cb").status_code, 422)
+        self.assertEqual(self._portal(client, "https://verify.example.org:8080/cb").status_code, 422)
+
+
+class TestRelayCredentialsComeOnlyFromConfiguration(_AppCase):
+    def test_credentials_in_the_environment_alone_do_not_configure_the_relay(self) -> None:
+        os.environ["SNAPTRADE_CLIENT_ID"] = BUILD_CLIENT_ID
+        os.environ["SNAPTRADE_CONSUMER_KEY"] = CONSUMER_KEY
+        os.environ["N170_SNAPTRADE_DEV_KEY"] = DEV_KEY
+        transport, recorded = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport, client_id="", client_secret="")
+        status = client.get(STATUS).json()
+        self.assertFalse(status["configured"], status)
+        self.assertFalse(status["requires_dev_key"], status)
+        self.assertEqual(client.post(PORTAL, json={}).status_code, 503)
+        self.assertEqual(recorded, [])
 
 
 def _with_list_users(inner: Any, listed: Any, status: int = 200) -> tuple[Any, list[str]]:

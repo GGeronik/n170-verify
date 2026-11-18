@@ -255,14 +255,10 @@ class TestSnapTradeRelayEndpointsAndSecurity(unittest.TestCase):
             snaptrade_consumer_key="snap-hmac-consumer-secret-xyz-12345",
             snaptrade_dev_key="promo-gate-secret-2026",
             account_blinding_salt_hex="ab" * 32,
+            site_origin="https://verify.example.org",
         )
         app = create_app(cfg, snaptrade_relay=relay, prefer_fastapi=False)
         client = VerifyApiTestClient(app)
-        origin_env = mock.patch.dict(
-            os.environ, {"N170_VERIFY_SITE_ORIGIN": "https://verify.example.org"}, clear=False
-        )
-        origin_env.start()
-        self.addCleanup(origin_env.stop)
         try:
             # 1. Status reflects configured=True and requires_dev_key=True
             st_init = client.get("/api/v1/connect/snaptrade/status")

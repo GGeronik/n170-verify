@@ -9,7 +9,6 @@ import hashlib
 import hmac
 import importlib
 import logging
-import os
 import secrets
 import threading
 import time
@@ -69,9 +68,6 @@ SWEEP_RETRY_MAX_SECONDS: float = 900.0
 # A verify refusal with one of these reasons can succeed on retry (the visitor has not finished
 # linking an account yet), so the session and its seat are kept.
 _RETRYABLE_REFUSAL_MARKERS: tuple[str, ...] = ("No brokerage accounts are connected",)
-# The site's own public origin (for example https://verify.example.org); the only https
-# origin accepted for redirect_url. Unset means only local http://127.0.0.1 is accepted.
-SNAPTRADE_SITE_ORIGIN_ENV: str = "N170_VERIFY_SITE_ORIGIN"
 
 _LOG = logging.getLogger(__name__)
 
@@ -102,7 +98,7 @@ def _effective_port(scheme: str, port: int | None) -> int | None:
 
 
 def _parse_site_origin(raw_origin: str | None) -> tuple[str, str, int] | None:
-    """Parse the configured site origin into ``(scheme, host, port)``; malformed means none."""
+    """Parse ``ApiConfig.site_origin`` (validated at start-up) into ``(scheme, host, port)``."""
     cleaned = (raw_origin or "").strip()
     if not cleaned:
         return None
@@ -114,7 +110,7 @@ def _parse_site_origin(raw_origin: str | None) -> tuple[str, str, int] | None:
     scheme = parsed.scheme.lower()
     host = (parsed.hostname or "").strip().lower()
     if (
-        scheme != "https"
+        scheme not in ("http", "https")
         or not host
         or parsed.username is not None
         or parsed.password is not None
@@ -129,10 +125,9 @@ def _parse_site_origin(raw_origin: str | None) -> tuple[str, str, int] | None:
     return scheme, host, eff
 
 
-def resolve_snaptrade_site_origin(config: ApiConfig | None = None) -> str:
-    """Return the configured site origin used to accept ``https`` redirect URLs (may be empty)."""
-    from_config = str(getattr(config, "site_origin", "") or "").strip() if config else ""
-    return from_config or os.environ.get(SNAPTRADE_SITE_ORIGIN_ENV, "").strip()
+def resolve_snaptrade_site_origin(config: ApiConfig) -> str:
+    """Return ``config.site_origin`` (may be empty). The environment is never read here."""
+    return (config.site_origin or "").strip()
 
 
 def validate_snaptrade_redirect_url(
@@ -210,15 +205,12 @@ def _derive_blinded_snaptrade_user_id(slot_label: str, salt_hex: str) -> str:
 
 
 def _resolve_snaptrade_runtime(config: ApiConfig) -> tuple[bool, str, str, str, str]:
-    client_id = (config.snaptrade_client_id or os.environ.get("SNAPTRADE_CLIENT_ID", "")).strip()
-    consumer_key = (
-        config.snaptrade_consumer_key or os.environ.get("SNAPTRADE_CONSUMER_KEY", "")
-    ).strip()
-    dev_key = (config.snaptrade_dev_key or os.environ.get("N170_SNAPTRADE_DEV_KEY", "")).strip()
-    auth_mode = (
-        getattr(config, "snaptrade_auth_mode", "")
-        or os.environ.get("SNAPTRADE_AUTH_MODE", "auto")
-    ).strip() or "auto"
+    # Settings come only from ApiConfig (read once at start-up). Reading the process
+    # environment here could see it empty while a verification worker is being started.
+    client_id = (config.snaptrade_client_id or "").strip()
+    consumer_key = (config.snaptrade_consumer_key or "").strip()
+    dev_key = (config.snaptrade_dev_key or "").strip()
+    auth_mode = (config.snaptrade_auth_mode or "").strip() or "auto"
     configured = is_snaptrade_env_configured(
         {
             "SNAPTRADE_CLIENT_ID": client_id,
@@ -1261,7 +1253,6 @@ __all__ = [
     "MAX_EPHEMERAL_SNAPTRADE_SESSIONS",
     "SNAPTRADE_RELAY_USER_PREFIX",
     "SNAPTRADE_SESSION_TTL_SECONDS",
-    "SNAPTRADE_SITE_ORIGIN_ENV",
     "SNAPTRADE_UNCONFIGURED_DETAIL",
     "SnapTradeRelayCoordinator",
     "resolve_snaptrade_site_origin",
