@@ -420,5 +420,91 @@ class TestUploadSaysWhenTheReturnWasWithheld(_Case):
         self.assertTrue(withheld.json()["withheld_reasons"])
 
 
+def _one_valuation_statement() -> str:
+    return "\n".join(
+        line
+        for line in SYNTHETIC_LIVE_IBKR_FLEX_XML.splitlines()
+        if 'reportDate="20260115"' not in line and 'reportDate="20260130"' not in line
+    )
+
+
+def _large_flow_statement() -> str:
+    deposit = (
+        '<CashTransactions><CashTransaction accountId="U7654321" currency="USD" '
+        'type="Deposits/Withdrawals" dateTime="20260110;120000" settleDate="20260110" '
+        'amount="500000.00" description="DEPOSIT" transactionID="CT-1" /></CashTransactions>'
+    )
+    return SYNTHETIC_LIVE_IBKR_FLEX_XML.replace("<CashTransactions />", deposit)
+
+
+# What the statement upload adds to the shared pipeline's leaves on purpose: a
+# parser label in the reconciliation leaf, and journal tags cleaned of amounts
+# and account-like digit runs.
+_UPLOAD_ONLY_FIELDS = {"reconciliation": {"detected_format"}, "coaching_and_context": {"imported_journal_tags"}}
+
+
+class TestUploadSignsWhatTheSharedPipelineSigns(_Case):
+    """For one statement, the upload route and POST /api/v1/verify sign the same leaves and period."""
+
+    def _both(self, text: str) -> tuple[dict, dict]:
+        upload = self.client.post(
+            "/api/v1/verify/auto-detect",
+            json={"raw_statement_text": text, "filename": "ibkr.xml", "issued_at_utc": "2026-02-10T00:00:00Z"},
+        )
+        verify = self.client.post(
+            "/api/v1/verify",
+            json={"broker_id": "auto_detect", "raw_statement_text": text, "issued_at_utc": "2026-02-10T00:00:00Z"},
+        )
+        self.assertEqual(upload.status_code, 200, upload.text)
+        self.assertEqual(verify.status_code, 200, verify.text)
+        return upload.json(), verify.json()
+
+    @staticmethod
+    def _leaves(body: dict) -> dict:
+        bundle = body["bundle"] if "bundle" in body else body["proof_bundle"]
+        out = {}
+        for leaf in bundle["disclosed_leaves"]:
+            payload = leaf["payload"]
+            skip = _UPLOAD_ONLY_FIELDS.get(leaf["leaf_name"], set())
+            if isinstance(payload, dict):
+                payload = {k: v for k, v in payload.items() if k not in skip}
+            out[leaf["leaf_name"]] = payload
+        return out
+
+    def _assert_same(self, upload: dict, verify: dict) -> None:
+        ub = upload["bundle"]
+        vb = verify["bundle"] if "bundle" in verify else verify["proof_bundle"]
+        self.assertEqual(
+            (ub["period_start_utc"], ub["period_end_utc"]), (vb["period_start_utc"], vb["period_end_utc"])
+        )
+        u_leaves, v_leaves = self._leaves(upload), self._leaves(verify)
+        self.assertEqual(sorted(u_leaves), sorted(v_leaves))
+        for name in v_leaves:
+            with self.subTest(leaf=name):
+                self.assertEqual(u_leaves[name], v_leaves[name])
+        self.assertEqual(upload["performance_withheld"], verify["performance_withheld"])
+        self.assertEqual(upload.get("withheld_reasons"), verify.get("withheld_reasons"))
+
+    def test_a_statement_with_a_valuation_series(self) -> None:
+        upload, verify = self._both(SYNTHETIC_LIVE_IBKR_FLEX_XML)
+        self._assert_same(upload, verify)
+        self.assertFalse(upload["performance_withheld"])
+
+    def test_a_one_valuation_statement_has_no_coaching_path_on_either_route(self) -> None:
+        upload, verify = self._both(_one_valuation_statement())
+        self._assert_same(upload, verify)
+        self.assertTrue(upload["performance_withheld"])
+        coaching = self._leaves(upload)["coaching_and_context"]
+        self.assertIsNone(coaching.get("counterfactual_twin"))
+        bundle = upload["bundle"]
+        self.assertEqual(bundle["period_start_utc"], bundle["period_end_utc"])
+
+    def test_a_large_flow_statement_is_withheld_with_the_same_reason_on_both_routes(self) -> None:
+        upload, verify = self._both(_large_flow_statement())
+        self._assert_same(upload, verify)
+        self.assertTrue(upload["performance_withheld"])
+        self.assertTrue(any("cash flows" in r for r in upload["withheld_reasons"]))
+
+
 if __name__ == "__main__":
     unittest.main()

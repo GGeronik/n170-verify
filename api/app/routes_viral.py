@@ -37,7 +37,6 @@ from app.worker_isolation import (
     WorkerValidationError,
     run_isolated_one_shot_verification,
 )
-from n170_verify.coaching import TraderCoachingEngine, match_fifo_round_trips
 from n170_verify.connectors import (
     PaperOrSandboxAccountRejectedError,
     detect_and_parse_statement,
@@ -63,13 +62,8 @@ from n170_verify.crypto import (
     build_salted_merkle_tree,
     generate_ed25519_keypair,
 )
-from n170_verify.performance import (
-    calculate_portfolio_performance_detailed,
-    evaluate_claim_plausibility,
-)
-from n170_verify.pipeline import build_canonical_leaf_payloads
-from n170_verify.reconciliation import reconcile_portfolio_ledger
-from n170_verify.reference import build_reference_provider
+from n170_verify.performance import evaluate_claim_plausibility
+from n170_verify.pipeline import build_canonical_leaf_payloads, verify_portfolio
 
 
 MAX_PLAUSIBILITY_BODY_BYTES = 65_536
@@ -1178,20 +1172,27 @@ def build_and_sign_proof_bundle(
     publisher_kid: str = "ephemeral-worker-auto-detect",
     publisher_private_key_hex: str | None = None,
 ) -> tuple[VerifyProofBundle, dict[str, Any], int]:
-    """Compute performance/reconciliation/coaching leaves and sign a redacted ``VerifyProofBundle``."""
-    ref_provider = build_reference_provider(api_key=eodhd_api_key)
-    perf_calc = calculate_portfolio_performance_detailed(
-        ledger,
-        reference_provider=ref_provider,
-    )
-    perf_summary = perf_calc.summary
+    """Sign the statement upload's record from the shared pipeline's own results.
 
-    recon_report = reconcile_portfolio_ledger(
-        ledger,
-        reference_provider=ref_provider,
-        performance_summary=perf_summary,
-        reference_now_utc=issued_at_utc,
+    The ledger goes through ``verify_portfolio``: the same ingest (the signed period
+    is the span of the scored valuations), calculator, reconciliation and coaching
+    (whose actual path is the calculator's scored path, and absent when the return
+    is withheld) as POST /api/v1/verify. The upload then adds only two things to
+    the leaves: the parser label in the reconciliation leaf, and journal tags
+    cleaned of amounts and account-like digit runs.
+    """
+    pipeline_out = verify_portfolio(
+        ledger=ledger,
+        require_live=True,
+        allow_filesystem_paths=False,
+        eodhd_api_key=eodhd_api_key,
+        embargo_days=embargo_days,
+        issued_at_utc=issued_at_utc,
+        enable_llm_narrative=False,
+        imported_journal_tags=list(imported_journal_tags) or None,
     )
+    perf_summary = pipeline_out.performance
+    recon_report = pipeline_out.reconciliation
     if reconciliation_status_override is not None:
         recon_dict = recon_report.to_dict()
         recon_dict["status"] = reconciliation_status_override.value
@@ -1199,27 +1200,18 @@ def build_and_sign_proof_bundle(
             recon_dict["ledger_completeness_ok"] = False
         recon_report = ReconciliationReport.from_dict(recon_dict)
 
-    all_trips = match_fifo_round_trips(ledger)
-    coaching_engine = TraderCoachingEngine(
-        min_trade_disclosure_delay_days=float(embargo_days),
-    )
-    coaching_out = coaching_engine.evaluate(
-        ledger,
-        as_of_utc=issued_at_utc,
-        enable_llm_narrative=False,
-    )
-    delayed_trades = coaching_out.delayed_closed_trades
-    stripped_count = max(0, len(all_trips) - len(delayed_trades))
+    delayed_trades = pipeline_out.delayed_closed_trades
+    stripped_count = pipeline_out.stripped_recent_closed_trades_count
 
     sanitized_tags: list[str] = []
     if include_journal_tags:
-        existing_tags = list(coaching_out.report.imported_journal_tags or [])
+        existing_tags = list(pipeline_out.coaching.imported_journal_tags or [])
         for raw_t in [*existing_tags, *imported_journal_tags]:
             clean_t = sanitize_journal_tag(raw_t)
             if clean_t and clean_t not in sanitized_tags and len(sanitized_tags) < 50:
                 sanitized_tags.append(clean_t)
 
-    coaching_report = coaching_out.report
+    coaching_report = pipeline_out.coaching
     coaching_dict = coaching_report.to_dict()
     coaching_dict["imported_journal_tags"] = sanitized_tags
     coaching_report = coaching_report.from_dict(coaching_dict)
@@ -1229,7 +1221,7 @@ def build_and_sign_proof_bundle(
         reconciliation=recon_report,
         coaching=coaching_report,
         delayed_closed_trades=delayed_trades,
-        base_currency=ledger.base_currency,
+        base_currency=pipeline_out.base_currency,
         embargo_days=embargo_days,
         stripped_recent_closed_trades_count=stripped_count,
     )
@@ -1256,15 +1248,16 @@ def build_and_sign_proof_bundle(
         publisher_kid=publisher_kid,
         publisher_private_key_hex=priv_hex,
         broker_id=ledger.broker_id,
-        blinded_account_tag=ledger.blinded_account_tag,
+        blinded_account_tag=pipeline_out.blinded_account_tag,
         account_scope=ledger.account_scope,
         provider_approval_state=ProviderApprovalState.OFFLINE_EXPORT_ONLY,
         environment_tier=ledger.environment_tier,
         claimed_origin_assurance=origin_assurance,
-        source_body_sha256=ledger.source_body_sha256,
-        period_start_utc=ledger.period_start_utc,
-        period_end_utc=ledger.period_end_utc,
-        base_currency=ledger.base_currency,
+        source_body_sha256=pipeline_out.source_body_sha256,
+        # The signed period is the one the shared pipeline scored.
+        period_start_utc=pipeline_out.period_start_utc,
+        period_end_utc=pipeline_out.period_end_utc,
+        base_currency=pipeline_out.base_currency,
         merkle_tree=merkle_tree,
         disclose_leaf_names=disclose_list,
         retention_mode="no_persistent_storage",
