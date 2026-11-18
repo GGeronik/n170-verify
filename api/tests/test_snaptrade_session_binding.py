@@ -266,6 +266,71 @@ class TestRelayVerifyIssueTimeAndPublishRefusals(_AppCase):
         self.assertEqual(r.json()["error"], "publisher_key_not_in_registry")
 
 
+class TestOperatorSetsRelaySessionLifetime(unittest.TestCase):
+    """The operator may shorten the relay session lifetime; a bad value stops start-up."""
+
+    NAME = "N170_SNAPTRADE_SESSION_TTL_SECONDS"
+
+    def _env(self, **extra: str) -> dict[str, str]:
+        base = {
+            "N170_VERIFY_HOSTED_MODE": "false",
+            "N170_VERIFY_SIGNING_SEED_HEX": "42" * 32,
+            "N170_VERIFY_ACCOUNT_SALT_HEX": "5a" * 32,
+        }
+        base.update(extra)
+        return base
+
+    def test_unset_keeps_the_thirty_minute_lifetime(self) -> None:
+        with mock.patch.dict(os.environ, self._env(), clear=True):
+            app = create_app(ApiConfig.from_env(), prefer_fastapi=False)
+        self.addCleanup(app.close)
+        self.assertEqual(app.snaptrade_relay.session_ttl_seconds, 1800.0)
+
+    def test_a_shorter_lifetime_frees_an_unfinished_session_when_it_expires(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        env = self._env(
+            **{
+                self.NAME: "120",
+                "SNAPTRADE_CLIENT_ID": BUILD_CLIENT_ID,
+                "SNAPTRADE_CONSUMER_KEY": CONSUMER_KEY,
+            }
+        )
+        with mock.patch.dict(os.environ, env, clear=True):
+            app = create_app(
+                ApiConfig.from_env(), snaptrade_http_transport=transport, prefer_fastapi=False
+            )
+            self.addCleanup(app.close)
+            relay = app.snaptrade_relay
+            self.assertEqual(relay.session_ttl_seconds, 120.0)
+            now = [5000.0]
+            relay._clock = lambda: now[0]
+            client = VerifyApiTestClient(app)
+            portal = client.post(PORTAL, json={})
+            self.assertEqual(portal.status_code, 200, portal.text)
+            now[0] += 119.0
+            self.assertEqual(client.get(STATUS).json()["active_slots"], 1)
+            now[0] += 2.0
+            self.assertEqual(client.get(STATUS).json()["active_slots"], 0)
+            self.assertIsNone(relay.get_session(portal.json()["session_token"]))
+
+    def test_a_value_that_is_not_a_number_or_out_of_range_stops_start_up(self) -> None:
+        for bad in ("abc", "", " ", "nan", "inf", "59", "1801", "-5", "0"):
+            if not bad.strip():
+                continue  # empty means unset
+            with mock.patch.dict(os.environ, self._env(**{self.NAME: bad}), clear=True):
+                with self.assertRaises(ValueError, msg=bad) as ctx:
+                    ApiConfig.from_env()
+                self.assertIn(self.NAME, str(ctx.exception))
+        for bad_value in (59.0, 1801.0, float("nan")):
+            with self.assertRaises(ValueError):
+                ApiConfig(snaptrade_session_ttl_seconds=bad_value)  # type: ignore[call-arg]
+
+    def test_bounds_are_accepted(self) -> None:
+        for ok in ("60", "1800", "900.5"):
+            with mock.patch.dict(os.environ, self._env(**{self.NAME: ok}), clear=True):
+                self.assertEqual(ApiConfig.from_env().snaptrade_session_ttl_seconds, float(ok))
+
+
 class TestRedirectLimitedToSiteOrigin(_AppCase):
     def _portal(self, client: VerifyApiTestClient, url: str) -> Any:
         return client.post(PORTAL, json={"redirect_url": url})

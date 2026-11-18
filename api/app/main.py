@@ -214,7 +214,8 @@ class VerifyApiApplication:
         )
         self.pipeline_spec = pipeline_spec
         self.snaptrade_relay = snaptrade_relay or SnapTradeRelayCoordinator(
-            http_transport=snaptrade_http_transport
+            http_transport=snaptrade_http_transport,
+            session_ttl_seconds=self.config.snaptrade_session_ttl_seconds,
         )
         self.hyperliquid_http_transport = hyperliquid_http_transport
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import math
 import os
 import secrets
 
@@ -19,6 +20,31 @@ from n170_verify.crypto import (
     PublisherKeyRecord,
     generate_ed25519_keypair,
 )
+
+
+# Lifetime of an unfinished SnapTrade relay session (and the slot it holds).
+SNAPTRADE_SESSION_TTL_ENV = "N170_SNAPTRADE_SESSION_TTL_SECONDS"
+SNAPTRADE_SESSION_TTL_DEFAULT_SECONDS = 1800.0
+SNAPTRADE_SESSION_TTL_MIN_SECONDS = 60.0
+SNAPTRADE_SESSION_TTL_MAX_SECONDS = 1800.0
+
+
+def _check_snaptrade_session_ttl(value: object, *, source: str) -> float:
+    """Return a valid relay session lifetime in seconds, or raise ``ValueError`` naming ``source``."""
+    if isinstance(value, bool):
+        raise ValueError(f"{source} must be a number of seconds, not a boolean")
+    try:
+        seconds = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"{source} must be a number of seconds, got {value!r}") from None
+    if not math.isfinite(seconds) or not (
+        SNAPTRADE_SESSION_TTL_MIN_SECONDS <= seconds <= SNAPTRADE_SESSION_TTL_MAX_SECONDS
+    ):
+        raise ValueError(
+            f"{source} must be between {SNAPTRADE_SESSION_TTL_MIN_SECONDS:g} and "
+            f"{SNAPTRADE_SESSION_TTL_MAX_SECONDS:g} seconds, got {value!r}"
+        )
+    return seconds
 
 
 def utc_now_iso() -> str:
@@ -110,6 +136,7 @@ class ApiConfig:
     snaptrade_consumer_key: str = ""
     snaptrade_dev_key: str = ""
     snaptrade_auth_mode: str = "auto"
+    snaptrade_session_ttl_seconds: float = SNAPTRADE_SESSION_TTL_DEFAULT_SECONDS
 
     worker_timeout_seconds: float = 30.0
     delayed_trade_guard_days: int = 7
@@ -133,6 +160,10 @@ class ApiConfig:
             raise ValueError("worker_timeout_seconds must be > 0")
         if self.delayed_trade_guard_days < 1:
             raise ValueError("delayed_trade_guard_days must be >= 1")
+        self.snaptrade_session_ttl_seconds = _check_snaptrade_session_ttl(
+            self.snaptrade_session_ttl_seconds,
+            source="ApiConfig.snaptrade_session_ttl_seconds",
+        )
 
     @classmethod
     def from_env(cls) -> ApiConfig:
@@ -207,6 +238,13 @@ class ApiConfig:
             os.environ.get("N170_VERIFY_CHECKPOINT_ORIGIN", "").strip()
             or "verify.example.org/continuity-log/v3"
         )
+        # Unset or empty keeps the default; any other value must be valid or start-up stops.
+        raw_ttl = os.environ.get(SNAPTRADE_SESSION_TTL_ENV, "").strip()
+        snaptrade_session_ttl = (
+            _check_snaptrade_session_ttl(raw_ttl, source=SNAPTRADE_SESSION_TTL_ENV)
+            if raw_ttl
+            else SNAPTRADE_SESSION_TTL_DEFAULT_SECONDS
+        )
 
         return cls(
             publisher_keypair=keypair,
@@ -232,6 +270,7 @@ class ApiConfig:
             snaptrade_auth_mode=(
                 os.environ.get("SNAPTRADE_AUTH_MODE", "auto").strip().lower() or "auto"
             ),
+            snaptrade_session_ttl_seconds=snaptrade_session_ttl,
         )
 
 
