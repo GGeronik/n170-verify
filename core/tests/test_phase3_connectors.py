@@ -438,6 +438,12 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
             "balances": [
                 {"account_id": "acct_01", "total": 7200.0, "cash": 5000.0, "updated_at": "2026-01-20T16:00:00Z"}
             ],
+            # A valuation series covering the activity dates keeps them inside the period the
+            # record states (the deposit is under 10% of the opening value).
+            "nav_points": [
+                {"date": "2026-01-04", "value": 60000.0},
+                {"date": "2026-01-20", "value": 66000.0},
+            ],
         }
 
         ledger = adapter.parse_payload(live_payload, blinding_salt_hex=TEST_SALT_HEX)
@@ -684,7 +690,7 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
                             "id": "act-dep-1",
                             "account": {"id": "st-acct-uuid-1"},
                             "type": "CONTRIBUTION",
-                            "amount": 10000.0,
+                            "amount": 1000.0,
                             "currency": {"code": "USD"},
                             "trade_date": "2026-01-02T14:00:00Z",
                         },
@@ -709,6 +715,24 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
                             "trade_date": "2026-01-20T12:00:00Z",
                         },
                     ],
+                )
+
+            if method == "GET" and parsed_u.path == "/api/v1/performance/custom":
+                # Daily valuations for the requested window, so the activities fall inside the
+                # period the record states (the deposit is under 10% of the opening value).
+                self.assertEqual(qs.get("startDate"), ["2026-01-01"])
+                self.assertEqual(qs.get("endDate"), ["2026-01-31"])
+                self.assertEqual(qs.get("frequency"), ["daily"])
+                return (
+                    200,
+                    {"Content-Type": "application/json"},
+                    {
+                        "totalEquityTimeframe": [
+                            {"date": "2026-01-01", "value": 10000.0},
+                            {"date": "2026-01-02", "value": 11050.0},
+                            {"date": "2026-01-31", "value": 11200.0},
+                        ]
+                    },
                 )
 
             if method == "DELETE" and parsed_u.path == "/api/v1/snapTrade/deleteUser":
@@ -768,7 +792,7 @@ class TestSnapTradeAggregatorRelay(unittest.TestCase):
         self.assertIn(FlowKind.DEPOSIT, {f.kind for f in ledger.flows})
         self.assertIn(FlowKind.DIVIDEND, {f.kind for f in ledger.flows})
         self.assertEqual(len(ledger.ending_positions), 1)
-        self.assertEqual(len(ledger.nav_points), 1)
+        self.assertEqual([p.nav_base for p in ledger.nav_points], [10000.0, 11050.0, 11200.0])
         self.assertNotIn("RH-99887766", json.dumps(ledger.to_dict()))
 
         deleted = adapter.delete_user_and_release_slot("founder-user-1")
