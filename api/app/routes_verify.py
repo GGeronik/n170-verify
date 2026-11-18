@@ -48,6 +48,84 @@ _PAPER_HOSTS = frozenset(
 )
 
 
+_WINDOW_FETCH_KEYS = frozenset({"period_start_utc", "period_end_utc"})
+
+# Fetch options a caller may set per live connector: the reporting window and, where the
+# adapter narrows account_scope accordingly, an account subset. Everything else (the
+# account-tag salt, the queried wallet or user, live/paper switches) is set by the server.
+CALLER_FETCH_KWARGS_ALLOWLIST: dict[str, frozenset[str]] = {
+    "hyperliquid": frozenset({"start_date", "end_date"}),
+    "snaptrade": frozenset({"start_date", "end_date", "selected_account_ids"}),
+    "snaptrade_relay": frozenset({"start_date", "end_date", "selected_account_ids"}),
+    "snaptrade_poc": frozenset({"start_date", "end_date", "selected_account_ids"}),
+    "alpaca": _WINDOW_FETCH_KEYS,
+    "trading212": _WINDOW_FETCH_KEYS,
+    "tradier": _WINDOW_FETCH_KEYS | {"selected_account_numbers"},
+    "schwab": _WINDOW_FETCH_KEYS | {"selected_account_hashes"},
+    "binance": _WINDOW_FETCH_KEYS | {"selected_subaccounts", "symbols"},
+    "coinbase": _WINDOW_FETCH_KEYS | {"selected_subaccounts", "symbols"},
+    "kraken": _WINDOW_FETCH_KEYS | {"selected_subaccounts", "symbols"},
+    "bybit": _WINDOW_FETCH_KEYS | {"selected_subaccounts", "symbols"},
+    "ibkr_oauth": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
+    "ctrader": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
+    "ctrader_oauth": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
+    "ibkr_flex_web": frozenset({"flex_token", "query_id"}),
+}
+
+# Request fields that carry a self-reported file or a pre-built ledger.
+_STATEMENT_OR_LEDGER_KEYS: tuple[str, ...] = (
+    "ledger",
+    "flex_xml",
+    "flex_xml_b64",
+    "csv_source",
+    "csv_b64",
+    "raw_statement",
+    "raw_statement_text",
+    "raw_statement_b64",
+    "degiro_account_csv",
+    "degiro_transactions_csv",
+    "degiro_portfolio_csv",
+)
+
+
+def _check_caller_fetch_kwargs(payload: Mapping[str, Any], broker_id: str) -> str | None:
+    """Return a refusal reason when caller fetch options go beyond the broker's allowlist."""
+    raw = payload.get("connector_fetch_kwargs")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        return "connector_fetch_kwargs must be a JSON object"
+    allowed = CALLER_FETCH_KWARGS_ALLOWLIST.get(broker_id, frozenset())
+    refused = sorted(str(k) for k in raw if str(k) not in allowed)
+    if refused:
+        allowed_txt = ", ".join(sorted(allowed)) or "none"
+        return (
+            f"connector_fetch_kwargs field(s) not accepted for broker_id={broker_id!r}: "
+            f"{', '.join(refused)} (accepted: {allowed_txt})"
+        )
+    return None
+
+
+def _check_statement_input_matches_broker(
+    payload: Mapping[str, Any], broker_id: str, config: ApiConfig
+) -> str | None:
+    """Statement or ledger input is accepted only under an offline-export broker id."""
+    if not config.hosted_multi_user_mode:
+        return None
+    present = [k for k in _STATEMENT_OR_LEDGER_KEYS if payload.get(k) is not None]
+    if not present:
+        return None
+    ceiling = config.connector_approval_states.get(
+        broker_id, ProviderApprovalState.OFFLINE_EXPORT_ONLY
+    )
+    if ceiling == ProviderApprovalState.OFFLINE_EXPORT_ONLY:
+        return None
+    return (
+        f"broker_id={broker_id!r} is a live connector; statement or ledger input "
+        f"({', '.join(present)}) must use an offline broker_id such as 'auto_detect'"
+    )
+
+
 def _resolve_environment_tier(payload: Mapping[str, Any]) -> EnvironmentTier:
     if bool(payload.get("is_paper", False)) or bool(payload.get("is_sandbox", False)):
         return EnvironmentTier.PAPER_OR_SANDBOX_REJECTED
@@ -131,6 +209,13 @@ def handle_post_verify(
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
     except GovernanceBlockedError as exc:
         return exc.http_status, {"error": exc.error_code, "detail": str(exc)}
+
+    for refusal in (
+        _check_caller_fetch_kwargs(payload, broker_id),
+        _check_statement_input_matches_broker(payload, broker_id, config),
+    ):
+        if refusal is not None:
+            return 422, {"error": "validation_error", "detail": refusal}
 
     persist_sync = bool(payload.get("persist_sync", False))
     if persist_sync:

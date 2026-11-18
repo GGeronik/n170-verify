@@ -209,6 +209,9 @@ def _call_adapter_fetch(
         call_kwargs["require_live"] = require_live
 
     if extra_fetch_kwargs:
+        if any(str(key).strip().lower() == "blinding_salt_hex" for key in extra_fetch_kwargs):
+            # The account-tag salt is chosen by the operator, never by fetch options.
+            raise ValueError("connector_fetch_kwargs may not set blinding_salt_hex")
         for key, value in extra_fetch_kwargs.items():
             if key == "require_live" and require_live:
                 continue
@@ -926,6 +929,12 @@ _WORKER_STRIPPED_CONNECTOR_KEYS: frozenset[str] = frozenset(
 
 _PAPER_OR_SANDBOX_URL_TOKENS: tuple[str, ...] = ("paper", "sandbox", "demo", "testnet")
 
+# The account-tag salt and the queried account identity come from the server and the
+# connector credentials; fetch options may only narrow what is read.
+_WORKER_SERVER_ONLY_FETCH_KEYS: frozenset[str] = frozenset(
+    {"blinding_salt_hex", "wallet_address", "address", "user"}
+)
+
 
 def _coerce_worker_inline_bytes(val: Any, field_name: str) -> bytes | None:
     if val is None:
@@ -1126,6 +1135,10 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             )
         if k_str.strip().lower() == "require_live":
             continue
+        if k_str.strip().lower() in _WORKER_SERVER_ONLY_FETCH_KEYS:
+            raise ValueError(
+                f"connector_fetch_kwargs.{k_str} is set by the server, not by fetch options"
+            )
         if isinstance(v, (list, tuple)):
             if len(v) > 256 or any(not isinstance(item, (str, int, float, bool)) for item in v):
                 raise ValueError(
@@ -1160,6 +1173,9 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
         if job_payload.get("raw_account_id")
         else None
     )
+    if raw_acct_override and not has_offline_or_ledger:
+        # A live connector derives the account identity from what it reads, not from the request.
+        raise ValueError("raw_account_id is not accepted for live connector input")
 
     explicit_tags = job_payload.get("imported_journal_tags")
     merged_journal_tags: list[str] | None = None

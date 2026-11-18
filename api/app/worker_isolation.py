@@ -833,6 +833,42 @@ def _redact_worker_error_message(message: str, job_payload: Mapping[str, Any]) -
     return redacted[:512]
 
 
+def _clamp_approval_to_worker_origin(
+    requested: ProviderApprovalState,
+    *,
+    returned_broker_id: str,
+    worker_reported_state: Any,
+    config: ApiConfig,
+) -> ProviderApprovalState:
+    """Never sign an approval state above what the worker's actual input supports.
+
+    The candidates are the requested state, the state the worker derived from the input it
+    read, and (hosted) the configured ceiling of the broker id the worker returned. The
+    lowest one is signed. In hosted mode a request that claims more than that is refused.
+    """
+    from app.routes_sync import PROVIDER_APPROVAL_RANK
+
+    candidates: list[ProviderApprovalState] = []
+    if worker_reported_state:
+        candidates.append(ProviderApprovalState(str(worker_reported_state)))
+    if config.hosted_multi_user_mode:
+        candidates.append(
+            config.connector_approval_states.get(
+                returned_broker_id, ProviderApprovalState.OFFLINE_EXPORT_ONLY
+            )
+        )
+    effective = requested
+    for cand in candidates:
+        if cand != effective and PROVIDER_APPROVAL_RANK[cand] <= PROVIDER_APPROVAL_RANK[effective]:
+            effective = cand
+    if effective != requested and config.hosted_multi_user_mode:
+        raise WorkerValidationError(
+            f"provider_approval_state {requested.value!r} is not supported by the verified input "
+            f"(broker_id={returned_broker_id!r} supports {effective.value!r})"
+        )
+    return effective
+
+
 def run_isolated_one_shot_verification(
     request_payload: Mapping[str, Any],
     *,
@@ -1061,10 +1097,30 @@ def run_isolated_one_shot_verification(
 
     redacted = worker_envelope["result"]
     proof_id = str(request_payload.get("proof_id") or f"prf-{uuid.uuid4().hex[:20]}")
-    if not account_scope_explicit and redacted.get("account_scope"):
-        account_scope = AccountScope(str(redacted["account_scope"]))
-    if not claimed_origin_explicit and redacted.get("claimed_origin_assurance"):
-        claimed_origin = OriginAssurance(str(redacted["claimed_origin_assurance"]))
+    if config.hosted_multi_user_mode:
+        # Hosted: the worker that read the input states scope and origin; request values never do.
+        account_scope = (
+            AccountScope(str(redacted["account_scope"]))
+            if redacted.get("account_scope")
+            else AccountScope.SINGLE_ACCOUNT_SURVIVORSHIP_UNVERIFIED
+        )
+        claimed_origin = (
+            OriginAssurance(str(redacted["claimed_origin_assurance"]))
+            if redacted.get("claimed_origin_assurance")
+            else OriginAssurance.SELF_REPORTED
+        )
+    else:
+        if not account_scope_explicit and redacted.get("account_scope"):
+            account_scope = AccountScope(str(redacted["account_scope"]))
+        if not claimed_origin_explicit and redacted.get("claimed_origin_assurance"):
+            claimed_origin = OriginAssurance(str(redacted["claimed_origin_assurance"]))
+
+    provider_approval = _clamp_approval_to_worker_origin(
+        provider_approval,
+        returned_broker_id=str(redacted["broker_id"]).strip().lower(),
+        worker_reported_state=redacted.get("provider_approval_state"),
+        config=config,
+    )
 
     # Reconstruct & Ed25519-sign VerifyProofBundle in parent process from redacted Merkle output
     from n170_verify.crypto import DisclosedLeaf, SIGNING_DOMAIN_BUNDLE, ed25519_sign_domain
