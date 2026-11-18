@@ -31,6 +31,7 @@ from n170_verify.connectors.ccxt_crypto import (
 )
 from n170_verify.connectors.mcp_allowlist_firewall import redact_sensitive_text
 from n170_verify.connectors.statement_csv import reject_unofficial_scraper_credentials
+from n170_verify.performance.calculator import CAPITAL_FLOW_KINDS_FOR_TWR
 from n170_verify.contracts import (
     AccountScope,
     AssetClass,
@@ -206,6 +207,24 @@ def _format_epoch_or_iso_utc(raw_ts: Any, *, field_name: str = "timestamp") -> s
     raise HyperliquidValidationError(f"Unsupported Hyperliquid {field_name} type")
 
 
+def _raw_time_ms(raw_ts: Any) -> int | None:
+    """Millisecond epoch of a Hyperliquid time (timestamps are formatted to whole seconds)."""
+    if isinstance(raw_ts, bool) or raw_ts is None:
+        return None
+    if isinstance(raw_ts, (int, float)) and math.isfinite(float(raw_ts)):
+        f_val = float(raw_ts)
+        return int(f_val) if f_val > 1e11 else int(round(f_val * 1000))
+    if isinstance(raw_ts, str) and raw_ts.strip().isdigit():
+        val = int(raw_ts.strip())
+        return val if val > 100_000_000_000 else val * 1000
+    if isinstance(raw_ts, str) and raw_ts.strip():
+        try:
+            return int(round(parse_utc_timestamp(raw_ts.strip(), field_name="time").timestamp() * 1000))
+        except Exception:
+            return None
+    return None
+
+
 def _parse_finite_float(raw_val: Any, *, field_name: str, default: float | None = None) -> float:
     if raw_val is None or raw_val == "":
         if default is not None:
@@ -269,6 +288,7 @@ def _extract_nav_points_from_history(
     start_bound: datetime | None = None,
     end_bound: datetime | None = None,
     complete_before: datetime | None = None,
+    ms_out: dict[str, int] | None = None,
 ) -> list[NormalizedNavPoint]:
     """Return one close per completed UTC date (plus any wipe-out point), oldest first.
 
@@ -304,6 +324,10 @@ def _extract_nav_points_from_history(
 
         val = _parse_finite_float(raw_v, field_name="accountValueHistory.value", default=0.0)
         all_by_ts[ts_iso] = val
+        if ms_out is not None:
+            raw_ms = _raw_time_ms(raw_t)
+            if raw_ms is not None:
+                ms_out[ts_iso] = raw_ms
 
     ordered_ts = sorted(all_by_ts.keys())
     pos_indices = [idx for idx, ts_key in enumerate(ordered_ts) if all_by_ts[ts_key] > 0.0]
@@ -447,8 +471,9 @@ def _select_scored_nav_series(
     start_bound: datetime | None,
     end_bound: datetime | None,
     as_of: datetime | None = None,
-) -> tuple[str, list[NormalizedNavPoint], bool, str | None]:
-    """Select the portfolio window and return (window, scored NAV points, truncated, warning).
+) -> tuple[str, list[NormalizedNavPoint], bool, str | None, dict[str, int]]:
+    """Select the portfolio window and return (window, scored NAV points, truncated, warning,
+    millisecond time of each scored point).
 
     `allTime` is preferred and enriched with the finer `month`/`week`/`day` snapshots from
     the same response; the merged series is then restricted to daily closes.
@@ -457,6 +482,7 @@ def _select_scored_nav_series(
     complete_before = _completed_dates_before(as_of or datetime.now(timezone.utc), end_bound)
     selected_window = "allTime"
     nav_points: list[NormalizedNavPoint] = []
+    selected_ms: dict[str, int] = {}
     window_groups: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("allTime", ("day", "week", "month", "allTime")),
         ("perpAllTime", ("perpDay", "perpWeek", "perpMonth", "perpAllTime")),
@@ -473,19 +499,23 @@ def _select_scored_nav_series(
             sub_obj = windows.get(sub_win)
             if sub_obj is not None and isinstance(sub_obj.get("accountValueHistory"), list):
                 merged_history.extend(sub_obj["accountValueHistory"])
+        ms_by_ts: dict[str, int] = {}
         pts = _extract_nav_points_from_history(
             merged_history,
             start_bound=start_bound,
             end_bound=end_bound,
             complete_before=complete_before,
+            ms_out=ms_by_ts,
         )
         if len(pts) >= 2:
             selected_window = primary_win
             nav_points = pts
+            selected_ms = ms_by_ts
             break
         if pts and not nav_points:
             selected_window = primary_win
             nav_points = pts
+            selected_ms = ms_by_ts
 
     if len(nav_points) < 2:
         raise HyperliquidValidationError(
@@ -494,7 +524,7 @@ def _select_scored_nav_series(
         )
 
     nav_points, truncated, spacing_warning = _restrict_to_daily_closes(nav_points)
-    return selected_window, nav_points, truncated, spacing_warning
+    return selected_window, nav_points, truncated, spacing_warning, selected_ms
 
 
 class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
@@ -811,7 +841,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         # 1. Extract the scored NAV curve from `portfolio` (daily closes only)
         as_of = parse_utc_timestamp(as_of_utc, field_name="as_of_utc") if as_of_utc else None
-        selected_window, nav_points, _, spacing_warning = _select_scored_nav_series(
+        selected_window, nav_points, _, spacing_warning, nav_ms = _select_scored_nav_series(
             raw_portfolio, start_bound=start_bound, end_bound=end_bound, as_of=as_of
         )
         parser_warnings: list[str] = [spacing_warning] if spacing_warning else []
@@ -819,6 +849,13 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         # fills dated before the first scored close or after the last one are dropped.
         entry_start_bound = parse_utc_timestamp(nav_points[0].timestamp_utc, field_name="nav_points.timestamp_utc")
         entry_end_bound = parse_utc_timestamp(nav_points[-1].timestamp_utc, field_name="nav_points.timestamp_utc")
+        # Timestamps are formatted to whole seconds, so a capital flow in the same second as a
+        # scored close but after it (at millisecond precision) would be read as on the wrong side
+        # of that close: its interval cannot be computed and the record is refused.
+        boundary_close_ms = {
+            nav_points[0].timestamp_utc: nav_ms.get(nav_points[0].timestamp_utc),
+            nav_points[-1].timestamp_utc: nav_ms.get(nav_points[-1].timestamp_utc),
+        }
 
         perp_only_window = selected_window.startswith("perp")
 
@@ -847,6 +884,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
             if ts_dt > entry_end_bound:
                 continue
 
+            flows_before_entry = len(flows)
             explicit_usdc_raw = (
                 delta.get("usdc")
                 if delta.get("usdc") is not None
@@ -1206,20 +1244,13 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                     description="Hyperliquid unvalued spot token transfer",
                                 )
                             )
-            elif lower_type == "vaultdeposit":
-                if abs(usdc_val) > 0.0:
-                    flows.append(
-                        NormalizedFlow(
-                            timestamp_utc=ts_iso,
-                            kind=FlowKind.WITHDRAWAL,
-                            amount=-abs(usdc_val),
-                            currency="USD",
-                            transfer_type="vaultDeposit",
-                            description="Hyperliquid vault deposit allocation",
-                        )
-                    )
-            elif lower_type in {"vaultwithdraw", "vaultdistribution"}:
-                net_vault = (
+            elif lower_type in {"vaultdeposit", "vaultwithdraw"}:
+                # The combined account value already includes equity held in vaults (checked
+                # against the service on 2026-11-18: the combined windows show no change at a vault
+                # withdrawal, the perp-only windows show the money arriving in the perp account).
+                # So on the combined window a vault move is internal and carries no external flow;
+                # on a perp-only window the money leaves or enters the perp account.
+                vault_amt = (
                     _parse_finite_float(
                         delta.get("netWithdrawnUsd"),
                         field_name="delta.vaultWithdraw.netWithdrawnUsd",
@@ -1228,17 +1259,30 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     if lower_type == "vaultwithdraw"
                     else usdc_val
                 )
-                if abs(net_vault) > 0.0:
-                    flows.append(
-                        NormalizedFlow(
-                            timestamp_utc=ts_iso,
-                            kind=FlowKind.DEPOSIT,
-                            amount=abs(net_vault),
-                            currency="USD",
-                            transfer_type=delta_type,
-                            description="Hyperliquid vault distribution/withdrawal",
+                if abs(vault_amt) > 0.0:
+                    into_vault = lower_type == "vaultdeposit"
+                    if perp_only_window:
+                        flows.append(
+                            NormalizedFlow(
+                                timestamp_utc=ts_iso,
+                                kind=FlowKind.WITHDRAWAL if into_vault else FlowKind.DEPOSIT,
+                                amount=-abs(vault_amt) if into_vault else abs(vault_amt),
+                                currency="USD",
+                                transfer_type=delta_type,
+                                description="Hyperliquid vault move across the perp account",
+                            )
                         )
-                    )
+                    else:
+                        flows.append(
+                            NormalizedFlow(
+                                timestamp_utc=ts_iso,
+                                kind=FlowKind.OTHER_INTERNAL,
+                                amount=-abs(vault_amt) if into_vault else abs(vault_amt),
+                                currency="USD",
+                                transfer_type=delta_type,
+                                description="Hyperliquid vault move inside the combined account value",
+                            )
+                        )
             elif lower_type == "rewardsclaim":
                 if abs(usdc_val) > 0.0:
                     flows.append(
@@ -1271,15 +1315,60 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         "the record is withheld because its effect on returns cannot be computed"
                     )
 
+            close_ms = boundary_close_ms.get(ts_iso)
+            entry_ms = _raw_time_ms(raw_time)
+            if (
+                close_ms is not None
+                and entry_ms is not None
+                and entry_ms > close_ms
+                and any(f.kind in CAPITAL_FLOW_KINDS_FOR_TWR for f in flows[flows_before_entry:])
+            ):
+                raise HyperliquidValidationError(
+                    f"A Hyperliquid cash flow falls in the same second as the scored close at {ts_iso} but "
+                    "after it; the record is withheld because that interval cannot be computed"
+                )
+
         # 3. Normalize `userFills` into `NormalizedTrade` records (7-day embargo enforced downstream)
         trades: list[NormalizedTrade] = []
         seen_fill_ids: set[str] = set()
         fills_list = raw_fills if isinstance(raw_fills, list) else []
+        # A coin whose position may already be open at the first scored close has none of its
+        # fills in the ledger: closing fills without their opening fills would be matched as
+        # round trips that never happened. That is a coin with any fill before the first close,
+        # or whose first fill inside the period reports a non-zero starting position.
+        first_fill_in_period: dict[str, tuple[int, Any]] = {}
+        coins_open_at_start: set[str] = set()
+        for fill in fills_list:
+            if not isinstance(fill, Mapping):
+                continue
+            coin_key = str(fill.get("coin") or fill.get("symbol") or "").strip().upper()
+            raw_t = fill.get("time") if fill.get("time") is not None else fill.get("timestamp")
+            if not coin_key or raw_t is None:
+                continue
+            f_dt = parse_utc_timestamp(
+                _format_epoch_or_iso_utc(raw_t, field_name="userFills.time"), field_name="userFills.time"
+            )
+            if f_dt < entry_start_bound:
+                coins_open_at_start.add(coin_key)
+            elif f_dt <= entry_end_bound:
+                f_ms = _raw_time_ms(raw_t) or 0
+                if coin_key not in first_fill_in_period or f_ms < first_fill_in_period[coin_key][0]:
+                    first_fill_in_period[coin_key] = (f_ms, fill.get("startPosition"))
+        for coin_key, (_, start_pos) in first_fill_in_period.items():
+            if abs(_parse_finite_float(start_pos, field_name="userFills.startPosition", default=0.0)) > 0.0:
+                coins_open_at_start.add(coin_key)
+        if coins_open_at_start:
+            parser_warnings.append(
+                "Fills in "
+                + ", ".join(sorted(coins_open_at_start))
+                + " are left out of the ledger: a position in each may be open at the start of the "
+                "period, so its trades cannot be matched into round trips."
+            )
         for idx, fill in enumerate(fills_list):
             if not isinstance(fill, Mapping):
                 continue
             coin_raw = str(fill.get("coin") or fill.get("symbol") or "").strip()
-            if not coin_raw:
+            if not coin_raw or coin_raw.upper() in coins_open_at_start:
                 continue
             raw_time = fill.get("time") if fill.get("time") is not None else fill.get("timestamp")
             if raw_time is None:
@@ -1466,7 +1555,7 @@ class HyperliquidPublicReadOnlyAdapter(ReadOnlyBrokerAdapter):
         # first scored close are not needed (and are dropped by `parse_payload`). A portfolio
         # without a scorable series is withheld here, before any ledger call.
         as_of = parse_utc_timestamp(as_of_utc, field_name="as_of_utc") if as_of_utc else None
-        _, scored_nav, _, _ = _select_scored_nav_series(
+        _, scored_nav, _, _, _ = _select_scored_nav_series(
             portfolio_data, start_bound=start_bound, end_bound=end_bound, as_of=as_of
         )
         scored_start_ms = int(parse_utc_timestamp(scored_nav[0].timestamp_utc).timestamp() * 1000)

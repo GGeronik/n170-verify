@@ -355,7 +355,9 @@ def test_recent_fills_reaching_back_past_the_period_start_need_no_paging() -> No
         _ranged_transport(fills=[], recent_fills=recent, cap=2000, queries=queries)
     ).fetch_canonical_ledger(blinding_salt_hex=SALT)
     assert "userFillsByTime" not in [q["type"] for q in queries]
-    assert ledger.trades
+    # The fills straddle the first close, so the coin may be open at the start and is left out.
+    assert ledger.trades == []
+    assert any("ETH" in w for w in ledger.parser_warnings)
 
 
 def test_short_final_pages_still_produce_a_record() -> None:
@@ -448,7 +450,7 @@ def test_entries_before_the_first_daily_close_are_dropped() -> None:
                 {"time": early + 1000, "delta": {"type": "someFutureType", "usdc": "700"}},
                 {"time": inside, "delta": {"type": "deposit", "usdc": "300"}},
             ],
-            "fills": [_fill(early, 1), _fill(inside, 2)],
+            "fills": [_fill(early, 1), _coin_fill("BTC", inside, 2, "B", "90000")],
         }
     )
     assert [f.amount for f in ledger.flows] == [300.0]
@@ -687,7 +689,7 @@ def test_entries_between_requested_start_and_first_scored_close_are_dropped() ->
         {
             "portfolio": _real_shape_portfolio(),
             "ledger_updates": [{"time": day + 9 * 3_600_000, "delta": {"type": "deposit", "usdc": "100"}}],
-            "fills": [_fill(day + 10 * 3_600_000, 1), _fill(_ms(2026, 11, 12, 10), 2)],
+            "fills": [_fill(day + 10 * 3_600_000, 1), _coin_fill("BTC", _ms(2026, 11, 12, 10), 2, "B", "90000")],
         },
         start_date="2026-11-10",
         as_of_utc=AS_OF,
@@ -788,3 +790,168 @@ def test_ledger_longer_than_the_entry_ceiling_withholds_record() -> None:
         _adapter(_ranged_transport(ledger_entries=entries, cap=2000)).fetch_canonical_ledger(
             blinding_salt_hex=SALT
         )
+
+
+# ---------------------------------------------------------------------------
+# Vault moves: internal on the combined window, flows on a perp-only window
+# ---------------------------------------------------------------------------
+
+
+def _vault_payload(window: str, history: list[list[Any]], delta: dict[str, Any], t_event: int) -> dict[str, Any]:
+    return {
+        "portfolio": [[window, {"accountValueHistory": history}]],
+        "ledger_updates": [{"time": t_event, "delta": delta}],
+        "fills": [],
+    }
+
+
+def _flat_history(days: int, nav: str = "10000") -> list[list[Any]]:
+    return [[_ms(2026, 1, 1, 23) + i * DAY_MS, nav] for i in range(days)]
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [
+        {"type": "vaultDeposit", "usdc": "900", "vault": "0x" + "33" * 20},
+        {
+            "type": "vaultWithdraw",
+            "basis": "850",
+            "closingCost": "0",
+            "commission": "0",
+            "netWithdrawnUsd": "900",
+            "requestedUsd": "900",
+            "user": WALLET,
+            "vault": "0x" + "33" * 20,
+        },
+    ],
+)
+def test_vault_move_on_the_combined_window_is_internal_and_fabricates_no_return(delta: dict[str, Any]) -> None:
+    # Shaped like the service: the combined account value already includes vault equity, so
+    # it does not change across the vault move.
+    ledger = _parse(_vault_payload("allTime", _flat_history(10), delta, _ms(2026, 1, 5, 12)))
+    assert all(f.kind == FlowKind.OTHER_INTERNAL for f in ledger.flows)
+    perf = calculate_portfolio_performance_detailed(ledger)
+    assert not perf.withheld
+    assert perf.summary.twr_decimal == pytest.approx(0.0)
+
+
+def test_vault_deposit_on_a_perp_only_window_is_a_withdrawal_from_the_perp_account() -> None:
+    history = _flat_history(4) + [[_ms(2026, 1, 1, 23) + i * DAY_MS, "9100"] for i in range(4, 10)]
+    ledger = _parse(
+        _vault_payload(
+            "perpAllTime", history, {"type": "vaultDeposit", "usdc": "900", "vault": "0x" + "33" * 20}, _ms(2026, 1, 5, 12)
+        )
+    )
+    assert [f.kind for f in ledger.flows] == [FlowKind.WITHDRAWAL]
+    perf = calculate_portfolio_performance_detailed(ledger)
+    assert not perf.withheld
+    assert perf.summary.twr_decimal == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [
+        {"type": "vaultCreate", "fee": "100", "usdc": "1000", "vault": "0x" + "33" * 20},
+        {"type": "vaultDistribution", "usdc": "250", "vault": "0x" + "33" * 20},
+    ],
+)
+@pytest.mark.parametrize("window", ["allTime", "perpAllTime"])
+def test_vault_entries_without_evidence_refuse_the_record(window: str, delta: dict[str, Any]) -> None:
+    with pytest.raises(HyperliquidValidationError, match="ledger entry type"):
+        _parse(_vault_payload(window, _flat_history(10), delta, _ms(2026, 1, 5, 12)))
+
+
+# ---------------------------------------------------------------------------
+# Positions open at the period start
+# ---------------------------------------------------------------------------
+
+
+def _coin_fill(coin: str, t: int, tid: int, side: str, px: str, start_position: str | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"coin": coin, "px": px, "sz": "1", "side": side, "time": t, "fee": "0.1", "tid": tid}
+    if start_position is not None:
+        out["startPosition"] = start_position
+    return out
+
+
+def test_coin_with_a_fill_before_the_first_close_has_no_fills_in_the_ledger() -> None:
+    history = _daily_history(_ms(2026, 1, 5), 20)
+    ledger = _parse(
+        {
+            "portfolio": [["allTime", {"accountValueHistory": history}]],
+            "ledger_updates": [],
+            "fills": [
+                _coin_fill("ETH", _ms(2026, 1, 3), 1, "B", "3000"),
+                _coin_fill("ETH", _ms(2026, 1, 8), 2, "A", "3300"),
+                _coin_fill("ETH", _ms(2026, 1, 10), 3, "B", "3100"),
+                _coin_fill("ETH", _ms(2026, 1, 12), 4, "A", "3150"),
+                _coin_fill("BTC", _ms(2026, 1, 9), 5, "B", "90000"),
+                _coin_fill("BTC", _ms(2026, 1, 11), 6, "A", "91000"),
+            ],
+        }
+    )
+    assert sorted(t.native_entry_id for t in ledger.trades) == ["hl-tid-5", "hl-tid-6"]
+    assert any("ETH" in w and "open at the start" in w for w in ledger.parser_warnings)
+
+
+def test_coin_whose_first_kept_fill_reports_a_starting_position_has_no_fills_in_the_ledger() -> None:
+    history = _daily_history(_ms(2026, 1, 5), 20)
+    ledger = _parse(
+        {
+            "portfolio": [["allTime", {"accountValueHistory": history}]],
+            "ledger_updates": [],
+            "fills": [
+                _coin_fill("ETH", _ms(2026, 1, 8), 2, "A", "3300", start_position="1"),
+                _coin_fill("ETH", _ms(2026, 1, 10), 3, "B", "3100", start_position="0"),
+                _coin_fill("BTC", _ms(2026, 1, 9), 5, "B", "90000", start_position="0"),
+                _coin_fill("BTC", _ms(2026, 1, 11), 6, "A", "91000", start_position="1"),
+            ],
+        }
+    )
+    assert sorted(t.native_entry_id for t in ledger.trades) == ["hl-tid-5", "hl-tid-6"]
+    assert any("ETH" in w for w in ledger.parser_warnings)
+
+
+# ---------------------------------------------------------------------------
+# Capital flows sharing a second with a scored close
+# ---------------------------------------------------------------------------
+
+
+def _ms_history() -> list[list[Any]]:
+    return [[_ms(2026, 1, 1, 23) + 30 * 60_000 + i * DAY_MS, f"{10000 + i:.1f}"] for i in range(10)]
+
+
+def test_flow_in_the_same_second_after_the_opening_close_refuses_the_record() -> None:
+    first_close = _ms_history()[0][0]
+    with pytest.raises(HyperliquidValidationError, match="same second"):
+        _parse(
+            {
+                "portfolio": [["allTime", {"accountValueHistory": _ms_history()}]],
+                "ledger_updates": [{"time": first_close + 400, "delta": {"type": "deposit", "usdc": "500"}}],
+                "fills": [],
+            }
+        )
+
+
+def test_flow_in_the_same_second_after_the_last_close_refuses_the_record() -> None:
+    last_close = _ms_history()[-1][0]
+    with pytest.raises(HyperliquidValidationError, match="same second"):
+        _parse(
+            {
+                "portfolio": [["allTime", {"accountValueHistory": _ms_history()}]],
+                "ledger_updates": [{"time": last_close + 300, "delta": {"type": "withdraw", "usdc": "300"}}],
+                "fills": [],
+            }
+        )
+
+
+def test_flow_in_the_same_second_before_the_opening_close_is_outside_the_period() -> None:
+    history = _ms_history()
+    history[0][0] += 600
+    ledger = _parse(
+        {
+            "portfolio": [["allTime", {"accountValueHistory": history}]],
+            "ledger_updates": [{"time": history[0][0] - 400, "delta": {"type": "deposit", "usdc": "500"}}],
+            "fills": [],
+        }
+    )
+    assert not calculate_portfolio_performance_detailed(ledger).withheld
