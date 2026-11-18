@@ -56,9 +56,9 @@ def _build_hyperliquid_mock_transport(
     calls: list[dict[str, Any]] = []
 
     t0 = int(dt.datetime(2026, 1, 10, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-    t1 = int(dt.datetime(2026, 1, 15, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-    t2 = int(dt.datetime(2026, 1, 20, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-    t3 = int(dt.datetime(2026, 1, 25, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+    t1 = int(dt.datetime(2026, 1, 11, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+    t2 = int(dt.datetime(2026, 1, 12, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+    t3 = int(dt.datetime(2026, 1, 13, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
 
     def transport(
         method: str,
@@ -345,8 +345,10 @@ class TestHyperliquidPublicReadOnlyAdapter(unittest.TestCase):
         )
         ledger = adapter.fetch_canonical_ledger(blinding_salt_hex=TEST_SALT_HEX)
 
+        # The second ledger query confirms the history is complete (a page is final only when it adds nothing).
         self.assertEqual([c["body"]["type"] for c in calls], [
             "portfolio",
+            "userNonFundingLedgerUpdates",
             "userNonFundingLedgerUpdates",
             "userFills",
         ])
@@ -571,9 +573,9 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
 
         adapter = HyperliquidPublicReadOnlyAdapter()
         t0 = int(dt.datetime(2026, 1, 1, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t1 = int(dt.datetime(2026, 1, 5, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t2 = int(dt.datetime(2026, 1, 10, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t3 = int(dt.datetime(2026, 1, 15, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t1 = int(dt.datetime(2026, 1, 2, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t2 = int(dt.datetime(2026, 1, 3, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t3 = int(dt.datetime(2026, 1, 4, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
 
         # 1. Self-transfers (`user == destination == wallet`) across DEXes stay OTHER_INTERNAL
         ledger_self = adapter.parse_payload(
@@ -1002,9 +1004,9 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
         from n170_verify.pipeline import ingest_portfolio_ledger
 
         t0 = int(dt.datetime(2026, 1, 10, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t_boundary = int(dt.datetime(2026, 1, 15, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t_end = int(dt.datetime(2026, 1, 20, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-        t_after = int(dt.datetime(2026, 1, 25, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t_boundary = int(dt.datetime(2026, 1, 11, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t_end = int(dt.datetime(2026, 1, 12, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        t_after = int(dt.datetime(2026, 1, 13, 0, 0, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
 
         ledger_queries: list[dict[str, Any]] = []
 
@@ -1103,11 +1105,12 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
             },
             blinding_salt_hex=TEST_SALT_HEX,
             period_start_utc="2026-01-10T00:00:00Z",
-            period_end_utc="2026-01-20T00:00:00Z",
+            period_end_utc="2026-01-12T00:00:00Z",
         )
 
         # Explicit period bounds were forwarded to startTime / endTime on POST /info
-        self.assertEqual(len(ledger_queries), 2)
+        # Page 3 confirms the history is complete (a page is final only when it adds nothing).
+        self.assertEqual(len(ledger_queries), 3)
         self.assertEqual(ledger_queries[0]["startTime"], t0)
         self.assertEqual(ledger_queries[0]["endTime"], t_end)
         # Page 2 used inclusive boundary cursor `t_boundary` (NOT `t_boundary + 1`)
@@ -1401,7 +1404,7 @@ class TestSnapTradePersonalKeyAdapter(unittest.TestCase):
                 return (
                     200,
                     {"Content-Type": "application/json"},
-                    [["allTime", {"accountValueHistory": [[d1_ms, "10000.0"], [d3_ms, "12000.0"]]}]],
+                    [["allTime", {"accountValueHistory": [[d1_ms, "10000.0"], [d2_ms, "11000.0"], [d3_ms, "12000.0"]]}]],
                 )
             if q_type == "userNonFundingLedgerUpdates":
                 return (200, {"Content-Type": "application/json"}, [])

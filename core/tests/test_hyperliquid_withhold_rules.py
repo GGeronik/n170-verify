@@ -20,6 +20,7 @@ from n170_verify.connectors import (
     HyperliquidServiceError,
     HyperliquidValidationError,
 )
+from n170_verify.connectors import hyperliquid as hyperliquid_module
 from n170_verify.connectors.hyperliquid import (
     HYPERLIQUID_FILLS_PAGE_SIZE,
     HYPERLIQUID_LEDGER_PAGE_SIZE,
@@ -87,6 +88,9 @@ def test_wipe_out_spanning_several_zero_days_before_deposit_withholds_record() -
         [_ms(2026, 1, 2), "15000"],
         [_ms(2026, 1, 3), "0"],
         [_ms(2026, 1, 4), "0"],
+        [_ms(2026, 1, 5), "0"],
+        [_ms(2026, 1, 6), "0"],
+        [_ms(2026, 1, 7), "0"],
         [_ms(2026, 1, 8), "10000"],
         [_ms(2026, 1, 9), "12000"],
     ]
@@ -213,9 +217,8 @@ def test_failed_fill_page_withholds_record() -> None:
         _adapter(transport).fetch_canonical_ledger(blinding_salt_hex=SALT)
 
 
-def test_fill_history_longer_than_page_limit_withholds_record() -> None:
+def _fresh_fill_pages_transport(page_len: int, pages: list[int]):
     base = _ms(2026, 1, 2)
-    pages: list[int] = []
 
     def transport(method: str, url: str, headers: dict[str, str], body: bytes):
         req = json.loads(body.decode("utf-8"))
@@ -228,16 +231,129 @@ def test_fill_history_longer_than_page_limit_withholds_record() -> None:
         if req["type"] == "userFillsByTime":
             page_no = len(pages)
             pages.append(page_no)
-            start = base + page_no * HYPERLIQUID_FILLS_PAGE_SIZE
-            return 200, {}, [
-                _fill(start + i, 100_000 + page_no * HYPERLIQUID_FILLS_PAGE_SIZE + i)
-                for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)
-            ]
+            start = base + page_no * page_len
+            return 200, {}, [_fill(start + i, 100_000 + page_no * page_len + i) for i in range(page_len)]
         raise AssertionError(req["type"])
 
-    with pytest.raises(HyperliquidValidationError, match="fill"):
-        _adapter(transport).fetch_canonical_ledger(blinding_salt_hex=SALT)
+    return transport
+
+
+def test_fill_history_reaching_the_available_limit_withholds_record() -> None:
+    pages: list[int] = []
+    with pytest.raises(HyperliquidValidationError, match="most recent"):
+        _adapter(_fresh_fill_pages_transport(HYPERLIQUID_FILLS_PAGE_SIZE, pages)).fetch_canonical_ledger(
+            blinding_salt_hex=SALT
+        )
+    assert len(pages) == hyperliquid_module.HYPERLIQUID_FILLS_BY_TIME_AVAILABLE // HYPERLIQUID_FILLS_PAGE_SIZE
+
+
+def test_fill_history_longer_than_page_limit_withholds_record() -> None:
+    pages: list[int] = []
+    with pytest.raises(HyperliquidValidationError, match="pages"):
+        _adapter(_fresh_fill_pages_transport(100, pages)).fetch_canonical_ledger(blinding_salt_hex=SALT)
     assert len(pages) == MAX_HYPERLIQUID_FILL_PAGES
+
+
+def _ranged_transport(
+    *,
+    ledger_entries: list[dict[str, Any]] | None = None,
+    fills: list[dict[str, Any]] | None = None,
+    recent_fills: list[dict[str, Any]] | None = None,
+    cap: int,
+    queries: list[dict[str, Any]] | None = None,
+    portfolio: list[Any] | None = None,
+):
+    """Serve entries with time >= startTime, at most ``cap`` per response, ascending."""
+    ledger_entries = ledger_entries or []
+    fills = fills or []
+
+    def transport(method: str, url: str, headers: dict[str, str], body: bytes):
+        req = json.loads(body.decode("utf-8"))
+        if queries is not None:
+            queries.append(req)
+        if req["type"] == "portfolio":
+            return 200, {}, portfolio if portfolio is not None else _portfolio_response()
+        if req["type"] == "userNonFundingLedgerUpdates":
+            return 200, {}, [e for e in ledger_entries if e["time"] >= req["startTime"]][:cap]
+        if req["type"] == "userFills":
+            return 200, {}, recent_fills if recent_fills is not None else fills[-HYPERLIQUID_FILLS_PAGE_SIZE:]
+        if req["type"] == "userFillsByTime":
+            return 200, {}, [f for f in fills if f["time"] >= req["startTime"]][:cap]
+        raise AssertionError(req["type"])
+
+    return transport
+
+
+def test_short_ledger_pages_are_not_taken_as_final() -> None:
+    base = _ms(2026, 1, 2)
+    entries = [_ledger_entry(base + i, i) for i in range(1500)]
+    ledger = _adapter(_ranged_transport(ledger_entries=entries, cap=500)).fetch_canonical_ledger(
+        blinding_salt_hex=SALT
+    )
+    assert len(ledger.flows) == 1500
+
+
+def test_short_fill_pages_are_not_taken_as_final() -> None:
+    base = _ms(2026, 1, 2)
+    fills = [_fill(base + i * 10, i + 1) for i in range(3000)]
+    ledger = _adapter(_ranged_transport(fills=fills, cap=500)).fetch_canonical_ledger(blinding_salt_hex=SALT)
+    assert len(ledger.trades) == 3000
+
+
+def test_full_page_inside_one_timestamp_withholds_record() -> None:
+    base = _ms(2026, 1, 2)
+    same_ms = _ms(2026, 1, 3)
+    entries = [_ledger_entry(base + i, i) for i in range(1000)] + [
+        _ledger_entry(same_ms, 1000 + i) for i in range(3000)
+    ]
+    with pytest.raises(HyperliquidValidationError, match="one timestamp"):
+        _adapter(_ranged_transport(ledger_entries=entries, cap=2000)).fetch_canonical_ledger(
+            blinding_salt_hex=SALT
+        )
+
+
+def _non_list_transport(bad_type: str):
+    base = _ms(2026, 1, 2)
+
+    def transport(method: str, url: str, headers: dict[str, str], body: bytes):
+        req = json.loads(body.decode("utf-8"))
+        if req["type"] == bad_type:
+            return 200, {}, {"unexpected": "object"}
+        if req["type"] == "portfolio":
+            return 200, {}, _portfolio_response()
+        if req["type"] == "userNonFundingLedgerUpdates":
+            return 200, {}, []
+        if req["type"] == "userFills":
+            return 200, {}, [_fill(base + i, 10_000 + i) for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)]
+        raise AssertionError(req["type"])
+
+    return transport
+
+
+@pytest.mark.parametrize("bad_type", ["userNonFundingLedgerUpdates", "userFills", "userFillsByTime"])
+def test_page_body_that_is_not_a_list_is_an_upstream_failure(bad_type: str) -> None:
+    with pytest.raises(HyperliquidServiceError, match="list"):
+        _adapter(_non_list_transport(bad_type)).fetch_canonical_ledger(blinding_salt_hex=SALT)
+
+
+def test_capped_recent_fills_with_no_paged_fills_withholds_record() -> None:
+    base = _ms(2026, 1, 2)
+    recent = [_fill(base + i, 10_000 + i) for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)]
+    with pytest.raises(HyperliquidValidationError, match="fill"):
+        _adapter(_ranged_transport(fills=[], recent_fills=recent, cap=2000)).fetch_canonical_ledger(
+            blinding_salt_hex=SALT
+        )
+
+
+def test_recent_fills_reaching_back_past_the_period_start_need_no_paging() -> None:
+    queries: list[dict[str, Any]] = []
+    before_start = _ms(2025, 12, 20)
+    recent = [_fill(before_start + i * 1000, 10_000 + i) for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)]
+    ledger = _adapter(
+        _ranged_transport(fills=[], recent_fills=recent, cap=2000, queries=queries)
+    ).fetch_canonical_ledger(blinding_salt_hex=SALT)
+    assert "userFillsByTime" not in [q["type"] for q in queries]
+    assert ledger.trades
 
 
 def test_short_final_pages_still_produce_a_record() -> None:
@@ -299,11 +415,57 @@ def test_daily_series_is_unchanged_and_carries_no_spacing_warning() -> None:
     assert ledger.parser_warnings == []
 
 
-def test_coarse_only_series_is_kept_with_a_spacing_warning() -> None:
+def test_coarse_only_series_withholds_record() -> None:
     history = [[_ms(2026, 1, 1) + i * 7 * DAY_MS, f"{10000 + i * 100:.1f}"] for i in range(5)]
-    ledger = _parse({"portfolio": [["allTime", {"accountValueHistory": history}]], "ledger_updates": [], "fills": []})
-    assert len(ledger.nav_points) == 5
-    assert any("more than one day" in w for w in ledger.parser_warnings)
+    with pytest.raises(HyperliquidValidationError, match="most recent month"):
+        _parse({"portfolio": [["allTime", {"accountValueHistory": history}]], "ledger_updates": [], "fills": []})
+
+
+def test_two_points_several_days_apart_withhold_record() -> None:
+    history = [[_ms(2026, 1, 1), "10000"], [_ms(2026, 1, 6), "11000"]]
+    with pytest.raises(HyperliquidValidationError, match="most recent month"):
+        _parse({"portfolio": [["allTime", {"accountValueHistory": history}]], "ledger_updates": [], "fills": []})
+
+
+def test_end_date_older_than_daily_history_withholds_record() -> None:
+    with pytest.raises(HyperliquidValidationError, match="most recent month"):
+        _parse(
+            {"portfolio": _coarse_then_daily_portfolio(), "ledger_updates": [], "fills": []},
+            end_date="2025-11-20",
+        )
+
+
+def test_entries_before_the_first_daily_close_are_dropped() -> None:
+    early = _ms(2025, 10, 15)
+    inside = _ms(2025, 12, 10)
+    ledger = _parse(
+        {
+            "portfolio": _coarse_then_daily_portfolio(),
+            "ledger_updates": [
+                {"time": early, "delta": {"type": "deposit", "usdc": "500"}},
+                {"time": early + 1000, "delta": {"type": "someFutureType", "usdc": "700"}},
+                {"time": inside, "delta": {"type": "deposit", "usdc": "300"}},
+            ],
+            "fills": [_fill(early, 1), _fill(inside, 2)],
+        }
+    )
+    assert [f.amount for f in ledger.flows] == [300.0]
+    assert [t.native_entry_id for t in ledger.trades] == ["hl-tid-2"]
+
+
+def test_ledger_and_fill_paging_start_at_the_first_daily_close() -> None:
+    queries: list[dict[str, Any]] = []
+    first_daily = _ms(2025, 12, 1)
+    recent = [_fill(_ms(2025, 12, 5) + i, 10_000 + i) for i in range(HYPERLIQUID_FILLS_PAGE_SIZE)]
+    _adapter(
+        _ranged_transport(
+            fills=recent, recent_fills=recent, cap=2000, queries=queries, portfolio=_coarse_then_daily_portfolio()
+        )
+    ).fetch_canonical_ledger(blinding_salt_hex=SALT)
+    ledger_starts = [q["startTime"] for q in queries if q["type"] == "userNonFundingLedgerUpdates"]
+    fill_starts = [q["startTime"] for q in queries if q["type"] == "userFillsByTime"]
+    assert ledger_starts[0] == first_daily
+    assert fill_starts and fill_starts[0] == first_daily
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +520,29 @@ def test_outbound_unvalued_token_still_withholds(window: str) -> None:
         )
     )
     assert calculate_portfolio_performance_detailed(ledger).withheld
+
+
+def _self_send_crossing_perp(token: str = "HYPE") -> dict[str, Any]:
+    return {
+        "type": "send",
+        "user": WALLET,
+        "destination": WALLET,
+        "sourceDex": "spot",
+        "destinationDex": "",
+        "token": token,
+        "amount": "10",
+    }
+
+
+def test_unvalued_self_transfer_crossing_perp_boundary_withholds_on_perp_window() -> None:
+    ledger = _parse(_token_payload("perpAllTime", _self_send_crossing_perp()))
+    assert calculate_portfolio_performance_detailed(ledger).withheld
+
+
+def test_unvalued_self_transfer_on_combined_window_stays_internal() -> None:
+    ledger = _parse(_token_payload("allTime", _self_send_crossing_perp()))
+    assert [f.kind for f in ledger.flows] == [FlowKind.OTHER_INTERNAL]
+    assert not calculate_portfolio_performance_detailed(ledger).withheld
 
 
 def test_unvalued_token_without_counterparty_still_withholds_on_perp_window() -> None:
