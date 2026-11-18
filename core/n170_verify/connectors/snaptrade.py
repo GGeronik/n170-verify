@@ -1295,6 +1295,15 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 if h_aid and not any(_extract_account_id(a) == h_aid for a in raw_accounts_list):
                     raw_accounts_list.append(h_acct)
 
+        selected_set = (
+            {str(x).strip() for x in selected_account_ids if str(x).strip()}
+            if selected_account_ids
+            else None
+        )
+
+        def _in_scope(account_id: str) -> bool:
+            return not selected_set or account_id in selected_set
+
         raw_acct_ids: list[str] = []
         raw_identifiers_to_scrub: list[str] = []
         is_paper_detected = False
@@ -1339,12 +1348,20 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 acct.get("currency") or meta.get("currency") or bal_total_ccy,
                 default="",
             )
-            if ccy and len(ccy) == 3 and not inferred_acct_ccy:
+            # The base currency comes only from accounts in scope.
+            if ccy and len(ccy) == 3 and not inferred_acct_ccy and _in_scope(aid):
                 inferred_acct_ccy = ccy
 
         explicit_base = _extract_currency_code(data.get("base_currency"), default="")
         inferred_holdings_ccy = ""
         for h_entry in holdings_list:
+            h_scope_acct = h_entry.get("account")
+            if not _in_scope(
+                _extract_account_id(h_scope_acct)
+                if isinstance(h_scope_acct, Mapping)
+                else _extract_account_id(h_entry)
+            ):
+                continue
             h_tot = h_entry.get("total_value")
             if isinstance(h_tot, Mapping):
                 cand = _extract_currency_code(h_tot.get("currency"), default="")
@@ -1368,7 +1385,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             inferred_bal_ccy = _extract_currency_code(raw_bals_top.get("currency"), default="")
         elif isinstance(raw_bals_top, list):
             for b_item in raw_bals_top:
-                if isinstance(b_item, Mapping):
+                if isinstance(b_item, Mapping) and _in_scope(str(b_item.get("account_id") or "").strip()):
                     cand = _extract_currency_code(b_item.get("currency"), default="")
                     if cand and len(cand) == 3:
                         inferred_bal_ccy = cand
@@ -1389,11 +1406,6 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         # A selection must name accounts that were actually read for this connection, and it
         # applies before any value is converted, so a deselected account never affects the record.
-        selected_set = (
-            {str(x).strip() for x in selected_account_ids if str(x).strip()}
-            if selected_account_ids
-            else None
-        )
         if selected_set and not selected_set <= set(raw_acct_ids):
             raise SnapTradeSelectionError(
                 "The selected account(s) are not among the accounts read for this connection; "
@@ -1902,6 +1914,38 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         period_end = f"{norm_end}T23:59:59Z" if norm_end else default_end
         if period_end < period_start:
             period_end = period_start
+
+        # The record states one period: the span of its valuations when it has any (a single
+        # snapshot is a single instant), otherwise the stated period. Activity dated outside that
+        # period is not in the ledger, so no trade, cost or behaviour figure describes a time
+        # the record does not state.
+        if nav_points:
+            period_start = nav_points[0].timestamp_utc
+            period_end = nav_points[-1].timestamp_utc
+
+        def _in_period(ts: str) -> bool:
+            return period_start <= ts <= period_end
+
+        def _instrument(t: NormalizedTrade) -> tuple[Any, ...]:
+            return (t.symbol.strip().upper(), t.asset_class, t.option_right, t.strike, t.expiry)
+
+        # A position opened before the period cannot be matched inside it: its later trades
+        # would be read as new positions and make round trips that never happened, so every
+        # trade in such an instrument is left out.
+        held_into = {_instrument(t) for t in trades if t.timestamp_utc < period_start}
+        in_period_trades = [t for t in trades if _in_period(t.timestamp_utc)]
+        kept_trades = [t for t in in_period_trades if _instrument(t) not in held_into]
+        if len(kept_trades) != len(in_period_trades):
+            dropped_instruments = {_instrument(t) for t in in_period_trades} & held_into
+            parser_warnings.append(
+                f"Trades in {len(dropped_instruments)} instrument(s) held into the "
+                f"{'valuation series' if nav_points else 'stated period'} from earlier are not in "
+                "the ledger, so no round trip is matched against an opening trade outside the "
+                "record's period."
+            )
+        trades = kept_trades
+        flows = [f for f in flows if _in_period(f.timestamp_utc)]
+        corporate_actions = [c for c in corporate_actions if _in_period(c.timestamp_utc)]
 
         enabled_secs = [
             "snaptrade_accounts",

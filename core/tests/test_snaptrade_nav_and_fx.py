@@ -601,3 +601,135 @@ def test_live_deselected_account_with_unconvertible_cash_does_not_refuse_the_rec
     ledger = _adapter(_transport).fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT,
                                                     selected_account_ids=["acct-dummy-u1"])
     assert [p.nav_base for p in ledger.nav_points] == [4000.0]
+
+
+# ---------------------------------------------------------------------------
+# Nothing dated outside the record's period feeds its figures
+# ---------------------------------------------------------------------------
+
+
+def _trade(tid: str, side: str, sym: str, date: str, units: float = 10.0, price: float = 100.0) -> dict[str, Any]:
+    return {"id": tid, "type": side, "account": {"id": "acct-dummy-a1"}, "units": units, "price": price,
+            "fee": 1.0, "currency": {"code": "USD"},
+            "symbol": {"symbol": sym, "currency": {"code": "USD"}, "type": {"code": "cs"}}, "trade_date": date}
+
+
+def _flow(fid: str, kind: str, amount: float, date: str) -> dict[str, Any]:
+    return {"id": fid, "type": kind, "account": {"id": "acct-dummy-a1"}, "amount": amount,
+            "currency": {"code": "USD"}, "trade_date": date}
+
+
+def test_trades_and_flows_outside_the_valuation_series_are_not_in_the_ledger() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1")],
+        "activities": [
+            _trade("t-old-buy", "BUY", "AAPL", "2024-03-01T15:00:00Z"),
+            _trade("t-old-sell", "SELL", "AAPL", "2024-04-01T15:00:00Z", price=120.0),
+            _flow("f-old-dep", "DEPOSIT", 50000.0, "2024-01-05T15:00:00Z"),
+            _flow("f-in-dep", "DEPOSIT", 500.0, "2026-10-02T15:00:00Z"),
+            _flow("f-in-div", "DIVIDEND", 20.0, "2026-10-03T15:00:00Z"),
+            _flow("f-late-fee", "FEE", 5.0, "2026-11-01T15:00:00Z"),
+        ],
+        "nav_points": _series([10000, 10600, 10700, 10800]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert ledger.trades == []
+    assert [(f.kind.value, f.amount) for f in ledger.flows] == [("deposit", 500.0), ("dividend", 20.0)]
+    assert ledger.period_start_utc == "2026-10-01T23:59:59Z"
+    assert ledger.period_end_utc == "2026-10-04T23:59:59Z"
+
+
+def test_an_instrument_held_into_the_series_has_no_trades_in_the_ledger() -> None:
+    from n170_verify.coaching.behaviour_metrics import match_fifo_round_trips
+
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1")],
+        "activities": [
+            _trade("t-open", "BUY", "SPY", "2024-03-01T15:00:00Z"),
+            _trade("t-close", "SELL", "SPY", "2026-10-02T15:00:00Z", price=130.0),
+            _trade("t-rebuy", "BUY", "SPY", "2026-10-03T15:00:00Z", price=125.0),
+            _trade("t-in-buy", "BUY", "MSFT", "2026-10-02T15:00:00Z", units=1.0),
+            _trade("t-in-sell", "SELL", "MSFT", "2026-10-03T15:00:00Z", units=1.0, price=101.0),
+        ],
+        "nav_points": _series([10000, 10100, 10200, 10300]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert sorted({t.symbol for t in ledger.trades}) == ["MSFT"]
+    trips = match_fifo_round_trips(ledger)
+    assert [(rt.symbol, rt.side) for rt in trips] == [("MSFT", "long")]
+    assert any("held into the valuation series" in w for w in ledger.parser_warnings)
+
+
+def test_single_snapshot_record_carries_no_activity_from_outside_its_instant() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1")],
+        "activities": [
+            _trade("t-buy", "BUY", "AAPL", "2026-03-01T15:00:00Z"),
+            _flow("f-dep", "DEPOSIT", 500.0, "2026-03-02T15:00:00Z"),
+            {"id": "x1", "type": "SPLIT", "account": {"id": "acct-dummy-a1"}, "units": 10,
+             "symbol": {"symbol": "AAPL", "currency": {"code": "USD"}}, "date": "2026-03-03"},
+        ],
+        "balances": [{"account_id": "acct-dummy-a1", "total": 7000.0, "updated_at": "2026-10-04T16:00:00Z"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert [p.timestamp_utc for p in ledger.nav_points] == ["2026-10-04T16:00:00Z"]
+    assert ledger.period_start_utc == ledger.period_end_utc == "2026-10-04T16:00:00Z"
+    assert ledger.trades == [] and ledger.flows == [] and ledger.corporate_actions == []
+
+
+def test_without_valuations_activity_outside_the_requested_dates_is_not_in_the_ledger() -> None:
+    payload = {
+        "base_currency": "USD",
+        "activities": [
+            _trade("t-early", "BUY", "AAPL", "2026-01-05T15:00:00Z"),
+            _flow("f-in", "DIVIDEND", 20.0, "2026-03-02T15:00:00Z"),
+            _flow("f-late", "FEE", 5.0, "2026-06-02T15:00:00Z"),
+        ],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, start_date="2026-03-01",
+                                      end_date="2026-03-31")
+    assert ledger.nav_points == []
+    assert ledger.trades == []
+    assert [f.kind.value for f in ledger.flows] == ["dividend"]
+
+
+# ---------------------------------------------------------------------------
+# The base currency comes from the accounts in scope
+# ---------------------------------------------------------------------------
+
+
+def test_base_currency_comes_from_the_selected_account_not_a_deselected_one() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-c1", "CAD"), _usd_acct("acct-dummy-u2", "USD")],
+        "holdings": [
+            {"account": {"id": "acct-dummy-u2"}, "total_value": {"value": 8000, "currency": "USD"},
+             "updated_at": "2026-10-03T00:00:00Z", "positions": [], "balances": []},
+        ],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-u2"])
+    assert ledger.base_currency == "USD"
+    assert [p.nav_base for p in ledger.nav_points] == [8000.0]
+
+
+def test_base_currency_ignores_deselected_holdings_when_accounts_state_no_currency() -> None:
+    payload = {
+        "accounts": [{"id": "acct-dummy-c1"}, {"id": "acct-dummy-u2"}],
+        "holdings": [
+            {"account": {"id": "acct-dummy-c1"}, "total_value": {"value": 5000, "currency": "CAD"},
+             "updated_at": "2026-10-03T00:00:00Z"},
+            {"account": {"id": "acct-dummy-u2"}, "total_value": {"value": 8000, "currency": "USD"},
+             "updated_at": "2026-10-03T00:00:00Z"},
+        ],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-u2"])
+    assert ledger.base_currency == "USD"
+
+
+def test_stated_base_currency_is_kept() -> None:
+    payload = {
+        "base_currency": "USD",
+        "accounts": [_usd_acct("acct-dummy-c1", "CAD")],
+        "currency_rates": [{"src": "CAD", "dst": "USD", "exchange_rate": 0.74}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert ledger.base_currency == "USD"
