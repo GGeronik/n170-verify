@@ -46,6 +46,7 @@ from n170_verify.coaching import (
     SmallLlmCoachClient,
     TraderCoachingEngine,
     match_fifo_round_trips,
+    sanitize_journal_tags,
 )
 from n170_verify.connectors import (
     CONNECTOR_CLASS_MAP,
@@ -762,7 +763,12 @@ def verify_portfolio(
         eodhd_macro_events=eodhd_macro_events,
         alfred_macro_releases=alfred_macro_releases,
         enable_llm_narrative=enable_llm_narrative,
-        imported_journal_tags=imported_journal_tags,
+        # Journal tags are cleaned once here, so every route signs the same cleaned tags.
+        imported_journal_tags=(
+            sanitize_journal_tags(imported_journal_tags)
+            if imported_journal_tags is not None
+            else None
+        ),
         max_drawdown_decimal=performance_summary.max_drawdown_decimal,
         scored_period_returns=(
             None

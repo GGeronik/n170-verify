@@ -229,5 +229,69 @@ class SignedPeriodIsTheScoredSpanTests(unittest.TestCase):
         self.assertEqual(ledger.period_end_utc, navs[0].timestamp_utc)
 
 
+_TAG_SAMPLES = [
+    "Oversized Account 99887766",
+    "ORB_5m",
+    "<b>Breakout</b>",
+    "Size 12345 add",
+    "=HYPERLINK(x)",
+    "javascript:alert",
+    "onload=Fade",
+    "@everyone Ping",
+    "risk_$500_setup",
+    "Momentum_Breakout",
+]
+_TAG_EXPECTED = [
+    "Oversized Account",
+    "ORB_5m",
+    "Size add",
+    "HYPERLINK(x)",
+    "alert",
+    "Fade",
+    "everyone Ping",
+    "Momentum_Breakout",
+]
+
+
+class SignedJournalTagTests(unittest.TestCase):
+    """Imported journal tags are cleaned once in the shared pipeline before anything is signed.
+
+    Tags with markup, path characters or currency amounts are dropped; digit runs of five or
+    more, script schemes, event attributes and mass mentions are removed from the rest.
+    """
+
+    def test_the_pipeline_signs_cleaned_journal_tags(self) -> None:
+        out = verify_portfolio(
+            ledger=_ledger(_navs(_STEADY)), imported_journal_tags=_TAG_SAMPLES, issued_at_utc=_ISSUED
+        )
+        signed = out.proof_bundle.get_disclosed_payload("coaching_and_context")["imported_journal_tags"]
+        self.assertEqual(signed, _TAG_EXPECTED)
+
+    def test_a_statement_through_the_worker_signs_cleaned_journal_tags(self) -> None:
+        from n170_verify.pipeline import api_worker_pipeline_entrypoint
+
+        csv_text = "\n".join(
+            [
+                "Open Date,Close Date,Symbol,Side,Entry Price,Exit Price,Playbook,Setups,Mistakes,Custom Tags",
+                "2026-02-03,2026-02-03,NVDA,LONG,128.40,134.90,Momentum_Breakout,ORB_5m,None,Oversized Account 99887766",
+                "2026-02-06,2026-02-06,TSLA,SHORT,362.10,354.20,Mean_Reversion,VWAP_Fade,Early_Exit_Trim,ny_open_alpha",
+            ]
+        )
+        result = api_worker_pipeline_entrypoint(
+            {
+                "broker_id": "tradezella_journal",
+                "raw_statement": csv_text,
+                "account_blinding_salt_hex": _SALT,
+                "issued_at_utc": "2026-04-15T12:00:00Z",
+            }
+        )
+        coaching = next(
+            leaf["payload"] for leaf in result["disclosed_leaves"] if leaf["leaf_name"] == "coaching_and_context"
+        )
+        tags = coaching["imported_journal_tags"]
+        self.assertIn("Oversized Account", tags)
+        self.assertFalse(any(any(ch.isdigit() for ch in t) and "99887766" in t for t in tags))
+
+
 if __name__ == "__main__":
     unittest.main()

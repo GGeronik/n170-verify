@@ -414,17 +414,21 @@ class TestPerformanceAndEconometrics(unittest.TestCase):
         self.assertLess(summary.psr_glm_unsmoothed, summary.probabilistic_sharpe_ratio)
 
     def test_in_kind_transfer_twr_neutralization_and_unvalued_flow_withholding(self) -> None:
-        # Day 0: $100,000 -> Day 1: +5% gain ($105,000) + $50,000 ACATS TRANSFER_IN_KIND = $155,000
-        # Day 2: +2% gain on $155,000 = $158,100 -> true TWR = 1.05 * 1.02 - 1 = 0.071 (+7.1%)!
+        # The transfer is kept at 8% of the opening value: a flow above 10% of an interval's
+        # opening value withholds the return (LARGE_INTERVAL_FLOW_FRACTION).
+        # Day 0: $100,000 -> Day 1: +5% gain ($105,000) + $8,000 ACATS TRANSFER_IN_KIND = $113,000
+        #   end-of-day interval return: (113,000 - 8,000) / 100,000 - 1 = 0.05
+        # Day 2: +2% gain on $113,000 = $115,260: 115,260 / 113,000 - 1 = 0.02
+        # -> true TWR = 1.05 * 1.02 - 1 = 0.071 (+7.1%)
         navs = [
             NormalizedNavPoint(timestamp_utc="2026-02-01T20:00:00Z", nav_base=100_000.0),
-            NormalizedNavPoint(timestamp_utc="2026-02-02T20:00:00Z", nav_base=155_000.0),
-            NormalizedNavPoint(timestamp_utc="2026-02-03T20:00:00Z", nav_base=158_100.0),
+            NormalizedNavPoint(timestamp_utc="2026-02-02T20:00:00Z", nav_base=113_000.0),
+            NormalizedNavPoint(timestamp_utc="2026-02-03T20:00:00Z", nav_base=115_260.0),
         ]
         valued_acats = NormalizedFlow(
             timestamp_utc="2026-02-02T16:00:00Z",
             kind=FlowKind.TRANSFER_IN_KIND,
-            amount=50_000.0,
+            amount=8_000.0,
             currency="USD",
             symbol="MSFT",
             quantity=125.0,
@@ -440,7 +444,7 @@ class TestPerformanceAndEconometrics(unittest.TestCase):
         self.assertAlmostEqual(summary_ok.twr_decimal, 0.071, places=8)
         self.assertAlmostEqual(summary_ok.indexed_curve[-1].index_value, 107.1, places=6)
 
-        # Unvalued in-kind transfer (quantity=125, amount=0.0) MUST withhold TWR rather than report +58.1%!
+        # Unvalued in-kind transfer (quantity=125, amount=0.0) MUST withhold TWR rather than report +15.26%!
         unvalued_acats = NormalizedFlow(
             timestamp_utc="2026-02-02T16:00:00Z",
             kind=FlowKind.TRANSFER_IN_KIND,
@@ -1107,14 +1111,15 @@ class TestCalibratedReconciliation(unittest.TestCase):
     def test_internal_subaccount_transfer_and_modified_dietz_twr(self) -> None:
         navs = [
             NormalizedNavPoint(timestamp_utc="2026-03-01T00:00:00Z", nav_base=100_000.0),
-            NormalizedNavPoint(timestamp_utc="2026-03-02T00:00:00Z", nav_base=126_000.0),
+            NormalizedNavPoint(timestamp_utc="2026-03-02T00:00:00Z", nav_base=109_000.0),
         ]
-        # Midday +$25,000 internal subaccount sweep (weight = 0.5 under Modified Dietz):
-        # Gain = 126,000 - 100,000 - 25,000 = 1,000; weighted capital = 100,000 + 0.5 * 25,000 = 112,500
+        # Midday +$8,000 internal subaccount sweep (weight = 0.5 under Modified Dietz), kept at 8%
+        # of the opening value: a flow above 10% of it withholds the return.
+        # Gain = 109,000 - 100,000 - 8,000 = 1,000; weighted capital = 100,000 + 0.5 * 8,000 = 104,000
         sweep = NormalizedFlow(
             timestamp_utc="2026-03-01T12:00:00Z",
             kind=FlowKind.INTERNAL_SUBACCOUNT_TRANSFER,
-            amount=25_000.0,
+            amount=8_000.0,
             currency="USD",
         )
         ledger = _make_base_ledger(
@@ -1125,7 +1130,7 @@ class TestCalibratedReconciliation(unittest.TestCase):
             flows=[sweep],
         )
         summary_dietz = calculate_portfolio_performance(ledger, cash_flow_timing="modified_dietz")
-        self.assertAlmostEqual(summary_dietz.twr_decimal, 1_000.0 / 112_500.0, places=8)
+        self.assertAlmostEqual(summary_dietz.twr_decimal, 1_000.0 / 104_000.0, places=8)
 
 
 if __name__ == "__main__":

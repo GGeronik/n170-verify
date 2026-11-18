@@ -1129,8 +1129,34 @@ def compute_quant_dna_profile(
     )
 
 
+_TAG_CURRENCY_TOKEN_RE = re.compile(
+    r"(?:[$€£¥]\s*[-+]?\d[\d,.]*|\b(?:USD|EUR|GBP|CAD|CHF|JPY|AUD)\s*[-+]?\d[\d,.]*)",
+    re.IGNORECASE,
+)
+_TAG_LONG_DIGIT_RUN_RE = re.compile(r"\b\d{5,}\b")
+_TAG_DANGEROUS_SCHEME_RE = re.compile(r"(?:javascript|vbscript|data)\s*:", re.IGNORECASE)
+_TAG_EVENT_ATTR_RE = re.compile(r"\bon[a-z0-9_]+\s*=", re.IGNORECASE)
+_TAG_MASS_MENTION_RE = re.compile(r"@(everyone|here)\b", re.IGNORECASE)
+_TAG_MAX_LEN = 48
+
+
+def _is_signable_tag_char(ch: str) -> bool:
+    code = ord(ch)
+    if code < 0x20 or code == 0x7F:
+        return False
+    return not (0xD800 <= code <= 0xDFFF or code in (0xFFFE, 0xFFFF))
+
+
 def sanitize_journal_tags(tags: Sequence[str] | None) -> list[str]:
-    """Normalize, deduplicate, and claim-safety-filter imported trade journal setup tags."""
+    """Clean imported trade-journal tags once, before anything is signed.
+
+    A tag is dropped when it carries a currency amount, a forbidden performance claim, or a
+    path or markup character (``/ \\ < >``). Otherwise digit runs of five or more (possible
+    account numbers), script schemes, event-handler attributes, mass mentions, quotes,
+    backticks and ``&`` are removed, whitespace is collapsed, the tag is cut to 48 characters
+    and leading formula characters are stripped. Tags are de-duplicated case-insensitively,
+    at most 50 are kept.
+    """
     if not tags:
         return []
     cleaned: list[str] = []
@@ -1138,15 +1164,28 @@ def sanitize_journal_tags(tags: Sequence[str] | None) -> list[str]:
     for raw_tag in tags:
         if not isinstance(raw_tag, str):
             continue
-        candidate = "".join(ch for ch in raw_tag if ord(ch) >= 0x20 and ord(ch) != 0x7F)
-        candidate = candidate.strip().lstrip("=+-@'| \t\r\n").strip()
-        if not candidate or len(candidate) > 64:
-            continue
-        lowered = candidate.lower()
+        candidate = "".join(ch for ch in raw_tag if _is_signable_tag_char(ch))
         if any(bad in candidate for bad in ("/", "\\", "<", ">")):
             continue
-        if contains_forbidden_claim(candidate) or contains_currency_amount(candidate):
+        if (
+            contains_forbidden_claim(candidate)
+            or contains_currency_amount(candidate)
+            or _TAG_CURRENCY_TOKEN_RE.search(candidate)
+            or any(sym in candidate for sym in ("$", "€", "£", "¥"))
+        ):
             continue
+        candidate = _TAG_LONG_DIGIT_RUN_RE.sub("", candidate)
+        candidate = _TAG_DANGEROUS_SCHEME_RE.sub("", candidate)
+        candidate = _TAG_EVENT_ATTR_RE.sub("", candidate)
+        candidate = _TAG_MASS_MENTION_RE.sub(r"\1", candidate)
+        for removed_ch in ('"', "'", "`", "&"):
+            candidate = candidate.replace(removed_ch, "")
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        candidate = candidate[:_TAG_MAX_LEN].rstrip()
+        candidate = candidate.lstrip("=+-@'| \t\r\n").strip()
+        if not candidate or contains_forbidden_claim(candidate):
+            continue
+        lowered = candidate.lower()
         if lowered not in seen:
             seen.add(lowered)
             cleaned.append(candidate)
