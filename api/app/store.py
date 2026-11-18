@@ -16,6 +16,7 @@ from n170_verify.contracts import (
     BundleVerificationResult,
     ChainContinuityMode,
     EnvironmentTier,
+    HolderClaimStatus,
     ProviderApprovalState,
     SignerTrustStatus,
     VerifyProofBundle,
@@ -186,6 +187,18 @@ def enforce_bundle_seven_day_trade_guard(
             return bundle.redact_leaves(["delayed_closed_trades"]), True
 
     return bundle, False
+
+
+def _refuse_invalid_holder_claim(result: BundleVerificationResult) -> None:
+    """The store never publishes a holder attestation that does not verify."""
+    if result.holder_claim_status == HolderClaimStatus.INVALID:
+        raise ProofBundleInvalidError(
+            "The holder attestation does not verify for this record and cannot be published",
+            errors=[
+                "Holder attestation failed verification: publish without it, or attach a "
+                "holder claim signed for this record's proof_id, merkle_root and proof_hash"
+            ],
+        )
 
 
 class ProofStore:
@@ -400,6 +413,11 @@ class ProofStore:
         """
         if not self._config.hosted_multi_user_mode:
             return
+        if not bundle.verify_publisher_signature():
+            # A record whose signature does not verify is refused by verification
+            # itself (422 invalid_proof_bundle) on every publish path, so the reason
+            # given stays accurate. It is never stored.
+            return
         status = evaluate_signer_trust(bundle, self.build_registry_document())
         if status not in _REGISTRY_SIGNER_STATUSES:
             raise PublisherKeyNotInRegistryError(
@@ -495,6 +513,7 @@ class ProofStore:
                 "Proof bundle failed verification and cannot be published",
                 errors=verification.errors,
             )
+        _refuse_invalid_holder_claim(verification)
 
         now_str = stored_at_utc or utc_now_iso()
         chain_id = (
@@ -712,6 +731,7 @@ class ProofStore:
                     "Genesis proof bundle failed cryptographic verification",
                     errors=bundle_ver.errors,
                 )
+            _refuse_invalid_holder_claim(bundle_ver)
 
             chain_res = verify_prospective_chain(
                 [sanitized_bundle],
@@ -920,6 +940,7 @@ class ProofStore:
                     "Appended proof bundle failed cryptographic verification",
                     errors=bundle_ver.errors,
                 )
+            _refuse_invalid_holder_claim(bundle_ver)
 
             resolved_opt_in = (
                 bool(chain_row["opt_in_leaderboard"])

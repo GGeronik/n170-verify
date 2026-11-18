@@ -19,6 +19,7 @@ from n170_verify.contracts import (
     ChainContinuityMode,
     OriginAssurance,
     ReconciliationStatus,
+    SignerTrustStatus,
     VerifyProofBundle,
 )
 
@@ -43,6 +44,22 @@ def _extract_merkle_proven_core_metrics(bundle: VerifyProofBundle) -> dict[str, 
     if not isinstance(payload, Mapping):
         return {}
     return {k: v for k, v in payload.items() if k not in _EXCLUDED_SIMULATION_METRIC_KEYS}
+
+
+_LISTED_SIGNER_STATUSES = frozenset(
+    {SignerTrustStatus.OFFICIAL_N170_HOSTED, SignerTrustStatus.RETIRED_HISTORICAL_VALID}
+)
+
+
+def _performance_not_computed(bundle: VerifyProofBundle) -> bool:
+    """True when the disclosed, Merkle-proven performance section says no return was computed."""
+    payload = verified_leaf_payload(bundle, "core_metrics")
+    if not isinstance(payload, Mapping):
+        return False
+    if payload.get("performance_withheld") is True:
+        return True
+    obs = payload.get("observation_count")
+    return isinstance(obs, (int, float)) and not isinstance(obs, bool) and obs == 0
 
 
 def _parse_enum_csv_filter(
@@ -103,6 +120,16 @@ def handle_get_leaderboard(
 
         verification = store.verify_bundle_against_live_state(bundle, now_utc=now_utc)
         if not verification.valid:
+            continue
+        # The hosted list shows only records whose signer this host's registry
+        # recognises, including rows stored before that rule or while self-hosted.
+        if (
+            store.config.hosted_multi_user_mode
+            and verification.signer_trust_status not in _LISTED_SIGNER_STATUSES
+        ):
+            continue
+        # A return that was not computed is never ranked.
+        if _performance_not_computed(bundle):
             continue
 
         # Filter strictly on verifier-computed assurance axes (never raw claimed_origin_assurance)

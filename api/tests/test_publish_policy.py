@@ -101,6 +101,7 @@ class _Base(unittest.TestCase):
         issued_at_utc: str = "2026-02-10T12:00:00Z",
         period_start_utc: str = "2026-01-01T00:00:00Z",
         period_end_utc: str = "2026-02-10T00:00:00Z",
+        leaf_payloads: dict | None = None,
     ) -> VerifyProofBundle:
         return create_signed_proof_bundle(
             proof_id=proof_id,
@@ -117,7 +118,7 @@ class _Base(unittest.TestCase):
             period_start_utc=period_start_utc,
             period_end_utc=period_end_utc,
             base_currency="USD",
-            leaf_payloads=_build_leaf_payloads(),
+            leaf_payloads=leaf_payloads if leaf_payloads is not None else _build_leaf_payloads(),
             prospective_chain_link=link,
         )
 
@@ -350,6 +351,276 @@ class TestCallerClockWithTestFlagOn(_Base):
         )
         self.assertEqual(resp.status_code, 200, resp.text)
         self.assertEqual(self.client.get("/api/v1/leaderboard?now_utc=2026-02-10T12:05:00Z").status_code, 200)
+
+
+def _tampered(bundle: VerifyProofBundle) -> dict:
+    data = bundle.to_dict()
+    sig = data["signature_hex"]
+    data["signature_hex"] = ("0" if sig[0] != "0" else "1") + sig[1:]
+    return data
+
+
+class TestBadSignatureIsReportedAsInvalid(_Base):
+    hosted = True
+    allow_clock = True
+
+    def test_bad_signature_claiming_the_host_key_is_refused_as_invalid(self) -> None:
+        bundle = self._host("prf-bad-signature")
+        resp = self.client.post(
+            "/api/v1/proofs", json={"proof_bundle": _tampered(bundle), "opt_in_leaderboard": True}
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 0)
+
+    def test_bad_signature_from_an_outside_key_is_still_refused(self) -> None:
+        bundle = self._outside("prf-bad-signature-outside")
+        resp = self.client.post(
+            "/api/v1/proofs", json={"proof_bundle": _tampered(bundle), "opt_in_leaderboard": True}
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 0)
+
+    def test_bad_signature_on_chain_enrolment_is_refused_as_invalid(self) -> None:
+        b0 = self._chain_bundle("prf-bad-sig-chain-0", self._genesis_link("chn-bad-sig", TAG_C), outside=False)
+        resp = self.client.post(
+            "/api/v1/chains",
+            json={"proof_bundle": _tampered(b0), "now_utc": "2026-01-31T12:05:00Z"},
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertEqual(
+            self.app.verify_app.store.total_row_counts(), {"proofs": 0, "chains": 0, "continuity_log": 0}
+        )
+
+
+def _holder_claim(bundle: VerifyProofBundle, name: str, *, break_signature: bool = False) -> dict:
+    from n170_verify.contracts.proof import HOLDER_SCHEMA_VERSION, SIGNING_DOMAIN_HOLDER
+    from n170_verify.crypto.canonical import jcs_canonicalize
+    from n170_verify.crypto.signing import ed25519_sign_domain
+
+    kp = generate_ed25519_keypair(bytes.fromhex("41" * 32))
+    claim = {
+        "claimed_at_utc": "2026-02-10T12:00:00Z",
+        "display_name": name,
+        "handle": None,
+        "holder_public_key_hex": kp.public_key_hex,
+        "merkle_root": bundle.merkle_root,
+        "profile_url": None,
+        "proof_hash": bundle.proof_hash(),
+        "proof_id": bundle.proof_id,
+        "schema_version": HOLDER_SCHEMA_VERSION,
+    }
+    claim["signature_hex"] = ed25519_sign_domain(
+        kp.private_key_hex, SIGNING_DOMAIN_HOLDER, jcs_canonicalize(claim)
+    )
+    if break_signature:
+        sig = claim["signature_hex"]
+        claim["signature_hex"] = ("0" if sig[0] != "0" else "1") + sig[1:]
+    return claim
+
+
+class TestInvalidHolderClaimIsNotPublished(_Base):
+    hosted = True
+    allow_clock = True
+
+    def test_record_with_an_invalid_holder_claim_is_refused(self) -> None:
+        bundle = self._host("prf-holder-invalid")
+        data = bundle.to_dict()
+        data["holder_identity"] = _holder_claim(bundle, "Someone", break_signature=True)
+        resp = self.client.post("/api/v1/proofs", json={"proof_bundle": data, "opt_in_leaderboard": True})
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertTrue(any("holder" in e.lower() for e in resp.json()["errors"]), resp.text)
+        self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 0)
+
+    def test_chain_enrolment_with_an_invalid_holder_claim_is_refused(self) -> None:
+        b0 = self._chain_bundle("prf-holder-chain-0", self._genesis_link("chn-holder", TAG_C), outside=False)
+        data = b0.to_dict()
+        data["holder_identity"] = _holder_claim(b0, "Someone", break_signature=True)
+        resp = self.client.post(
+            "/api/v1/chains", json={"proof_bundle": data, "now_utc": "2026-01-31T12:05:00Z"}
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertEqual(
+            self.app.verify_app.store.total_row_counts(), {"proofs": 0, "chains": 0, "continuity_log": 0}
+        )
+
+    def test_chain_append_with_an_invalid_holder_claim_is_refused(self) -> None:
+        b0 = self._chain_bundle("prf-holder-app-0", self._genesis_link("chn-holder-app", TAG_C), outside=False)
+        enrol = self.client.post(
+            "/api/v1/chains", json={"proof_bundle": b0.to_dict(), "now_utc": "2026-01-31T12:05:00Z"}
+        )
+        self.assertEqual(enrol.status_code, 201, enrol.text)
+        b1 = self._chain_bundle(
+            "prf-holder-app-1", self._next_link("chn-holder-app", TAG_C, b0.proof_hash()), outside=False
+        )
+        data = b1.to_dict()
+        data["holder_identity"] = _holder_claim(b1, "Someone", break_signature=True)
+        resp = self.client.post(
+            "/api/v1/chains/chn-holder-app/append",
+            json={"proof_bundle": data, "now_utc": "2026-03-02T12:05:00Z"},
+        )
+        self.assertEqual(resp.status_code, 422, resp.text)
+        self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 1)
+
+    def test_record_with_no_or_a_self_asserted_holder_claim_publishes(self) -> None:
+        plain = self._host("prf-holder-none", tag=TAG_A)
+        named = self._host("prf-holder-named", tag=TAG_B)
+        named_data = named.to_dict()
+        named_data["holder_identity"] = _holder_claim(named, "Alice Owner")
+        for data, status in ((plain.to_dict(), "absent"), (named_data, "self_asserted")):
+            resp = self.client.post("/api/v1/proofs", json={"proof_bundle": data})
+            self.assertEqual(resp.status_code, 201, resp.text)
+            self.assertEqual(resp.json()["verification"]["holder_claim_status"], status)
+
+
+def _withheld_leaves(**core_overrides) -> dict:
+    leaves = _build_leaf_payloads()
+    leaves["core_metrics"] = {**leaves["core_metrics"], **core_overrides}
+    return leaves
+
+
+class TestCohortListRanksOnlyComputedReturns(_Base):
+    hosted = True
+
+    def _publish(self, bundle: VerifyProofBundle) -> None:
+        resp = self.client.post(
+            "/api/v1/proofs", json={"proof_bundle": bundle.to_dict(), "opt_in_leaderboard": True}
+        )
+        self.assertEqual(resp.status_code, 201, resp.text)
+
+    def _listed_ids(self) -> set[str]:
+        resp = self.client.get("/api/v1/leaderboard?include_private_bracket=1&min_capital_bracket=under_1k")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        return {row["proof_id"] for row in resp.json()["entries"]}
+
+    def test_withheld_or_zero_observation_returns_are_not_listed(self) -> None:
+        self._publish(self._host("prf-computed", tag=TAG_A))
+        self._publish(
+            self._host(
+                "prf-withheld",
+                tag=TAG_B,
+                leaf_payloads=_withheld_leaves(
+                    twr_decimal=0.0, twr_pct=0.0, observation_count=0, performance_withheld=True
+                ),
+            )
+        )
+        self._publish(
+            self._host("prf-zero-observations", tag=TAG_C, leaf_payloads=_withheld_leaves(observation_count=0))
+        )
+        self._publish(
+            self._host(
+                "prf-withheld-flag-only",
+                tag="15" * 32,
+                leaf_payloads=_withheld_leaves(performance_withheld=True),
+            )
+        )
+        self.assertEqual(self._listed_ids(), {"prf-computed"})
+
+
+class TestHostedListingShowsOnlyRegistrySigners(unittest.TestCase):
+    def _config(self, db_path: str, *, hosted: bool) -> ApiConfig:
+        return ApiConfig(
+            publisher_keypair=generate_ed25519_keypair(bytes.fromhex("11" * 32)),
+            publisher_kid=HOST_KID,
+            publisher_key_not_before_utc="2025-01-01T00:00:00Z",
+            hosted_multi_user_mode=hosted,
+            db_path=db_path,
+            sync_db_path=":memory:",
+            vault_master_kek_hex="aa" * 32,
+            account_blinding_salt_hex="bb" * 32,
+        )
+
+    def test_rows_from_other_signers_already_stored_are_not_listed_in_hosted_mode(self) -> None:
+        outside_kp = generate_ed25519_keypair(bytes.fromhex("33" * 32))
+        host_kp = generate_ed25519_keypair(bytes.fromhex("11" * 32))
+
+        def make(proof_id: str, kid: str, key_hex: str, tag: str) -> dict:
+            return create_signed_proof_bundle(
+                proof_id=proof_id,
+                issued_at_utc="2026-02-10T12:00:00Z",
+                publisher_kid=kid,
+                publisher_private_key_hex=key_hex,
+                broker_id="schwab",
+                blinded_account_tag=tag,
+                account_scope=AccountScope.ALL_ENUMERATED_SUBACCOUNTS,
+                provider_approval_state=ProviderApprovalState.APPROVED_LIVE,
+                environment_tier=EnvironmentTier.LIVE_PRODUCTION,
+                claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+                source_body_sha256="34" * 32,
+                period_start_utc="2026-01-01T00:00:00Z",
+                period_end_utc="2026-02-10T00:00:00Z",
+                base_currency="USD",
+                leaf_payloads=_build_leaf_payloads(),
+            ).to_dict()
+
+        path = "/api/v1/leaderboard?include_private_bracket=1&min_capital_bracket=under_1k"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "proofs.sqlite3")
+            # Rows written while the store ran self-hosted (or before the publish rule).
+            self_hosted = create_app(self._config(db_path, hosted=False), prefer_fastapi=False)
+            sh_client = VerifyApiTestClient(self_hosted)
+            for proof_id, kid, key_hex, tag in (
+                ("prf-stored-outside", "self-hosted-kid", outside_kp.private_key_hex, TAG_A),
+                ("prf-stored-host", HOST_KID, host_kp.private_key_hex, TAG_B),
+            ):
+                resp = sh_client.post(
+                    "/api/v1/proofs",
+                    json={"proof_bundle": make(proof_id, kid, key_hex, tag), "opt_in_leaderboard": True},
+                )
+                self.assertEqual(resp.status_code, 201, resp.text)
+            sh_ids = {row["proof_id"] for row in sh_client.get(path).json()["entries"]}
+            self.assertEqual(sh_ids, {"prf-stored-outside", "prf-stored-host"})
+            self_hosted.verify_app.close()
+
+            hosted = create_app(self._config(db_path, hosted=True), prefer_fastapi=False)
+            try:
+                rows = VerifyApiTestClient(hosted).get(path).json()["entries"]
+            finally:
+                hosted.verify_app.close()
+        self.assertEqual([row["proof_id"] for row in rows], ["prf-stored-host"])
+        self.assertEqual(rows[0]["signer_trust_status"], "official_n170_hosted")
+
+
+class TestStatementUploadPublishRefusalKeepsItsStatus(unittest.TestCase):
+    def test_upload_publish_refused_by_the_registry_rule_answers_with_its_own_status(self) -> None:
+        try:
+            from tests.test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML
+        except ImportError:
+            from test_viral_routes import SYNTHETIC_LIVE_IBKR_FLEX_XML
+        cfg = ApiConfig(
+            publisher_keypair=generate_ed25519_keypair(bytes.fromhex("11" * 32)),
+            publisher_kid=HOST_KID,
+            # The host key is valid only from 2026-01-01, so a record issued
+            # earlier is not one this registry recognises.
+            publisher_key_not_before_utc="2026-01-01T00:00:00Z",
+            hosted_multi_user_mode=True,
+            allow_caller_clock_for_tests=True,
+            db_path=":memory:",
+            sync_db_path=":memory:",
+            vault_master_kek_hex="aa" * 32,
+            account_blinding_salt_hex="bb" * 32,
+        )
+        app = create_app(cfg, prefer_fastapi=False)
+        try:
+            resp = VerifyApiTestClient(app).post(
+                "/api/v1/verify/auto-detect",
+                json={
+                    "raw_statement_text": SYNTHETIC_LIVE_IBKR_FLEX_XML,
+                    "filename": "ibkr_activity_2026.xml",
+                    "issued_at_utc": "2025-12-31T12:00:00Z",
+                    "publish_proof": True,
+                    "opt_in_leaderboard": True,
+                },
+            )
+            self.assertEqual(resp.status_code, 403, resp.text)
+            self.assertEqual(resp.json()["error"], "publisher_key_not_in_registry")
+            self.assertEqual(app.verify_app.store.total_row_counts()["proofs"], 0)
+        finally:
+            app.verify_app.close()
 
 
 class TestStartUpKeysAndSalt(unittest.TestCase):
