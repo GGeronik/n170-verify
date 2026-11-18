@@ -348,3 +348,256 @@ def test_live_fetch_with_foreign_cash_and_rates_converts() -> None:
     assert ledger.base_currency == "EUR"
     assert len(ledger.nav_points) == 1
     assert ledger.nav_points[0].nav_base == pytest.approx(5900.0)
+
+
+# ---------------------------------------------------------------------------
+# A value at or below zero after a positive one stays in the series
+# ---------------------------------------------------------------------------
+
+
+def _usd_acct(aid: str, ccy: str = "USD") -> dict[str, Any]:
+    return {"id": aid, "currency": ccy, "name": "Individual",
+            "balance": {"total": {"amount": 1000, "currency": ccy}}}
+
+
+def _series(vals: list[float], start_day: int = 1) -> list[dict[str, Any]]:
+    return [{"date": f"2026-10-{start_day + i:02d}", "value": v} for i, v in enumerate(vals)]
+
+
+def test_zero_value_day_after_a_positive_one_is_kept_and_the_return_is_withheld() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1")],
+        "activities": [{"account": {"id": "acct-dummy-a1"}, "type": "DEPOSIT", "amount": 5000,
+                        "currency": "USD", "trade_date": "2026-10-03T00:00:00Z"}],
+        "nav_points": _series([10000, 0, 6000, 6000]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 0.0, 6000.0, 6000.0]
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_leading_zero_days_before_funding_are_not_part_of_the_series() -> None:
+    ledger = _adapter().parse_payload(
+        {"accounts": [_usd_acct("acct-dummy-a1")], "nav_points": _series([0, 0, 10000, 11000])},
+        blinding_salt_hex=SALT,
+    )
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 11000.0]
+
+
+def test_after_the_last_positive_day_only_the_first_zero_is_kept() -> None:
+    ledger = _adapter().parse_payload(
+        {"accounts": [_usd_acct("acct-dummy-a1")], "nav_points": _series([10000, 11000, 0, 0])},
+        blinding_salt_hex=SALT,
+    )
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 11000.0, 0.0]
+
+
+def _curve_transport(values: list[float], seen: dict[str, Any], acct_ids: tuple[str, ...] = ("acct-dummy-live-1",)) -> Any:
+    def _transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> tuple[int, dict[str, str], Any]:
+        parts = urllib.parse.urlsplit(url)
+        path = parts.path
+        if path == "/api/v1/accounts":
+            return (200, {"Content-Type": "application/json"},
+                    [{"id": a, "currency": "USD", "balance": {"total": {"amount": values[-1], "currency": "USD"}}}
+                     for a in acct_ids])
+        if path == "/api/v1/holdings":
+            return (403, {"Content-Type": "application/json"}, {"detail": "restricted"})
+        if path == "/api/v1/activities":
+            return (200, {"Content-Type": "application/json"}, [])
+        if path.endswith("/positions") or path.endswith("/activities"):
+            return (200, {"Content-Type": "application/json"}, [])
+        if path.endswith("/balances"):
+            return (200, {"Content-Type": "application/json"}, [{"currency": {"code": "USD"}, "cash": values[-1]}])
+        if path == "/api/v1/performance/custom":
+            seen["perf_query"] = urllib.parse.parse_qs(parts.query)
+            return (200, {"Content-Type": "application/json"},
+                    {"totalEquityTimeframe": _series(values)})
+        return (404, {"Content-Type": "application/json"}, {"detail": "not_found"})
+
+    return _transport
+
+
+def test_live_performance_series_keeps_a_zero_value_day() -> None:
+    seen: dict[str, Any] = {}
+    adapter = _adapter(_curve_transport([10000, 0, 6000], seen))
+    ledger = adapter.fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT, start_date="2026-10-01",
+                                       end_date="2026-10-03")
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 0.0, 6000.0]
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+# ---------------------------------------------------------------------------
+# A selection is limited to accounts actually read
+# ---------------------------------------------------------------------------
+
+
+def test_selecting_an_account_that_was_not_read_is_refused() -> None:
+    payload = {"accounts": [_usd_acct("acct-dummy-mine")], "nav_points": _series([10000, 12000, 15000])}
+    with pytest.raises(ValueError, match="not among the accounts"):
+        _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-other"])
+
+
+def test_selecting_an_account_when_no_accounts_were_read_is_refused() -> None:
+    with pytest.raises(ValueError, match="not among the accounts"):
+        _adapter().parse_payload({"nav_points": _series([10000, 12000])}, blinding_salt_hex=SALT,
+                                 selected_account_ids=["acct-dummy-other"])
+
+
+def test_under_a_selection_rows_without_an_account_id_are_not_counted() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1"), _usd_acct("acct-dummy-b2")],
+        "activities": [{"id": "d1", "type": "DEPOSIT", "amount": 500.0, "currency": "USD", "date": "2026-10-02"}],
+        "positions": [{"symbol": {"symbol": {"symbol": "SPY", "currency": {"code": "USD"}}}, "units": 1.0, "price": 10.0}],
+        "balances": [
+            {"account_id": "acct-dummy-a1", "total": 7000.0, "updated_at": "2026-10-04T16:00:00Z"},
+            {"total": 3000.0, "updated_at": "2026-10-04T16:00:00Z"},
+        ],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-a1"])
+    assert ledger.flows == []
+    assert ledger.ending_positions == []
+    assert [p.nav_base for p in ledger.nav_points] == [7000.0]
+
+
+def test_unattributed_series_is_not_used_for_a_record_that_claims_a_subset() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1"), _usd_acct("acct-dummy-b2")],
+        "nav_points": _series([10000, 12000, 15000]),
+        "balances": [{"account_id": "acct-dummy-a1", "total": 7000.0, "updated_at": "2026-10-04T16:00:00Z"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-a1"])
+    assert [p.nav_base for p in ledger.nav_points] == [7000.0]
+    assert any("selected accounts" in w for w in ledger.parser_warnings)
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_series_stated_for_the_selected_accounts_is_used() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-a1"), _usd_acct("acct-dummy-b2")],
+        "nav_points": _series([10000, 12000, 15000]),
+        "nav_points_account_ids": ["acct-dummy-a1"],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-a1"])
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 12000.0, 15000.0]
+
+
+def test_selection_of_every_account_read_uses_the_series() -> None:
+    payload = {"accounts": [_usd_acct("acct-dummy-a1")], "nav_points": _series([10000, 12000])}
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-a1"])
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 12000.0]
+
+
+def test_live_selection_of_one_account_uses_the_series_requested_for_it() -> None:
+    seen: dict[str, Any] = {}
+    adapter = _adapter(_curve_transport([10000, 11000], seen, acct_ids=("acct-dummy-a1", "acct-dummy-b2")))
+    ledger = adapter.fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT, start_date="2026-10-01",
+                                       end_date="2026-10-02", selected_account_ids=["acct-dummy-a1"])
+    assert seen["perf_query"]["accounts"] == ["acct-dummy-a1"]
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0, 11000.0]
+
+
+def test_live_selection_of_an_account_not_read_is_refused() -> None:
+    adapter = _adapter(_curve_transport([10000, 11000], {}))
+    with pytest.raises(ValueError, match="not among the accounts"):
+        adapter.fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT, start_date="2026-10-01",
+                                  end_date="2026-10-02", selected_account_ids=["acct-dummy-other"])
+
+
+# ---------------------------------------------------------------------------
+# Foreign-currency capital flows and a series of unstated currency
+# ---------------------------------------------------------------------------
+
+
+def test_in_period_capital_flow_in_another_currency_withholds_the_return() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-c1", "CAD")],
+        "currency_rates": [{"src": "USD", "dst": "CAD", "exchange_rate": 1.35}],
+        "activities": [{"account": {"id": "acct-dummy-c1"}, "type": "DEPOSIT", "amount": 1000.0,
+                        "currency": "USD", "trade_date": "2026-10-02T14:00:00Z"}],
+        "nav_points": _series([50000, 52000, 52500]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert ledger.base_currency == "CAD"
+    assert len(ledger.nav_points) == 1
+    assert ledger.nav_points[0].nav_base == 52500.0
+    assert any("rate for its own date" in w for w in ledger.parser_warnings)
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_capital_flow_in_another_currency_outside_the_series_does_not_withhold() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-c1", "CAD")],
+        "currency_rates": [{"src": "USD", "dst": "CAD", "exchange_rate": 1.35}],
+        "activities": [{"account": {"id": "acct-dummy-c1"}, "type": "DEPOSIT", "amount": 1000.0,
+                        "currency": "USD", "trade_date": "2024-01-05T00:00:00Z"}],
+        "nav_points": _series([50000, 52000, 52500]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 3
+    assert ledger.parser_warnings == []
+
+
+def test_series_of_unstated_currency_over_accounts_in_two_currencies_is_not_used() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-g1", "GBP"), _usd_acct("acct-dummy-u2", "USD")],
+        "currency_rates": [{"src": "GBP", "dst": "USD", "exchange_rate": 1.25}],
+        "nav_points": _series([10000, 10100]),
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert len(ledger.nav_points) == 1
+    assert any("does not state its currency" in w for w in ledger.parser_warnings)
+    assert calculate_portfolio_performance_detailed(ledger).withheld is True
+
+
+def test_series_that_states_its_currency_over_accounts_in_two_currencies_is_converted() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-g1", "GBP"), _usd_acct("acct-dummy-u2", "USD")],
+        "currency_rates": [{"src": "USD", "dst": "GBP", "exchange_rate": 0.8}],
+        "nav_points": [{"date": "2026-10-01", "value": 10000.0, "currency": "USD"},
+                       {"date": "2026-10-02", "value": 10100.0, "currency": "USD"}],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT)
+    assert ledger.base_currency == "GBP"
+    assert [p.nav_base for p in ledger.nav_points] == pytest.approx([8000.0, 8080.0])
+    assert ledger.parser_warnings == []
+
+
+# ---------------------------------------------------------------------------
+# The selection applies before any conversion
+# ---------------------------------------------------------------------------
+
+
+def test_deselected_account_in_a_currency_without_rate_does_not_refuse_the_record() -> None:
+    payload = {
+        "accounts": [_usd_acct("acct-dummy-u1", "USD"), _usd_acct("acct-dummy-c2", "CAD")],
+        "holdings": [
+            {"account": {"id": "acct-dummy-u1"}, "total_value": {"value": 10000, "currency": "USD"},
+             "updated_at": "2026-10-03T00:00:00Z", "positions": [], "balances": []},
+            {"account": {"id": "acct-dummy-c2"}, "total_value": {"value": 5000, "currency": "CAD"},
+             "updated_at": "2026-10-03T00:00:00Z", "positions": [], "balances": []},
+        ],
+    }
+    ledger = _adapter().parse_payload(payload, blinding_salt_hex=SALT, selected_account_ids=["acct-dummy-u1"])
+    assert [p.nav_base for p in ledger.nav_points] == [10000.0]
+
+
+def test_live_deselected_account_with_unconvertible_cash_does_not_refuse_the_record() -> None:
+    def _transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> tuple[int, dict[str, str], Any]:
+        path = urllib.parse.urlsplit(url).path
+        if path == "/api/v1/accounts":
+            return (200, {"Content-Type": "application/json"},
+                    [{"id": "acct-dummy-u1", "currency": "USD"}, {"id": "acct-dummy-x2", "currency": "EUR"}])
+        if path in {"/api/v1/holdings", "/api/v1/activities", "/api/v1/currencies/rates"}:
+            return (403, {"Content-Type": "application/json"}, {"detail": "restricted"})
+        if path == "/api/v1/accounts/acct-dummy-u1/balances":
+            return (200, {"Content-Type": "application/json"}, [{"currency": {"code": "USD"}, "cash": 4000.0}])
+        if path == "/api/v1/accounts/acct-dummy-x2/balances":
+            return (200, {"Content-Type": "application/json"},
+                    [{"currency": {"code": "EUR"}, "cash": 10.0}, {"currency": {"code": "JPY"}, "cash": 10.0}])
+        if path.endswith("/positions") or path.endswith("/activities"):
+            return (200, {"Content-Type": "application/json"}, [])
+        return (404, {"Content-Type": "application/json"}, {"detail": "not_found"})
+
+    ledger = _adapter(_transport).fetch_live_ledger("dummy-user", "", blinding_salt_hex=SALT,
+                                                    selected_account_ids=["acct-dummy-u1"])
+    assert [p.nav_base for p in ledger.nav_points] == [4000.0]

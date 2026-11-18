@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
+import math
 import os
 import time
 from typing import Any
@@ -717,6 +718,42 @@ class SnapTradeMissingFxRateError(ValueError):
     """
 
 
+class SnapTradeSelectionError(ValueError):
+    """A record was asked to claim accounts that this connection did not return."""
+
+
+_CAPITAL_FLOW_KINDS = frozenset(
+    {
+        FlowKind.DEPOSIT,
+        FlowKind.WITHDRAWAL,
+        FlowKind.TRANSFER_IN_KIND,
+        FlowKind.TRANSFER_OUT_KIND,
+        FlowKind.INTERNAL_SUBACCOUNT_TRANSFER,
+    }
+)
+
+
+def _trim_valuation_series(
+    items: Sequence[tuple[str, tuple[float, float | None]]],
+) -> list[tuple[str, tuple[float, float | None]]]:
+    """Keep a time-ordered valuation series from its first positive value onward.
+
+    A value at or below zero after a positive one stays in the series, so a wipe-out is
+    visible to the return calculation and is never skipped. After the last positive value
+    only the first non-positive one is kept (a full withdrawal); leading zeros before the
+    account was funded are not part of the series.
+    """
+    ordered = sorted(items, key=lambda kv: kv[0])
+    pos_idx = [i for i, (_, vals) in enumerate(ordered) if vals[0] > 0.0]
+    if not pos_idx:
+        return []
+    first, last = pos_idx[0], pos_idx[-1]
+    kept = ordered[first : last + 1]
+    if last + 1 < len(ordered):
+        kept.append(ordered[last + 1])
+    return kept
+
+
 def _require_fx_rate(
     src_currency: str,
     dst_currency: str,
@@ -1350,6 +1387,20 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             base_currency,
         )
 
+        # A selection must name accounts that were actually read for this connection, and it
+        # applies before any value is converted, so a deselected account never affects the record.
+        selected_set = (
+            {str(x).strip() for x in selected_account_ids if str(x).strip()}
+            if selected_account_ids
+            else None
+        )
+        if selected_set and not selected_set <= set(raw_acct_ids):
+            raise SnapTradeSelectionError(
+                "The selected account(s) are not among the accounts read for this connection; "
+                "a record can only claim accounts the connection actually returned."
+            )
+        selection_is_subset = bool(selected_set) and selected_set != set(raw_acct_ids)
+
         for h_entry in holdings_list:
             h_acct = h_entry.get("account")
             h_aid = (
@@ -1357,6 +1408,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 if isinstance(h_acct, Mapping)
                 else _extract_account_id(h_entry)
             )
+            if selected_set and h_aid not in selected_set:
+                continue
 
             h_positions = h_entry.get("positions") or []
             if isinstance(h_positions, list):
@@ -1422,6 +1475,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         if not flattened_balances:
             for acct in raw_accounts_list:
                 aid = _extract_account_id(acct)
+                if selected_set and aid not in selected_set:
+                    continue
                 acct_bal = acct.get("balance")
                 if isinstance(acct_bal, Mapping):
                     tot_map = acct_bal.get("total")
@@ -1447,11 +1502,6 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         else:
             env_tier = EnvironmentTier.LIVE_PRODUCTION
 
-        selected_set = (
-            {str(x).strip() for x in selected_account_ids if str(x).strip()}
-            if selected_account_ids
-            else None
-        )
         if selected_set:
             account_scope = AccountScope.SINGLE_ACCOUNT_SURVIVORSHIP_UNVERIFIED
             filtered_accounts = [
@@ -1485,7 +1535,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             if not isinstance(act, Mapping):
                 continue
             aid = _extract_account_id(act) if ("account" in act or "account_id" in act or "accountId" in act) else ""
-            if selected_set and aid and aid not in selected_set:
+            if selected_set and aid not in selected_set:
                 continue
             act_type = str(act.get("type") or "").strip().lower()
             ts = _parse_iso_ts(
@@ -1654,7 +1704,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         for p in positions_source:
             aid = str(p.get("account_id") or "").strip()
-            if selected_set and aid and aid not in selected_set:
+            if selected_set and aid not in selected_set:
                 continue
             sym_str, pos_ccy, asset_cls, mult = _position_asset_info(p, base_currency)
             pos_fx = _require_fx_rate(pos_ccy, base_currency, pair_rates)
@@ -1683,12 +1733,55 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             )
 
         nav_by_ts: dict[str, tuple[float, float | None]] = {}
+        parser_warnings: list[str] = []
 
         explicit_nav_points = data.get("nav_points") or []
-        if isinstance(explicit_nav_points, list):
-            for np_item in explicit_nav_points:
-                if not isinstance(np_item, Mapping):
-                    continue
+        if not isinstance(explicit_nav_points, list):
+            explicit_nav_points = []
+        explicit_items = [np_item for np_item in explicit_nav_points if isinstance(np_item, Mapping)]
+
+        # A valuation series is used only when it can be attributed to exactly the accounts the
+        # record claims, and only when its currency is known.
+        if explicit_items and selection_is_subset:
+            raw_attr = data.get("nav_points_account_ids")
+            attributed = (
+                {str(x).strip() for x in raw_attr if str(x).strip()}
+                if isinstance(raw_attr, (list, tuple))
+                else set()
+            )
+            if attributed != selected_set:
+                parser_warnings.append(
+                    "The valuation series was not used because it cannot be attributed to the "
+                    "selected accounts; returns are withheld."
+                )
+                explicit_items = []
+        if explicit_items:
+            scope_ccys: set[str] = set()
+            for acct in filtered_accounts:
+                meta = acct.get("meta") if isinstance(acct.get("meta"), Mapping) else {}
+                acct_bal = acct.get("balance")
+                bal_ccy = (
+                    acct_bal.get("total", {}).get("currency")
+                    if isinstance(acct_bal, Mapping) and isinstance(acct_bal.get("total"), Mapping)
+                    else None
+                )
+                ccy = _extract_currency_code(
+                    acct.get("currency") or meta.get("currency") or bal_ccy, default=""
+                )
+                if ccy:
+                    scope_ccys.add(ccy)
+            if len(scope_ccys) > 1 and any(
+                np_item.get("nav_base") is None and not np_item.get("currency")
+                for np_item in explicit_items
+            ):
+                parser_warnings.append(
+                    "The valuation series was not used because the accounts span more than one "
+                    "currency and the series does not state its currency; returns are withheld."
+                )
+                explicit_items = []
+
+        if explicit_items:
+            for np_item in explicit_items:
                 n_ts = _parse_iso_ts(
                     np_item.get("timestamp_utc") or np_item.get("date"),
                     end_of_day=("timestamp_utc" not in np_item),
@@ -1715,7 +1808,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 )
                 nav_by_ts[n_ts] = (prev_nav + n_val, merged_cash)
 
-        has_explicit_curve = sum(1 for v in nav_by_ts.values() if v[0] > 0.0) >= 2
+        has_explicit_curve = len(_trim_valuation_series(list(nav_by_ts.items()))) >= 2
 
         balances_raw = data.get("balances")
         balances_source: list[Mapping[str, Any]] = []
@@ -1736,7 +1829,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             has_snapshot_row = False
             for b in balances_source:
                 aid = str(b.get("account_id") or "").strip()
-                if selected_set and aid and aid not in selected_set:
+                if selected_set and aid not in selected_set:
                     continue
                 tot_field = b.get("total")
                 b_ccy = _extract_currency_code(b.get("currency"), base_currency)
@@ -1771,9 +1864,25 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
         nav_points = [
             NormalizedNavPoint(timestamp_utc=ts_key, nav_base=vals[0], cash_base=vals[1])
-            for ts_key, vals in sorted(nav_by_ts.items(), key=lambda kv: kv[0])
-            if vals[0] > 0.0
+            for ts_key, vals in _trim_valuation_series(list(nav_by_ts.items()))
         ]
+
+        # A capital flow in another currency is valued at an undated rate, not at a rate for
+        # its own date, so a return over a series that contains it is not computable.
+        if len(nav_points) >= 2:
+            first_nav_ts = nav_points[0].timestamp_utc
+            last_nav_ts = nav_points[-1].timestamp_utc
+            if any(
+                f.kind in _CAPITAL_FLOW_KINDS
+                and f.currency != base_currency
+                and first_nav_ts < f.timestamp_utc <= last_nav_ts
+                for f in flows
+            ):
+                parser_warnings.append(
+                    "A deposit, withdrawal or transfer in a currency other than the base currency "
+                    "has no conversion rate for its own date; returns are withheld."
+                )
+                nav_points = [nav_points[-1]]
 
         all_ts = (
             [t.timestamp_utc for t in trades]
@@ -1824,6 +1933,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             nav_points=nav_points,
             conversion_rates=conversion_rates_out,
             enabled_sections=enabled_secs,
+            parser_warnings=parser_warnings,
         )
 
     def fetch_live_ledger(
@@ -2160,7 +2270,11 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
             live_pair_rates, _ = _parse_currency_rate_pairs(currency_rates_list, None, "USD")
 
+            live_sel = {str(x).strip() for x in selected_account_ids or [] if str(x).strip()}
             for acct, aid, bal_items, acct_positions in pending_acct_fallbacks:
+                if live_sel and aid not in live_sel:
+                    # A deselected account is not valued, so it can never refuse the record.
+                    continue
                 meta_obj = acct.get("meta") if isinstance(acct.get("meta"), Mapping) else {}
                 acct_bal_obj = acct.get("balance")
                 acct_tot_val: float | None = None
@@ -2273,7 +2387,9 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                         f_val = float(raw_val)
                                     except (TypeError, ValueError):
                                         continue
-                                    if f_val > 0.0:
+                                    # Zero and negative days are kept: dropping them would hide
+                                    # a wipe-out from the return calculation.
+                                    if math.isfinite(f_val):
                                         perf_nav_points.append({"date": str(raw_dt), "value": f_val})
 
             bundle_payload: dict[str, Any] = {
@@ -2285,6 +2401,9 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 bundle_payload["currency_rates"] = currency_rates_list
             if len(perf_nav_points) >= 2:
                 bundle_payload["nav_points"] = perf_nav_points
+                if "accounts" in perf_params:
+                    # The series was requested for exactly these accounts.
+                    bundle_payload["nav_points_account_ids"] = perf_params["accounts"].split(",")
             if fallback_positions:
                 bundle_payload["positions"] = fallback_positions
             if fallback_balances:
