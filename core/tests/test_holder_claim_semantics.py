@@ -121,6 +121,33 @@ class HolderClaimIsReportedSeparatelyFromValidTests(unittest.TestCase):
         self.assertTrue(any("holder" in w.lower() and "invalid" in w.lower() for w in res.warnings))
         self.assertFalse(any("self-asserted" in w for w in res.warnings))
 
+    def test_a_holder_claim_with_a_format_character_is_invalid(self) -> None:
+        # Bidi controls, zero-width characters, the soft hyphen, word joiners, the byte
+        # order mark and tag characters (Unicode category Cf), assembled at run time.
+        format_chars = ["‮", "‪", "⁦", "⁩", "؜", "​", "‏",
+                        "⁠", "⁤", "﻿", "­", chr(0xE0041)]
+        # (A handle is already limited to ASCII letters, digits and _ . - by its own rule.)
+        for ch in [""] + format_chars:
+            for field, value in (("display_name", f"Ana{ch} Trader"), ("display_name", f"{ch}deifirev"),
+                                 ("profile_url", f"https://example.invalid/{ch}ana")):
+                with self.subTest(char=f"U+{ord(ch):04X}" if ch else "none", field=field, value=repr(value)):
+                    holder = generate_ed25519_keypair()
+                    claim = _attestation_for(self.bundle, "Ana Trader").to_dict()
+                    claim.pop("signature_hex")
+                    claim.update({field: value, "holder_public_key_hex": holder.public_key_hex})
+                    claim["signature_hex"] = ed25519_sign_domain(
+                        holder.private_key_hex, SIGNING_DOMAIN_HOLDER, jcs_canonicalize(claim)
+                    )
+                    data = self.bundle.to_dict()
+                    data["holder_identity"] = claim
+                    res = verify_proof_bundle(VerifyProofBundle.from_dict(data), now_utc=NOW)
+                    self.assertTrue(res.valid, res.errors)
+                    if not ch:  # the same claim without a format character is self-asserted
+                        self.assertEqual(res.holder_claim_status.value, "self_asserted")
+                        continue
+                    self.assertEqual(res.holder_claim_status.value, "invalid")
+                    self.assertIsNone(res.holder_display_name)
+
     def test_attestation_for_another_record_is_invalid_claim(self) -> None:
         other = _bundle(proof_id="prf-holder-semantics-other")
         res = verify_proof_bundle(

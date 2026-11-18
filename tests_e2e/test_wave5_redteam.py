@@ -1710,17 +1710,20 @@ class TestWave5XssClickjackingAndSecretLeakage(unittest.TestCase):
         for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247891.55"):
             self.assertNotIn(leak, str(v_ctx.exception))
 
-        with self.assertRaises(WorkerIsolationError) as w_ctx:
+        # An unexpected error inside the worker is answered with a fixed sentence: none of the
+        # worker's own text (and so no secret, account id or dollar amount) is passed on.
+        from app.worker_isolation import UNREADABLE_INPUT_DETAIL
+
+        with self.assertRaises(WorkerValidationError) as w_ctx:
             run_isolated_one_shot_verification(
                 worker_payload,
                 config=self.cfg,
                 pipeline_spec=f"{__name__}:_crashing_secret_worker_pipeline",
             )
         w_err = str(w_ctx.exception)
-        for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247,891.55"):
+        for leak in (eodhd_secret, ctrader_tok, ctrader_client_sec, raw_tradier_acct, "247,891.55", "247891.55"):
             self.assertNotIn(leak, w_err)
-        self.assertIn("/v1/accounts/[REDACTED]/balances", w_err)
-        self.assertIn("$[REDACTED]", w_err)
+        self.assertEqual(w_err, UNREADABLE_INPUT_DETAIL)
 
         # 4. Serialized VerifyProofBundle contains zero raw account IDs or exact dollar NAVs
         ledger = _build_35_day_ledger(raw_account_id=raw_ibkr_acct)

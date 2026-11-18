@@ -791,10 +791,16 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
     if not _HAS_FASTAPI:
         raise RuntimeError("fastapi package is not installed in this Python environment")
 
+    # A hosted deployment serves no interactive API documents (/docs, /redoc, /openapi.json).
+    hosted = bool(verify_app.config.hosted_multi_user_mode)
+    docs_kwargs: dict[str, Any] = (
+        {"docs_url": None, "redoc_url": None, "openapi_url": None} if hosted else {}
+    )
     fapp = _FastAPI(
         title="N170 Verify API",
         version=__version__,
         description="Cryptographic brokerage verification, isolated workers, and C2SP continuity log",
+        **docs_kwargs,
     )
     fapp.state.verify_app = verify_app
     fapp.verify_app = verify_app  # type: ignore[attr-defined]

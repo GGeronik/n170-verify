@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import re
+import unicodedata
 from typing import Any
 
 from n170_verify.contracts.assurance import (
@@ -65,6 +66,19 @@ ALLOWED_RETENTION_MODES: frozenset[str] = frozenset(
 )
 _HOLDER_HANDLE_RE = re.compile(r"^@[A-Za-z0-9_.\-]{1,32}$")
 _FORBIDDEN_HOLDER_CHARS_RE = re.compile(r'[<>"\'`\x00-\x1f\x7f]')
+
+
+def holder_text_has_format_character(*values: str | None) -> bool:
+    """True when any holder text holds a Unicode format character (category Cf).
+
+    Bidi controls, zero-width characters, the soft hyphen, word joiners, the byte order
+    mark and tag characters change how a name reads without being visible, so a holder
+    claim that holds one is not a valid claim.
+    """
+    return any(
+        value is not None and any(unicodedata.category(ch) == "Cf" for ch in value)
+        for value in values
+    )
 
 
 @dataclass(slots=True)
@@ -545,6 +559,7 @@ def verify_proof_bundle(
             att.proof_id != proof_bundle.proof_id
             or att.merkle_root != proof_bundle.merkle_root
             or att.proof_hash != proof_bundle.proof_hash()
+            or holder_text_has_format_character(att.display_name, att.handle, att.profile_url)
             or not att.verify_signature()
         ):
             holder_claim_status = HolderClaimStatus.INVALID

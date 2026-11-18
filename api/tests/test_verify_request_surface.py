@@ -379,5 +379,22 @@ class MalformedVerifyFieldsTests(unittest.TestCase):
                 self.assertEqual(resp.json()["error"], "validation_error")
 
 
+class HostedInteractiveDocsTests(unittest.TestCase):
+    """A hosted deployment serves no interactive API documents; a self-hosted one still may."""
+
+    def test_hosted_mode_serves_no_docs_redoc_or_openapi(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:  # pragma: no cover - FastAPI is optional
+            self.skipTest("fastapi is not installed")
+        for hosted, expected in ((True, 404), (False, 200)):
+            app = create_app(_config(hosted=hosted), prefer_fastapi=True)
+            self.addCleanup(app.verify_app.close)
+            client = TestClient(app)
+            for path in ("/docs", "/redoc", "/openapi.json"):
+                with self.subTest(hosted=hosted, path=path):
+                    self.assertEqual(client.get(path).status_code, expected)
+
+
 if __name__ == "__main__":
     unittest.main()

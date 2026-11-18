@@ -436,6 +436,18 @@ class TestInvalidHolderClaimIsNotPublished(_Base):
         self.assertTrue(any("holder" in e.lower() for e in resp.json()["errors"]), resp.text)
         self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 0)
 
+    def test_a_holder_name_with_a_format_character_is_refused(self) -> None:
+        # A right-to-left override and a zero-width space, assembled at run time.
+        for n, name in enumerate(("‮" + "deifirev", "Ana Trader" + "‮", "Ana" + "​" + "Trader")):
+            with self.subTest(name=repr(name)):
+                bundle = self._host(f"prf-holder-format-{n}")
+                data = bundle.to_dict()
+                data["holder_identity"] = _holder_claim(bundle, name)
+                resp = self.client.post("/api/v1/proofs", json={"proof_bundle": data, "opt_in_leaderboard": True})
+                self.assertEqual(resp.status_code, 422, resp.text)
+                self.assertEqual(resp.json()["error"], "invalid_proof_bundle")
+        self.assertEqual(self.app.verify_app.store.total_row_counts()["proofs"], 0)
+
     def test_chain_enrolment_with_an_invalid_holder_claim_is_refused(self) -> None:
         b0 = self._chain_bundle("prf-holder-chain-0", self._genesis_link("chn-holder", TAG_C), outside=False)
         data = b0.to_dict()
