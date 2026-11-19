@@ -74,7 +74,7 @@ CALLER_FETCH_KWARGS_ALLOWLIST: dict[str, frozenset[str]] = {
     "ibkr_oauth": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
     "ctrader": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
     "ctrader_oauth": _WINDOW_FETCH_KEYS | {"selected_account_ids"},
-    "ibkr_flex_web": frozenset({"flex_token", "query_id"}),
+    "ibkr_flex_web": frozenset({"flex_token", "query_id", "query_ids", "start_date", "end_date"}),
 }
 
 # Request fields that carry a self-reported file or a pre-built ledger.
@@ -130,12 +130,17 @@ _HOSTED_BROKER_ID_RE = re.compile(r"[a-z0-9_]+")
 HOSTED_VERIFY_OFFERED_APPROVAL_STATES: frozenset[ProviderApprovalState] = frozenset(
     {ProviderApprovalState.PUBLIC_API_PERMISSIONLESS, ProviderApprovalState.OFFLINE_EXPORT_ONLY}
 )
+HOSTED_VERIFY_OFFERED_BROKER_IDS: frozenset[str] = frozenset({"ibkr_flex_web"})
 
 
 def _hosted_connector_not_offered(broker_id: str, config: ApiConfig) -> str | None:
     """Hosted: a reason when this route does not offer the configured connector."""
     state = config.connector_approval_states.get(broker_id)
-    if state is None or state in HOSTED_VERIFY_OFFERED_APPROVAL_STATES:
+    if (
+        state is None
+        or state in HOSTED_VERIFY_OFFERED_APPROVAL_STATES
+        or broker_id in HOSTED_VERIFY_OFFERED_BROKER_IDS
+    ):
         return None
     return (
         f"broker_id={broker_id!r} is not offered on this host through this route until it has "
@@ -269,6 +274,7 @@ def handle_post_verify(
     pipeline_spec: WorkerPipelineSpec = None,
     headers: Mapping[str, str] | None = None,
     hyperliquid_http_transport: Any = None,
+    ibkr_flex_http_transport: Any = None,
 ) -> tuple[int, dict[str, Any]]:
     """Execute ``POST /api/v1/verify`` inside a single-use ``spawn`` worker subprocess."""
     if not isinstance(payload, Mapping):
@@ -364,6 +370,7 @@ def handle_post_verify(
             retention_mode=retention_mode,
             persistent_rows_written=0,
             _hyperliquid_http_transport=hyperliquid_http_transport,
+            _ibkr_flex_http_transport=ibkr_flex_http_transport,
             result_meta=result_meta,
         )
     except PaperOrSandboxRejectedError as exc:

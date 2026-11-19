@@ -94,14 +94,12 @@ MAX_CONCURRENT_VERIFICATION_WORKERS = 2
 # Seconds a refused caller is asked to wait before trying again.
 VERIFICATION_RETRY_AFTER_SECONDS = 10
 # Largest statement accepted for verification, in bytes and in rows (line endings of any
-# kind, or XML elements), summed over every statement field of one request. The cost per row
-# depends on the statement kind and grows faster than linearly for a long valuation series:
-# measured on a laptop core, a Tradovate cash history (the slowest kind measured) took 2.8 s
-# for 2,000 rows, 7.4 s for 4,000, 9.7 s at this limit and about 17 s near 10,000. The row
-# limit keeps the slowest legal file within about a third of the 30-second worker timeout
-# on that machine.
-MAX_STATEMENT_INPUT_BYTES = 2 * 1024 * 1024
-MAX_STATEMENT_INPUT_ROWS = 5_000
+# kind, or XML elements), summed over every statement field of one request. Calibrated at
+# 16 MiB and 50,000 rows/XML elements so multi-year (2-4 year) IBKR Activity Flex XML files
+# with daily EquitySummaryInBase, ConversionRates, CashTransactions, and Trades verify cleanly
+# while still bounding single-worker memory and parse CPU within the 30-second worker timeout.
+MAX_STATEMENT_INPUT_BYTES = 16 * 1024 * 1024
+MAX_STATEMENT_INPUT_ROWS = 50_000
 
 _VERIFICATION_WORKER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_VERIFICATION_WORKERS)
 
@@ -955,6 +953,7 @@ def _ephemeral_worker_entrypoint(
     from n170_verify.connectors import (
         DisallowedCapabilityError,
         HyperliquidServiceError,
+        IbkrFlexServiceError,
         MutatingCredentialRejectedError,
         PaperOrSandboxAccountRejectedError,
         ProviderApprovalRequiredError,
@@ -1037,7 +1036,7 @@ def _ephemeral_worker_entrypoint(
                 "worker_pid": os.getpid(),
             }
         )
-    except (HyperliquidServiceError, SnapTradeError) as exc:
+    except (HyperliquidServiceError, SnapTradeError, IbkrFlexServiceError) as exc:
         send_conn.send(
             {
                 "ok": False,
@@ -1105,6 +1104,9 @@ def _collect_job_secrets(value: Any, *, key_hint: str = "", out: list[str] | Non
         "assertion",
         "cookie",
         "credential",
+        "query_id",
+        "query_ids",
+        "ref_code",
     )
     if isinstance(value, Mapping):
         for k, v in value.items():
@@ -1179,6 +1181,7 @@ def run_isolated_one_shot_verification(
     _trusted_internal_input: bool = False,
     _hyperliquid_http_transport: Any = None,
     _snaptrade_http_transport: Any = None,
+    _ibkr_flex_http_transport: Any = None,
     result_meta: dict[str, Any] | None = None,
 ) -> tuple[VerifyProofBundle, WorkerIsolationReceipt, int]:
     """Execute portfolio parsing & Merkle commitment in a single-use ``spawn`` worker subprocess.
@@ -1301,6 +1304,8 @@ def run_isolated_one_shot_verification(
         "snaptrade_poc",
     }:
         worker_job["_internal_snaptrade_transport"] = _snaptrade_http_transport
+    if _ibkr_flex_http_transport is not None and broker_id == "ibkr_flex_web":
+        worker_job["_internal_ibkr_flex_transport"] = _ibkr_flex_http_transport
     worker_job["issued_at_utc"] = issued_at_utc
     worker_job["period_start_utc"] = period_start_utc
     worker_job["period_end_utc"] = period_end_utc
@@ -1347,8 +1352,13 @@ def run_isolated_one_shot_verification(
 
         send_conn.close()
 
+        effective_worker_timeout = (
+            max(config.worker_timeout_seconds, 95.0)
+            if broker_id == "ibkr_flex_web" and config.worker_timeout_seconds >= 30.0
+            else config.worker_timeout_seconds
+        )
         try:
-            has_msg = recv_conn.poll(config.worker_timeout_seconds)
+            has_msg = recv_conn.poll(effective_worker_timeout)
             if not has_msg:
                 if proc.is_alive():
                     proc.kill()

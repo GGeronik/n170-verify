@@ -220,9 +220,9 @@ def _compute_trade_fx_spread_cost_base(
     if qty <= 0.0:
         return 0.0
 
-    if trade.asset_class == AssetClass.FX:
+    if trade.asset_class in {AssetClass.FX, AssetClass.CASH}:
         parsed_pair = normalize_fx_pair(trade.symbol)
-        if parsed_pair is None and trade.currency != base_currency:
+        if parsed_pair is None and trade.asset_class == AssetClass.FX and trade.currency != base_currency:
             parsed_pair = (base_currency, trade.currency)
         if parsed_pair is None:
             return 0.0

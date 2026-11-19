@@ -36,6 +36,7 @@ from app.routes_snaptrade import (
     handle_get_snaptrade_status,
     handle_post_snaptrade_portal,
     handle_post_snaptrade_release,
+    handle_post_snaptrade_session_status,
     handle_post_snaptrade_verify,
 )
 from app.routes_sync import (
@@ -190,6 +191,10 @@ def _is_sync_route(path: str) -> bool:
     return path == "/api/v1/sync" or path.startswith("/api/v1/sync/")
 
 
+def _is_snaptrade_route(path: str) -> bool:
+    return path == "/api/v1/connect/snaptrade" or path.startswith("/api/v1/connect/snaptrade/")
+
+
 def _sync_json_response(status_code: int, payload: Any) -> ApiResponse:
     resp = ApiResponse.json_response(
         status_code,
@@ -202,7 +207,16 @@ def _sync_json_response(status_code: int, payload: Any) -> ApiResponse:
     return resp
 
 
+def _snaptrade_json_response(status_code: int, payload: Any) -> ApiResponse:
+    return ApiResponse.json_response(
+        status_code,
+        payload,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 _ROUTE_BADGE_RE = re.compile(r"^/api/v1/badges/(?P<proof_id>.+)\.svg$")
+_ROUTE_PROOF_BADGE_RE = re.compile(r"^/api/v1/proofs/(?P<proof_id>.+)/badge\.svg$")
 _ROUTE_SYNC_ITEM_RE = re.compile(r"^/api/v1/sync/(?P<connection_id>[^/]+)$")
 _ROUTE_PROOF_DISCORD_EMBED_RE = re.compile(r"^/api/v1/proofs/(?P<proof_id>.+)/discord-embed$")
 _ROUTE_PROOF_QR_PAYLOAD_RE = re.compile(r"^/api/v1/proofs/(?P<proof_id>.+)/qr-payload$")
@@ -228,6 +242,7 @@ class VerifyApiApplication:
         snaptrade_relay: SnapTradeRelayCoordinator | None = None,
         snaptrade_http_transport: Any = None,
         hyperliquid_http_transport: Any = None,
+        ibkr_flex_http_transport: Any = None,
     ) -> None:
         self.config = config or ApiConfig()
         self.store = store or ProofStore(self.config)
@@ -246,6 +261,7 @@ class VerifyApiApplication:
             session_ttl_seconds=self.config.snaptrade_session_ttl_seconds,
         )
         self.hyperliquid_http_transport = hyperliquid_http_transport
+        self.ibkr_flex_http_transport = ibkr_flex_http_transport
 
     @property
     def verify_app(self) -> VerifyApiApplication:
@@ -280,6 +296,7 @@ class VerifyApiApplication:
             scanner = OutboundPrivacyScanner()
             body_text = resp.body.decode("utf-8", errors="replace")
             violations = scanner.scan_text(body_text)
+            extra_hdrs = {"Cache-Control": "no-store"} if _is_snaptrade_route(path) else None
             if violations and (400 <= resp.status_code < 500 or resp.status_code == 502):
                 # An error that would repeat a caller's own text (a field name, a path
                 # id) in a form the scanner blocks keeps its status and names only the
@@ -293,6 +310,7 @@ class VerifyApiApplication:
                             "would repeat text that looks like an account number or a credential."
                         ),
                     },
+                    headers=extra_hdrs,
                 )
             if violations:
                 return ApiResponse.json_response(
@@ -302,6 +320,7 @@ class VerifyApiApplication:
                         "detail": "Outbound privacy scanner blocked response containing sensitive data",
                         "violations": violations,
                     },
+                    headers=extra_hdrs,
                 )
         return resp
 
@@ -381,15 +400,18 @@ class VerifyApiApplication:
             )
 
         if verb == "OPTIONS" and (path == "/healthz" or path.startswith("/api/v1/")):
+            opt_headers: dict[str, str] = {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
+                "X-Content-Type-Options": "nosniff",
+            }
+            if _is_snaptrade_route(path):
+                opt_headers["Cache-Control"] = "no-store"
             return ApiResponse(
                 status_code=204,
                 body=b"",
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Accept, Content-Type, X-N170-Dev-Key",
-                    "X-Content-Type-Options": "nosniff",
-                },
+                headers=opt_headers,
             )
 
         # 3. Subprocess-isolated one-shot verification (POST /api/v1/verify & /api/v1/verify/auto-detect)
@@ -407,6 +429,7 @@ class VerifyApiApplication:
                 pipeline_spec=self.pipeline_spec,
                 headers=req_headers,
                 hyperliquid_http_transport=self.hyperliquid_http_transport,
+                ibkr_flex_http_transport=self.ibkr_flex_http_transport,
             )
             if isinstance(parsed, Mapping) and parsed.get("persist_sync") is True:
                 return _sync_json_response(st, resp)
@@ -434,33 +457,47 @@ class VerifyApiApplication:
         # 3a. Ephemeral 5-slot SnapTrade V1 developer/promo relay routes
         if path == "/api/v1/connect/snaptrade/status":
             if verb != "GET":
-                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                return _snaptrade_json_response(405, {"error": "method_not_allowed"})
             st, resp = handle_get_snaptrade_status(
                 config=self.config,
                 relay=self.snaptrade_relay,
             )
-            return ApiResponse.json_response(st, resp)
+            return _snaptrade_json_response(st, resp)
 
         if path == "/api/v1/connect/snaptrade/portal":
             if verb != "POST":
-                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                return _snaptrade_json_response(405, {"error": "method_not_allowed"})
             ok, parsed = _parse_json_body(body)
             if not ok:
-                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+                return _snaptrade_json_response(400, {"error": "invalid_json", "detail": parsed})
             st, resp = handle_post_snaptrade_portal(
                 parsed,
                 config=self.config,
                 relay=self.snaptrade_relay,
                 headers=req_headers,
             )
-            return ApiResponse.json_response(st, resp)
+            return _snaptrade_json_response(st, resp)
+
+        if path == "/api/v1/connect/snaptrade/session-status":
+            if verb != "POST":
+                return _snaptrade_json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return _snaptrade_json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_snaptrade_session_status(
+                parsed,
+                config=self.config,
+                relay=self.snaptrade_relay,
+                headers=req_headers,
+            )
+            return _snaptrade_json_response(st, resp)
 
         if path == "/api/v1/connect/snaptrade/verify":
             if verb != "POST":
-                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                return _snaptrade_json_response(405, {"error": "method_not_allowed"})
             ok, parsed = _parse_json_body(body)
             if not ok:
-                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+                return _snaptrade_json_response(400, {"error": "invalid_json", "detail": parsed})
             st, resp = handle_post_snaptrade_verify(
                 parsed,
                 config=self.config,
@@ -469,21 +506,21 @@ class VerifyApiApplication:
                 pipeline_spec=self.pipeline_spec,
                 headers=req_headers,
             )
-            return ApiResponse.json_response(st, resp)
+            return _snaptrade_json_response(st, resp)
 
         if path == "/api/v1/connect/snaptrade/release":
             if verb != "POST":
-                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+                return _snaptrade_json_response(405, {"error": "method_not_allowed"})
             ok, parsed = _parse_json_body(body)
             if not ok:
-                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+                return _snaptrade_json_response(400, {"error": "invalid_json", "detail": parsed})
             st, resp = handle_post_snaptrade_release(
                 parsed,
                 config=self.config,
                 relay=self.snaptrade_relay,
                 headers=req_headers,
             )
-            return ApiResponse.json_response(st, resp)
+            return _snaptrade_json_response(st, resp)
 
         # 3b. Viral tools: Claim Plausibility, Challenge Card, and Head-to-Head Comparison
         if path == "/api/v1/tools/plausibility":
@@ -615,6 +652,17 @@ class VerifyApiApplication:
             )
             return ApiResponse.json_response(st, resp, headers=hdrs)
 
+        proof_badge_match = _ROUTE_PROOF_BADGE_RE.match(path)
+        if proof_badge_match is not None:
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            proof_id = unquote(proof_badge_match.group("proof_id"))
+            q_map = _flatten_query_params(query_string)
+            st, svg_bytes, hdrs = handle_get_badge_svg(
+                proof_id, store=self.store, query_params=q_map
+            )
+            return ApiResponse(status_code=st, body=svg_bytes, headers=hdrs)
+
         proof_match = _ROUTE_PROOF_ITEM_RE.match(path)
         if proof_match is not None:
             proof_id = unquote(proof_match.group("proof_id"))
@@ -686,9 +734,12 @@ class VerifyApiApplication:
             st, resp = handle_get_leaderboard(q_map, store=self.store)
             return ApiResponse.json_response(st, resp)
 
-        return ApiResponse.json_response(
-            404, {"error": "not_found", "detail": f"No route matching {verb} {path}"}
-        )
+        not_found_body = {"error": "not_found", "detail": f"No route matching {verb} {path}"}
+        if _is_sync_route(path):
+            return _sync_json_response(404, not_found_body)
+        if _is_snaptrade_route(path):
+            return _snaptrade_json_response(404, not_found_body)
+        return ApiResponse.json_response(404, not_found_body)
 
     async def __call__(self, scope: Mapping[str, Any], receive: Any, send: Any) -> None:
         """Standard ASGI 3.0 interface compatible with Uvicorn, Hypercorn, and httpx ASGITransport."""
@@ -860,6 +911,7 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
         ("/api/v1/connect/ibkr-flex-guide", ["GET", "OPTIONS"]),
         ("/api/v1/connect/snaptrade/status", ["GET", "OPTIONS"]),
         ("/api/v1/connect/snaptrade/portal", ["POST", "OPTIONS"]),
+        ("/api/v1/connect/snaptrade/session-status", ["POST", "OPTIONS"]),
         ("/api/v1/connect/snaptrade/verify", ["POST", "OPTIONS"]),
         ("/api/v1/connect/snaptrade/release", ["POST", "OPTIONS"]),
         ("/api/v1/tools/plausibility", ["POST", "OPTIONS"]),
@@ -872,6 +924,7 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
         ("/api/v1/proofs/verify", ["POST", "OPTIONS"]),
         ("/api/v1/proofs/{proof_id:path}/discord-embed", ["GET", "OPTIONS"]),
         ("/api/v1/proofs/{proof_id:path}/qr-payload", ["GET", "OPTIONS"]),
+        ("/api/v1/proofs/{proof_id:path}/badge.svg", ["GET", "OPTIONS"]),
         ("/api/v1/proofs/{proof_id}", ["GET", "OPTIONS"]),
         ("/api/v1/chains", ["POST", "OPTIONS"]),
         ("/api/v1/chains/{chain_id}/append", ["POST", "OPTIONS"]),
@@ -895,6 +948,7 @@ def create_app(
     snaptrade_relay: SnapTradeRelayCoordinator | None = None,
     snaptrade_http_transport: Any = None,
     hyperliquid_http_transport: Any = None,
+    ibkr_flex_http_transport: Any = None,
     prefer_fastapi: bool = True,
 ) -> Any:
     """Create the N170 Verify application (FastAPI when installed, zero-dep ASGI otherwise)."""
@@ -907,6 +961,7 @@ def create_app(
         snaptrade_relay=snaptrade_relay,
         snaptrade_http_transport=snaptrade_http_transport,
         hyperliquid_http_transport=hyperliquid_http_transport,
+        ibkr_flex_http_transport=ibkr_flex_http_transport,
     )
     if prefer_fastapi and _HAS_FASTAPI:
         return mount_onto_fastapi(core_app)

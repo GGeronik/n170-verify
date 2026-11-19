@@ -26,6 +26,12 @@ REQUIRED_IBKR_FLEX_SECTIONS: tuple[str, ...] = (
     "ConversionRates",
 )
 
+RECOMMENDED_IBKR_FLEX_SECTIONS: tuple[str, ...] = (
+    "AccountInformation",
+    "ChangeInNAV",
+    "CashReport",
+)
+
 
 @dataclass(slots=True)
 class IbkrFlexSectionSpec(ContractModelMixin):
@@ -57,6 +63,8 @@ class IbkrFlexSetupGuide(ContractModelMixin):
     estimated_setup_minutes: int
     required_sections: list[str] = field(default_factory=list)
     section_checklist: list[IbkrFlexSectionSpec] = field(default_factory=list)
+    recommended_sections: list[str] = field(default_factory=list)
+    recommended_section_checklist: list[IbkrFlexSectionSpec] = field(default_factory=list)
     steps: list[dict[str, Any]] = field(default_factory=list)
     format_configuration: dict[str, Any] = field(default_factory=dict)
     security_settings: dict[str, Any] = field(default_factory=dict)
@@ -155,6 +163,27 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
         ),
     ]
 
+    recommended_checklist = [
+        IbkrFlexSectionSpec(
+            section="AccountInformation",
+            portal_label="Account Information",
+            recommended_detail_level="Summary",
+            purpose="Confirms base currency and single-account identifier across multi-year chunked queries.",
+        ),
+        IbkrFlexSectionSpec(
+            section="ChangeInNAV",
+            portal_label="Change in NAV",
+            recommended_detail_level="Summary",
+            purpose="Provides IBKR's exact intraday-revalued TWR on single days with >10% deposits or withdrawals.",
+        ),
+        IbkrFlexSectionSpec(
+            section="CashReport",
+            portal_label="Cash Report",
+            recommended_detail_level="Currency",
+            purpose="Attributes opening cash balances by currency when the verification window starts mid-account-life.",
+        ),
+    ]
+
     steps: list[dict[str, Any]] = [
         {
             "step": 1,
@@ -166,13 +195,15 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
         },
         {
             "step": 2,
-            "title": "Enable All 9 Required Reconciliation Sections",
+            "title": "Enable All 9 Required Reconciliation Sections (+ ChangeInNAV & AccountInformation)",
             "instruction": (
-                "Enable EquitySummaryInBase (Net Asset Value in Base), PriorPeriodPositions, "
-                "OpenPositions (SUMMARY), Trades (EXECUTION), CashTransactions, Transfers, "
-                "CorporateActions, OptionEAE, and ConversionRates, selecting 'Select All' fields in each section."
+                "Enable EquitySummaryInBase (Net Asset Value in Base), ChangeInNAV (Change in NAV), "
+                "AccountInformation, PriorPeriodPositions, OpenPositions (SUMMARY), Trades (EXECUTION), "
+                "CashTransactions, Transfers, CorporateActions, OptionEAE, and ConversionRates, "
+                "selecting 'Select All' fields in each section."
             ),
             "required_sections": list(REQUIRED_IBKR_FLEX_SECTIONS),
+            "recommended_sections": list(RECOMMENDED_IBKR_FLEX_SECTIONS),
         },
         {
             "step": 3,
@@ -189,7 +220,8 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
                 "For offline import (SELF_REPORTED), run the query and upload the XML directly. "
                 "For higher-assurance automated retrieval (OPERATOR_RETRIEVED), open Flex Web Service "
                 "Configuration, generate a read-only token with 6h expiry and IP restriction enabled, "
-                "and provide the Query ID and short-lived token."
+                "and provide the Query ID and short-lived token (multi-year windows >365 days are "
+                "split into yearly SendRequest chunks automatically)."
             ),
         },
     ]
@@ -200,15 +232,18 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
         estimated_setup_minutes=3,
         required_sections=list(REQUIRED_IBKR_FLEX_SECTIONS),
         section_checklist=checklist,
+        recommended_sections=list(RECOMMENDED_IBKR_FLEX_SECTIONS),
+        recommended_section_checklist=recommended_checklist,
         steps=steps,
         format_configuration={
             "format": "XML",
-            "period_recommendation": "Last 365 Calendar Days",
+            "period_recommendation": "Last 365 Calendar Days (multi-year ranges auto-chunked via fd/td)",
             "date_format": "yyyy-MM-dd",
             "time_format": "HH:mm:ss",
             "date_time_separator": ";",
             "trades_level_of_detail": "EXECUTION",
             "positions_level_of_detail": "SUMMARY",
+            "change_in_nav_enabled": True,
         },
         security_settings={
             "token_expiry": "6h",
@@ -239,6 +274,7 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
 __all__ = [
     "IbkrFlexSectionSpec",
     "IbkrFlexSetupGuide",
+    "RECOMMENDED_IBKR_FLEX_SECTIONS",
     "REQUIRED_IBKR_FLEX_SECTIONS",
     "get_ibkr_flex_setup_guide",
 ]

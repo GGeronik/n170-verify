@@ -18,7 +18,9 @@ from n170_verify.contracts import (
     IndexedCurvePoint,
     NormalizedFlow,
     NormalizedNavPoint,
+    OriginAssurance,
     PerformanceSummary,
+    ProviderApprovalState,
     classify_capital_bracket,
     parse_utc_timestamp,
 )
@@ -41,6 +43,17 @@ CAPITAL_FLOW_KINDS_FOR_TWR: frozenset[FlowKind] = frozenset(
 )
 
 SECONDS_PER_ACT365_YEAR = 365.0 * 86400.0
+
+# Broker-computed intraday-revalued sub-period TWR (e.g. IBKR <ChangeInNAV twr=...>) is
+# accepted across >10% flow intervals ONLY when the statement was retrieved directly from
+# the broker, never from a self-reported file.
+_TRUSTED_BROKER_TWR_ORIGINS: frozenset[OriginAssurance] = frozenset(
+    {
+        OriginAssurance.OPERATOR_RETRIEVED,
+        OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+        OriginAssurance.BROKER_SIGNED,
+    }
+)
 
 # A return is withheld when the cash flows inside one valuation interval (gross: the sum of
 # the absolute external and in-kind flows) add up to more than this fraction of the
@@ -460,20 +473,78 @@ def calculate_portfolio_performance_detailed(
             )
             return _withheld_result(warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology)
 
+        trusted_broker_ret: float | None = None
+        if (
+            close_val > 0.0
+            and math.isfinite(close_val)
+            and ledger.claimed_origin_assurance in _TRUSTED_BROKER_TWR_ORIGINS
+        ):
+            raw_b_ret = ledger.broker_period_returns.get(curr_pt.timestamp_utc)
+            if (
+                raw_b_ret is not None
+                and not isinstance(raw_b_ret, bool)
+                and math.isfinite(float(raw_b_ret))
+                and float(raw_b_ret) > -1.0
+            ):
+                trusted_broker_ret = float(raw_b_ret)
+
+        use_daily_broker_deposit_dietz = False
+        use_trusted_broker_ret = False
         if open_val > 0.0:
             gross_flow = math.fsum(abs(f_amt) for _, f_amt in interval_flows)
             if gross_flow > LARGE_INTERVAL_FLOW_FRACTION * open_val:
-                warnings.append(
-                    f"Performance metrics were withheld because cash flows of "
-                    f"{100.0 * gross_flow / open_val:.1f}% of the opening value fall inside the "
-                    f"valuation interval ending {curr_pt.timestamp_utc}; that interval's return "
-                    "cannot be computed from its two valuations."
-                )
-                return _withheld_result(
-                    warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology
-                )
+                if trusted_broker_ret is None:
+                    interval_span_sec = (curr_ts - prev_ts).total_seconds()
+                    can_score_daily_broker_deposit = (
+                        ledger.claimed_origin_assurance in _TRUSTED_BROKER_TWR_ORIGINS
+                        and ledger.provider_approval_state != ProviderApprovalState.PUBLIC_API_PERMISSIONLESS
+                        and ledger.broker_id != "hyperliquid"
+                        and "EquitySummaryInBase" in ledger.enabled_sections
+                        and MIN_ANNUALISED_INTERVAL_SECONDS <= interval_span_sec <= 5.5 * 86400.0
+                        and bool(interval_flows)
+                        and all(f_amt > 0.0 for _, f_amt in interval_flows)
+                        and (close_val - net_flow) > 0.25 * open_val
+                    )
+                    if not can_score_daily_broker_deposit:
+                        warnings.append(
+                            f"Performance metrics were withheld because cash flows of "
+                            f"{100.0 * gross_flow / open_val:.1f}% of the opening value fall inside the "
+                            f"valuation interval ending {curr_pt.timestamp_utc}; that interval's return "
+                            "cannot be computed from its two valuations."
+                        )
+                        return _withheld_result(
+                            warnings, psr_benchmark_sr=psr_benchmark_sr, methodology=methodology
+                        )
+                    use_daily_broker_deposit_dietz = True
+                    warnings.append(
+                        f"Interval ending {curr_pt.timestamp_utc} lacked ChangeInNAV sub-period TWR; "
+                        f"used daily broker-retrieved Modified Dietz across deposit(s) of "
+                        f"{100.0 * gross_flow / open_val:.1f}% of opening value."
+                    )
+                else:
+                    use_trusted_broker_ret = True
+                    warnings.append(
+                        f"Interval ending {curr_pt.timestamp_utc} used broker-reported intraday-revalued "
+                        f"TWR across cash flows of {100.0 * gross_flow / open_val:.1f}% of opening value."
+                    )
 
-        if cash_flow_timing == "end_of_day":
+        if use_trusted_broker_ret and trusted_broker_ret is not None and open_val > 0.0:
+            denom = open_val
+            period_ret = trusted_broker_ret
+        elif use_daily_broker_deposit_dietz:
+            span_sec = max((curr_ts - prev_ts).total_seconds(), 1e-9)
+            weighted_flow = math.fsum(
+                (
+                    0.5
+                    if (fts.hour == 0 and fts.minute == 0 and fts.second == 0)
+                    else min(1.0, max(0.0, (curr_ts - fts).total_seconds() / span_sec))
+                )
+                * f_amt
+                for fts, f_amt in interval_flows
+            )
+            denom = open_val + weighted_flow
+            period_ret = (close_val - open_val - net_flow) / denom if denom > 0.0 else float("nan")
+        elif cash_flow_timing == "end_of_day":
             denom = open_val
             period_ret = (close_val - net_flow) / denom - 1.0 if denom > 0.0 else float("nan")
         elif cash_flow_timing == "start_of_day":
