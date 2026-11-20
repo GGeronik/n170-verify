@@ -52,17 +52,37 @@ class PositionRollforwardResult:
     implied_option_cash_delta_base: float
 
 
+_IBKR_FLEX_BROKER_IDS = frozenset({"ibkr", "ibkr_flex", "ibkr_flex_web", "ibkr_flex_offline"})
+_ENDING_POSITIONS_SECTION_TOKENS = frozenset({"openpositions", "positions", "endingpositions"})
+
+
 def _normalize_section_token(section: str) -> str:
     return re.sub(r"[^a-z0-9]", "", section.strip().lower())
+
+
+def _ibkr_omitted_open_positions(ledger: CanonicalPortfolioLedger) -> bool:
+    if (ledger.broker_id or "").strip().lower() not in _IBKR_FLEX_BROKER_IDS:
+        return False
+    if ledger.ending_positions:
+        return False
+    present = {_normalize_section_token(s) for s in ledger.enabled_sections if s and s.strip()}
+    if not present:
+        return False
+    return not bool(present & _ENDING_POSITIONS_SECTION_TOKENS)
 
 
 def _find_missing_completeness_sections(
     enabled_sections: Sequence[str],
     *,
     has_options: bool,
+    omitted_open_positions: bool = False,
 ) -> list[str]:
     present = {_normalize_section_token(s) for s in enabled_sections if s and s.strip()}
     missing: list[str] = []
+    if omitted_open_positions:
+        missing.append("OpenPositions")
+        if "priorperiodpositions" not in present:
+            missing.append("PriorPeriodPositions")
     if "transfers" not in present:
         missing.append("Transfers")
     if "corporateactions" not in present:
@@ -444,6 +464,45 @@ def reconcile_position_rollforward(
 
     all_syms = sorted(set(qty_by_sym.keys()) | set(observed_qty_by_sym.keys()))
     unexplained_position_jump = False
+    omitted_open_pos = _ibkr_omitted_open_positions(ledger)
+
+    if omitted_open_pos:
+        nonzero_syms = [
+            sym
+            for sym in all_syms
+            if abs(qty_by_sym.get(sym, 0.0)) > 1e-9 or abs(observed_qty_by_sym.get(sym, 0.0)) > 1e-9
+        ]
+        if nonzero_syms:
+            findings.append(
+                ReconciliationFinding(
+                    category="position_rollforward",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=ledger.period_end_utc,
+                    expected_value=None,
+                    observed_value=None,
+                    residual_bps=None,
+                    residual_base_currency=None,
+                    math_identity="PriorPositions + Trades + InKindFlows + CorporateActions == EndingPositions",
+                    technical_explanation=(
+                        "OpenPositions section was not included in the IBKR Flex query; "
+                        "ending position roll-forward was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting OpenPositions / PriorPeriodPositions",
+                    ],
+                )
+            )
+        missing_sections = _find_missing_completeness_sections(
+            ledger.enabled_sections,
+            has_options=has_options,
+            omitted_open_positions=True,
+        )
+        return PositionRollforwardResult(
+            findings=findings,
+            ledger_completeness_ok=False,
+            missing_sections=missing_sections,
+            implied_option_cash_delta_base=implied_option_cash_delta_base,
+        )
 
     for sym in all_syms:
         exp_q = qty_by_sym.get(sym, 0.0)
@@ -778,30 +837,51 @@ def reconcile_nav_identities(
     non_cash_ending = [p for p in ledger.ending_positions if p.asset_class != AssetClass.CASH]
     ending_mv_sum = math.fsum(p.market_value_base for p in non_cash_ending)
     if end_pt.positions_base is not None:
-        pos_res = float(end_pt.positions_base) - ending_mv_sum
-        pos_bps = (abs(pos_res) / max(abs(end_pt.nav_base), 1.0)) * 10_000.0
-        pos_ok = abs(pos_res) <= max(2.0, 0.0010 * abs(end_pt.nav_base))
-        findings.append(
-            ReconciliationFinding(
-                category="ending_positions_valuation_identity",
-                outcome=CheckOutcome.PASS if pos_ok else CheckOutcome.DISCREPANCY,
-                date_or_timestamp=end_pt.timestamp_utc,
-                expected_value=ending_mv_sum,
-                observed_value=float(end_pt.positions_base),
-                residual_bps=pos_bps,
-                residual_base_currency=pos_res,
-                math_identity="NavPositionsBase == sum(EndingOpenPositions.market_value_base)",
-                technical_explanation=(
-                    "Ending open positions market value matches NAV positions component."
-                    if pos_ok
-                    else f"NAV positions component ({end_pt.positions_base:.2f}) diverges from sum of ending positions ({ending_mv_sum:.2f})."
-                ),
-                benign_causes_considered=[
-                    "FX conversion cut-off spread across multi-currency positions",
-                    "Accrued bond interest classification",
-                ],
+        if _ibkr_omitted_open_positions(ledger):
+            findings.append(
+                ReconciliationFinding(
+                    category="ending_positions_valuation_identity",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=end_pt.timestamp_utc,
+                    expected_value=None,
+                    observed_value=float(end_pt.positions_base),
+                    residual_bps=None,
+                    residual_base_currency=None,
+                    math_identity="NavPositionsBase == sum(EndingOpenPositions.market_value_base)",
+                    technical_explanation=(
+                        "OpenPositions section was not included in the IBKR Flex query; "
+                        "ending positions valuation identity was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting OpenPositions",
+                    ],
+                )
             )
-        )
+        else:
+            pos_res = float(end_pt.positions_base) - ending_mv_sum
+            pos_bps = (abs(pos_res) / max(abs(end_pt.nav_base), 1.0)) * 10_000.0
+            pos_ok = abs(pos_res) <= max(2.0, 0.0010 * abs(end_pt.nav_base))
+            findings.append(
+                ReconciliationFinding(
+                    category="ending_positions_valuation_identity",
+                    outcome=CheckOutcome.PASS if pos_ok else CheckOutcome.DISCREPANCY,
+                    date_or_timestamp=end_pt.timestamp_utc,
+                    expected_value=ending_mv_sum,
+                    observed_value=float(end_pt.positions_base),
+                    residual_bps=pos_bps,
+                    residual_base_currency=pos_res,
+                    math_identity="NavPositionsBase == sum(EndingOpenPositions.market_value_base)",
+                    technical_explanation=(
+                        "Ending open positions market value matches NAV positions component."
+                        if pos_ok
+                        else f"NAV positions component ({end_pt.positions_base:.2f}) diverges from sum of ending positions ({ending_mv_sum:.2f})."
+                    ),
+                    benign_causes_considered=[
+                        "FX conversion cut-off spread across multi-currency positions",
+                        "Accrued bond interest classification",
+                    ],
+                )
+            )
 
     # 3. Full-window double-entry NAV conservation bridge (detects altered ending/intermediate NAV!)
     if len(nav_sorted) >= 2 and ledger_completeness_ok:

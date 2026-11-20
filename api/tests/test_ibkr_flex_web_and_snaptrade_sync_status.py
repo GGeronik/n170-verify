@@ -57,6 +57,40 @@ def _is_overflow_activities() -> bool:
     return _overflow_flag_path(os.getpid()).exists() or _overflow_flag_path(os.getppid()).exists()
 
 
+def _snaptrade_counters_path(pid: int) -> Path:
+    return Path(tempfile.gettempdir()) / f"n170_test_st_counters_{pid}.json"
+
+
+def _reset_snaptrade_counters() -> None:
+    _snaptrade_counters_path(os.getpid()).write_text(
+        json.dumps({"register_calls": 0, "login_calls": 0}),
+        encoding="utf-8",
+    )
+
+
+def _bump_snaptrade_counter(field: str) -> int:
+    p = _snaptrade_counters_path(os.getpid())
+    if not p.exists():
+        alt = _snaptrade_counters_path(os.getppid())
+        if alt.exists():
+            p = alt
+    data = (
+        json.loads(p.read_text(encoding="utf-8"))
+        if p.exists()
+        else {"register_calls": 0, "login_calls": 0}
+    )
+    data[field] = int(data.get(field, 0)) + 1
+    p.write_text(json.dumps(data), encoding="utf-8")
+    return int(data[field])
+
+
+def _read_snaptrade_counters() -> dict[str, int]:
+    p = _snaptrade_counters_path(os.getpid())
+    if not p.exists():
+        return {"register_calls": 0, "login_calls": 0}
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
 def fake_ibkr_flex_transport(
     method: str, url: str, headers: dict[str, str], body: bytes | None
 ) -> HttpExchangeResponse:
@@ -79,7 +113,8 @@ def fake_ibkr_flex_transport(
     if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
         fd = qs.get("fd", ["20250102"])[0]
         td = qs.get("td", ["20250331"])[0]
-        ref = f"REF-{fd}-{td}"
+        big_suffix = "-BIG" if tok == "BIG-FLEX-TOKEN-3MB" else ""
+        ref = f"REF-{fd}-{td}{big_suffix}"
         env = (
             f"<FlexStatementResponse><Status>Success</Status>"
             f"<ReferenceCode>{ref}</ReferenceCode></FlexStatementResponse>"
@@ -88,7 +123,9 @@ def fake_ibkr_flex_transport(
 
     if url.startswith(IBKR_FLEX_GET_STATEMENT_URL):
         ref = qs["q"][0]
-        _, fd_s, td_s = ref.split("-")
+        parts = ref.split("-")
+        fd_s, td_s = parts[1], parts[2]
+        is_big = len(parts) > 3 and parts[3] == "BIG"
         d0 = date(int(fd_s[:4]), int(fd_s[4:6]), int(fd_s[6:8]))
         d1 = date(int(td_s[:4]), int(td_s[4:6]), int(td_s[6:8]))
         cur = d0
@@ -102,6 +139,17 @@ def fake_ibkr_flex_transport(
                     f'reportDate="{cur.isoformat()}" cash="{nav:.2f}" stock="0.00" total="{nav:.2f}" />'
                 )
             cur += timedelta(days=1)
+        extra_padding = ""
+        if is_big:
+            pad_note = "IBKR verbose statement padding for >2MB GetStatement envelope test " * 8
+            extra_padding = (
+                "<UnbundledCommissionDetails>"
+                + "".join(
+                    f'<UnbundledCommissionDetail accountId="U8899001" tradeID="T-{i}" note="{pad_note}" />'
+                    for i in range(4200)
+                )
+                + "</UnbundledCommissionDetails>"
+            )
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<FlexQueryResponse queryName="HostedAF" type="AF"><FlexStatements count="1">'
@@ -109,6 +157,7 @@ def fake_ibkr_flex_transport(
             f'fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
             f'<EquitySummaryInBase>{"".join(rows)}</EquitySummaryInBase>'
             '<ConversionRates><ConversionRate reportDate="2025-01-02" fromCurrency="USD" toCurrency="EUR" rate="0.92" /></ConversionRates>'
+            f"{extra_padding}"
             '</FlexStatement></FlexStatements></FlexQueryResponse>'
         ).encode("utf-8")
         return HttpExchangeResponse(status_code=200, headers={}, body=xml)
@@ -124,14 +173,19 @@ def fake_snaptrade_transport(
     if path == "/api/v1/snapTrade/listUsers":
         return HttpExchangeResponse(status_code=200, headers={}, body=b"[]")
     if path == "/api/v1/snapTrade/registerUser":
+        _bump_snaptrade_counter("register_calls")
         req = json.loads((body or b"{}").decode("utf-8"))
         out = json.dumps({"userId": req["userId"], "userSecret": "st-secret-xyz-9876"}).encode("utf-8")
         return HttpExchangeResponse(status_code=200, headers={}, body=out)
     if path == "/api/v1/snapTrade/login":
+        seq = _bump_snaptrade_counter("login_calls")
+        out = json.dumps(
+            {"redirectURI": f"https://app.snaptrade.com/blade/connect-{seq}"}
+        ).encode("utf-8")
         return HttpExchangeResponse(
             status_code=200,
             headers={},
-            body=b'{"redirectURI":"https://app.snaptrade.com/ blade/connect-1"}'.replace(b" ", b""),
+            body=out,
         )
     if path == "/api/v1/snapTrade/deleteUser":
         return HttpExchangeResponse(status_code=200, headers={}, body=b'{"status":"deleted"}')
@@ -193,6 +247,7 @@ class HostedIbkrFlexWebAndSnapTradeSyncTests(unittest.TestCase):
     def setUp(self) -> None:
         _set_tx_done(False)
         _set_overflow_activities(False)
+        _reset_snaptrade_counters()
         self.cfg = ApiConfig(
             publisher_keypair=_SIGNING_KEY,
             hosted_multi_user_mode=True,
@@ -214,6 +269,7 @@ class HostedIbkrFlexWebAndSnapTradeSyncTests(unittest.TestCase):
     def tearDown(self) -> None:
         _set_tx_done(False)
         _set_overflow_activities(False)
+        _snaptrade_counters_path(os.getpid()).unlink(missing_ok=True)
         self.app.close()
 
     def test_hosted_ibkr_flex_web_verifies_multiyear_and_serves_proof_badge_svg(self) -> None:
@@ -460,6 +516,245 @@ class HostedIbkrFlexWebAndSnapTradeSyncTests(unittest.TestCase):
                     account_blinding_salt_hex=_SALT,
                     worker_timeout_seconds=bad_timeout,  # type: ignore[arg-type]
                 )
+
+    def test_snaptrade_portal_reissues_fresh_portal_url_for_existing_session_token_without_new_slot(
+        self,
+    ) -> None:
+        p1 = self.client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={"redirect_url": "https://verify.example.org/connect?snaptrade=connected"},
+        )
+        self.assertEqual(p1.status_code, 200, p1.text)
+        b1 = p1.json()
+        tok = b1["session_token"]
+        url1 = b1["portal_url"]
+        self.assertEqual(b1["active_slots"], 1)
+        self.assertEqual(_read_snaptrade_counters()["register_calls"], 1)
+        self.assertEqual(_read_snaptrade_counters()["login_calls"], 1)
+
+        # Re-requesting portal with existing session_token mints a FRESH single-use SnapTrade
+        # login URL without registering a second user or consuming a second slot!
+        p2 = self.client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={
+                "session_token": tok,
+                "redirect_url": "https://verify.example.org/connect?snaptrade=connected",
+            },
+        )
+        self.assertEqual(p2.status_code, 200, p2.text)
+        b2 = p2.json()
+        self.assertEqual(b2["session_token"], tok)
+        self.assertEqual(b2["slot_id"], b1["slot_id"])
+        self.assertEqual(b2["active_slots"], 1)
+        self.assertNotEqual(b2["portal_url"], url1)
+        self.assertEqual(_read_snaptrade_counters()["register_calls"], 1)
+        self.assertEqual(_read_snaptrade_counters()["login_calls"], 2)
+
+        # Unknown/expired session_token on /portal fails closed with 404 session_not_found
+        bad_p = self.client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={"session_token": "expired-or-unknown-session-token"},
+        )
+        self.assertEqual(bad_p.status_code, 404, bad_p.text)
+        self.assertEqual(bad_p.json()["error"], "session_not_found")
+        self.assertEqual(_read_snaptrade_counters()["register_calls"], 1)
+
+        # Non-string / blank session_token rejected with 422
+        for bad_tok in (123, "   "):
+            bad_val = self.client.post(
+                "/api/v1/connect/snaptrade/portal",
+                json={"session_token": bad_tok},
+            )
+            self.assertEqual(bad_val.status_code, 422, bad_val.text)
+
+    def test_hosted_ibkr_flex_web_verifies_over_2mb_get_statement_payload_and_guide_ai_prompt(
+        self,
+    ) -> None:
+        resp = self.client.post(
+            "/api/v1/verify",
+            json={
+                "broker_id": "ibkr_flex_web",
+                "connector_fetch_kwargs": {
+                    "flex_token": "BIG-FLEX-TOKEN-3MB",
+                    "query_id": "998877",
+                    "start_date": "2025-01-02",
+                    "end_date": "2025-03-31",
+                },
+                "issued_at_utc": "2026-11-19T12:00:00Z",
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertFalse(resp.json()["performance_withheld"])
+
+        guide_resp = self.client.get("/api/v1/connect/ibkr-flex-guide")
+        self.assertEqual(guide_resp.status_code, 200, guide_resp.text)
+        g_body = guide_resp.json()
+        self.assertIn("ai_builder_prompt", g_body)
+        self.assertLessEqual(len(g_body["ai_builder_prompt"]), 200)
+        self.assertIn("minimal_sections", g_body)
+
+    def test_snaptrade_portal_refresh_race_against_concurrent_release_and_max_ttl_and_active_sync_extension(
+        self,
+    ) -> None:
+        import threading
+        from app import worker_isolation
+        from app.routes_snaptrade import SnapTradeRelayCoordinator
+
+        self.assertGreaterEqual(worker_isolation.MAX_STATEMENT_INPUT_BYTES, 24 * 1024 * 1024)
+        self.assertGreaterEqual(worker_isolation.MAX_STATEMENT_INPUT_ROWS, 250_000)
+
+        # 1. Concurrent /portal (session_token) racing against /release (session_token) MUST
+        # return 404 session_not_found instead of 200 with a dead portal_url after finish_use deletes user!
+        login_entered = threading.Event()
+        allow_login_exit = threading.Event()
+        race_login_calls = 0
+
+        def racing_transport(
+            method: str, url: str, headers: dict[str, str], body: bytes | None
+        ) -> HttpExchangeResponse:
+            nonlocal race_login_calls
+            if "/api/v1/snapTrade/login" in url:
+                race_login_calls += 1
+                if race_login_calls == 2:
+                    login_entered.set()
+                    allow_login_exit.wait(timeout=5.0)
+            return fake_snaptrade_transport(method, url, headers, body)
+
+        race_app = VerifyApiApplication(
+            ApiConfig(
+                publisher_keypair=_SIGNING_KEY,
+                vault_master_kek_hex=_KEK,
+                account_blinding_salt_hex=_SALT,
+                hosted_multi_user_mode=True,
+                allow_hosted_signing=False,
+                site_origin="https://verify.example.org",
+                snaptrade_client_id="N170-BUILD-ID",
+                snaptrade_consumer_key="build-consumer-secret-key",
+                snaptrade_session_ttl_seconds=300.0,
+            ),
+            snaptrade_relay=SnapTradeRelayCoordinator(
+                http_transport=racing_transport,
+                session_ttl_seconds=300.0,
+            ),
+        )
+        self.addCleanup(race_app.close)
+        race_client = VerifyApiTestClient(race_app)
+
+        init_p = race_client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={"redirect_url": "https://verify.example.org/connect?snaptrade=connected"},
+        )
+        self.assertEqual(init_p.status_code, 200, init_p.text)
+        race_tok = init_p.json()["session_token"]
+
+        portal_race_out: list[Any] = []
+
+        def run_portal_refresh() -> None:
+            portal_race_out.append(
+                race_client.post(
+                    "/api/v1/connect/snaptrade/portal",
+                    json={
+                        "session_token": race_tok,
+                        "redirect_url": "https://verify.example.org/connect?snaptrade=connected",
+                    },
+                )
+            )
+
+        t_refresh = threading.Thread(target=run_portal_refresh)
+        t_refresh.start()
+        self.assertTrue(login_entered.wait(timeout=5.0))
+        rel_resp = race_client.post(
+            "/api/v1/connect/snaptrade/release",
+            json={"session_token": race_tok},
+        )
+        self.assertEqual(rel_resp.status_code, 200, rel_resp.text)
+        allow_login_exit.set()
+        t_refresh.join(timeout=5.0)
+
+        self.assertEqual(len(portal_race_out), 1)
+        self.assertEqual(
+            portal_race_out[0].status_code,
+            404,
+            f"Released session must not return 200 with dead portal_url: {portal_race_out[0].text}",
+        )
+        self.assertEqual(portal_race_out[0].json()["error"], "session_not_found")
+
+        # 2. Hard 30-minute S3 cap on /portal refresh + active mid-sync extension under 300s TTL
+        _set_tx_done(False)
+        fake_now = [1000.0]
+        ttl_app = VerifyApiApplication(
+            ApiConfig(
+                publisher_keypair=_SIGNING_KEY,
+                vault_master_kek_hex=_KEK,
+                account_blinding_salt_hex=_SALT,
+                hosted_multi_user_mode=True,
+                allow_hosted_signing=False,
+                site_origin="https://verify.example.org",
+                snaptrade_client_id="N170-BUILD-ID",
+                snaptrade_consumer_key="build-consumer-secret-key",
+                snaptrade_session_ttl_seconds=300.0,
+            ),
+            snaptrade_relay=SnapTradeRelayCoordinator(
+                http_transport=fake_snaptrade_transport,
+                session_ttl_seconds=300.0,
+                monotonic_clock=lambda: fake_now[0],
+            ),
+        )
+        self.addCleanup(ttl_app.close)
+        ttl_client = VerifyApiTestClient(ttl_app)
+
+        p_sync = ttl_client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={"redirect_url": "https://verify.example.org/connect?snaptrade=connected"},
+        )
+        self.assertEqual(p_sync.status_code, 200, p_sync.text)
+        sync_tok = p_sync.json()["session_token"]
+
+        # At t = +250s (within 300s TTL), /session-status sees accounts_count == 1 (mid-sync)
+        # and extends the session so it survives past 300s!
+        fake_now[0] = 1250.0
+        st_250 = ttl_client.post(
+            "/api/v1/connect/snaptrade/session-status",
+            json={"session_token": sync_tok},
+        )
+        self.assertEqual(st_250.status_code, 200, st_250.text)
+        self.assertFalse(st_250.json()["ready_to_verify"])
+
+        fake_now[0] = 1400.0  # +400s (> 300s initial TTL): still alive thanks to active sync poll!
+        st_400 = ttl_client.post(
+            "/api/v1/connect/snaptrade/session-status",
+            json={"session_token": sync_tok},
+        )
+        self.assertEqual(st_400.status_code, 200, st_400.text)
+
+        # Past hard 1800s (30m) ceiling from creation (t = 1000 + 1801 = 2801), /portal refresh is refused 404!
+        for poll_t in (1950.0, 2450.0):
+            fake_now[0] = poll_t
+            self.assertEqual(
+                ttl_client.post(
+                    "/api/v1/connect/snaptrade/session-status",
+                    json={"session_token": sync_tok},
+                ).status_code,
+                200,
+            )
+        fake_now[0] = 2700.0
+        p_2700 = ttl_client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={
+                "session_token": sync_tok,
+                "redirect_url": "https://verify.example.org/connect?snaptrade=connected",
+            },
+        )
+        self.assertEqual(p_2700.status_code, 200, p_2700.text)
+        fake_now[0] = 2801.0
+        p_expired_cap = ttl_client.post(
+            "/api/v1/connect/snaptrade/portal",
+            json={
+                "session_token": sync_tok,
+                "redirect_url": "https://verify.example.org/connect?snaptrade=connected",
+            },
+        )
+        self.assertEqual(p_expired_cap.status_code, 404, p_expired_cap.text)
 
 
 if __name__ == "__main__":

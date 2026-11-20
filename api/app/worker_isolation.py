@@ -95,11 +95,11 @@ MAX_CONCURRENT_VERIFICATION_WORKERS = 2
 VERIFICATION_RETRY_AFTER_SECONDS = 10
 # Largest statement accepted for verification, in bytes and in rows (line endings of any
 # kind, or XML elements), summed over every statement field of one request. Calibrated at
-# 16 MiB and 50,000 rows/XML elements so multi-year (2-4 year) IBKR Activity Flex XML files
-# with daily EquitySummaryInBase, ConversionRates, CashTransactions, and Trades verify cleanly
-# while still bounding single-worker memory and parse CPU within the 30-second worker timeout.
-MAX_STATEMENT_INPUT_BYTES = 16 * 1024 * 1024
-MAX_STATEMENT_INPUT_ROWS = 50_000
+# 24 MiB and 250,000 rows/XML elements so verbose multi-year (2-4 year) IBKR Activity Flex
+# XML exports verify cleanly via offline upload as well as live Flex Web Service while
+# bounding single-worker memory and parse CPU within the worker timeout.
+MAX_STATEMENT_INPUT_BYTES = 24 * 1024 * 1024
+MAX_STATEMENT_INPUT_ROWS = 250_000
 
 _VERIFICATION_WORKER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_VERIFICATION_WORKERS)
 

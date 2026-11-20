@@ -1551,6 +1551,413 @@ class Round3RegressionTests(unittest.TestCase):
         leap_perf = calculate_portfolio_performance_detailed(leap_merged)
         self.assertFalse(leap_perf.withheld)
 
+    def test_flex_web_service_accepts_verbose_statement_over_2mb_and_deduplicates_daily_open_positions(
+        self,
+    ) -> None:
+        from n170_verify.connectors.ibkr_flex import IbkrFlexServiceError, IbkrFlexXmlSecurityError
+
+        d0 = date(2025, 1, 2)
+        d1 = date(2025, 4, 30)
+        bdays = _business_days(d0, d1)
+        eq_rows: list[str] = []
+        open_pos_rows: list[str] = []
+        conv_rows: list[str] = []
+        cash_eur = 10_800.0
+        px_usd = 100.0
+        fx = 0.92
+        pad_note = "IBKR verbose full-field attribute payload padding " * 6
+
+        for idx, d in enumerate(bdays):
+            if idx == 0:
+                cash_eur = 10_800.0
+            else:
+                px_usd = round(px_usd * 1.002, 4)
+            stock_eur = round(10.0 * px_usd * fx, 2)
+            tot_eur = round(cash_eur + stock_eur, 2)
+            eq_rows.append(
+                f'<EquitySummaryByReportDateInBase accountId="U7654321" currency="BASE_SUMMARY" '
+                f'reportDate="{d.isoformat()}" cash="{cash_eur:.2f}" stock="{stock_eur:.2f}" '
+                f'options="0.00" dividendAccruals="0.00" interestAccruals="0.00" total="{tot_eur:.2f}" />'
+            )
+            # Simulate IBKR Activity Flex Query emitting OpenPosition rows for EVERY business day
+            # PLUS LOT, SYMBOL_SUMMARY, and BASE_SUMMARY detail levels!
+            mv_usd = round(10.0 * px_usd, 2)
+            open_pos_rows.append(
+                f'<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" '
+                f'currency="USD" fxRateToBase="{fx}" reportDate="{d.isoformat()}" '
+                f'position="10" costBasisMoney="1000.00" positionValue="{mv_usd:.2f}" '
+                f'levelOfDetail="SUMMARY" description="{pad_note}" />'
+            )
+            open_pos_rows.append(
+                f'<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" '
+                f'currency="USD" fxRateToBase="{fx}" reportDate="{d.isoformat()}" '
+                f'position="10" costBasisMoney="1000.00" positionValue="{mv_usd:.2f}" '
+                f'levelOfDetail="LOT" description="{pad_note}" />'
+            )
+            open_pos_rows.append(
+                f'<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" '
+                f'currency="BASE_SUMMARY" fxRateToBase="1.0" reportDate="{d.isoformat()}" '
+                f'position="10" positionValue="{stock_eur:.2f}" levelOfDetail="BASE_SUMMARY" />'
+            )
+            for ccy in ("USD", "GBP", "CHF", "JPY", "CAD", "AUD", "SEK", "NOK", "DKK", "HKD"):
+                conv_rows.append(
+                    f'<ConversionRate reportDate="{d.isoformat()}" fromCurrency="{ccy}" '
+                    f'toCurrency="EUR" rate="{fx}" comment="{pad_note}" />'
+                )
+
+        # Ensure statement exceeds legacy 2,097,152-byte _parse_flex_service_envelope ceiling
+        unbundled_rows = [
+            f'<UnbundledCommissionDetail accountId="U7654321" tradeID="T-{i}" note="{pad_note}" />'
+            for i in range(4500)
+        ]
+        verbose_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="VerboseAllOptions" type="AF"><FlexStatements count="1">'
+            f'<FlexStatement accountId="U7654321" baseCurrency="EUR" fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
+            '<AccountInformation accountId="U7654321" currency="EUR" />'
+            f'<EquitySummaryInBase>{"".join(eq_rows)}</EquitySummaryInBase>'
+            '<PriorPeriodPositions>'
+            '<PriorPeriodPosition accountId="U7654321" symbol="EUR" assetCategory="CASH" currency="EUR" '
+            f'fxRateToBase="1.0" reportDate="{d0.isoformat()}" position="20000.00" costBasisMoney="20000.00" positionValue="20000.00" levelOfDetail="SUMMARY" />'
+            '</PriorPeriodPositions>'
+            f'<OpenPositions>{"".join(open_pos_rows)}</OpenPositions>'
+            '<Trades>'
+            f'<Trade accountId="U7654321" ibExecID="EX-NVDA-1" symbol="NVDA" assetCategory="STK" '
+            f'buySell="BUY" quantity="10" tradePrice="100.00" currency="USD" fxRateToBase="{fx}" '
+            f'ibCommission="0.00" ibCommissionCurrency="USD" dateTime="{d0.isoformat()};14:30:00" levelOfDetail="EXECUTION" />'
+            f'<Trade accountId="U7654321" tradeID="CL-1" symbol="NVDA" assetCategory="STK" '
+            f'buySell="BUY" quantity="10" tradePrice="100.00" currency="USD" fxRateToBase="{fx}" '
+            f'dateTime="{d0.isoformat()};14:30:00" levelOfDetail="CLOSED_LOT" />'
+            f'<Trade accountId="U7654321" symbol="NVDA" assetCategory="STK" '
+            f'quantity="10" currency="USD" fxRateToBase="{fx}" levelOfDetail="SYMBOL_SUMMARY" />'
+            '</Trades>'
+            '<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            f'<ConversionRates>{"".join(conv_rows)}</ConversionRates>'
+            f'<UnbundledCommissionDetails>{"".join(unbundled_rows)}</UnbundledCommissionDetails>'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+        self.assertGreater(len(verbose_xml), 2 * 1024 * 1024 + 50_000)
+
+        def verbose_transport(
+            method: str, url: str, headers: dict[str, str], body: bytes | None
+        ) -> HttpExchangeResponse:
+            if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
+                return HttpExchangeResponse(
+                    status_code=200,
+                    headers={},
+                    body=b"<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF-BIG-1</ReferenceCode></FlexStatementResponse>",
+                )
+            if url.startswith(IBKR_FLEX_GET_STATEMENT_URL):
+                return HttpExchangeResponse(status_code=200, headers={}, body=verbose_xml)
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        adapter = IbkrFlexWebServiceAdapter(
+            http_transport=verbose_transport,
+            sleep_fn=lambda _s: None,
+        )
+        ledger = adapter.fetch_canonical_ledger(
+            flex_token="FLEX-TOK-BIG",
+            query_id="123456",
+            blinding_salt_hex=_SALT,
+            start_date="2025-01-02",
+            end_date="2025-04-30",
+        )
+        self.assertEqual(len(ledger.trades), 1)
+        # Must keep ONLY the final business day's SUMMARY OpenPosition (10 shares, NOT 10 * len(bdays))!
+        self.assertEqual(len(ledger.ending_positions), 1)
+        self.assertAlmostEqual(ledger.ending_positions[0].quantity, 10.0)
+        recon = reconcile_portfolio_ledger(ledger)
+        self.assertEqual(recon.discrepancy_count, 0, recon.findings)
+        perf = calculate_portfolio_performance_detailed(ledger)
+        self.assertFalse(perf.withheld)
+
+        # Malformed XML and XXE on GetStatement must still be rejected cleanly
+        def xxe_transport(
+            method: str, url: str, headers: dict[str, str], body: bytes | None
+        ) -> HttpExchangeResponse:
+            if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
+                return HttpExchangeResponse(
+                    status_code=200,
+                    headers={},
+                    body=b"<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF-XXE</ReferenceCode></FlexStatementResponse>",
+                )
+            return HttpExchangeResponse(
+                status_code=200,
+                headers={},
+                body=b'<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe "bad">]><FlexQueryResponse/>',
+            )
+
+        with self.assertRaises(IbkrFlexXmlSecurityError):
+            IbkrFlexWebServiceAdapter(
+                http_transport=xxe_transport, sleep_fn=lambda _s: None
+            ).fetch_statement_bytes(flex_token="TOK", query_id="111")
+
+        def malformed_transport(
+            method: str, url: str, headers: dict[str, str], body: bytes | None
+        ) -> HttpExchangeResponse:
+            if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
+                return HttpExchangeResponse(
+                    status_code=200,
+                    headers={},
+                    body=b"<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF-BAD</ReferenceCode></FlexStatementResponse>",
+                )
+            return HttpExchangeResponse(
+                status_code=200,
+                headers={},
+                body=b"<FlexQueryResponse><FlexStatements><Unclosed>",
+            )
+
+        with self.assertRaises(IbkrFlexServiceError):
+            IbkrFlexWebServiceAdapter(
+                http_transport=malformed_transport, sleep_fn=lambda _s: None
+            ).fetch_statement_bytes(flex_token="TOK", query_id="111")
+
+    def test_minimal_ibkr_flex_query_and_sub_200_char_ai_prompt_verify_without_false_discrepancy(
+        self,
+    ) -> None:
+        from n170_verify.connectors.ibkr_flex_template import (
+            IBKR_FLEX_AI_BUILDER_PROMPT,
+            MINIMAL_IBKR_FLEX_SECTIONS,
+            REQUIRED_IBKR_FLEX_SECTIONS,
+            get_ibkr_flex_setup_guide,
+        )
+        from n170_verify.contracts import AccountScope, ProviderApprovalState
+
+        guide = get_ibkr_flex_setup_guide()
+        self.assertEqual(len(REQUIRED_IBKR_FLEX_SECTIONS), 9)
+        self.assertEqual(
+            list(MINIMAL_IBKR_FLEX_SECTIONS),
+            [
+                "AccountInformation",
+                "EquitySummaryInBase",
+                "ChangeInNAV",
+                "Trades",
+                "CashTransactions",
+            ],
+        )
+        self.assertEqual(guide.minimal_sections, list(MINIMAL_IBKR_FLEX_SECTIONS))
+        self.assertEqual(guide.ai_builder_prompt, IBKR_FLEX_AI_BUILDER_PROMPT)
+        self.assertGreaterEqual(len(guide.ai_builder_prompt), 40)
+        self.assertLessEqual(len(guide.ai_builder_prompt), 200)
+        self.assertIn("XML", guide.ai_builder_prompt)
+        self.assertIn("yyyy-MM-dd", guide.ai_builder_prompt)
+
+        # Minimal 5-section EUR base IBKR Flex XML with USD equities (NO OpenPositions,
+        # NO PriorPeriodPositions, NO Transfers, NO CorporateActions, NO OptionEAE, NO ConversionRates)
+        d0 = date(2025, 1, 2)
+        d1 = date(2025, 3, 31)
+        bdays = _business_days(d0, d1)
+        eq_rows: list[str] = []
+        px = 100.0
+        fx = 0.92
+        cash_eur = 10_800.0
+        for idx, d in enumerate(bdays):
+            if idx > 0:
+                px = round(px * 1.003, 4)
+            stock_eur = round(100.0 * px * fx, 2)
+            tot_eur = round(cash_eur + stock_eur, 2)
+            eq_rows.append(
+                f'<EquitySummaryByReportDateInBase accountId="U7654321" reportDate="{d.isoformat()}" '
+                f'cash="{cash_eur:.2f}" stock="{stock_eur:.2f}" total="{tot_eur:.2f}" />'
+            )
+
+        # Trade 1 carries fxRateToBase="0.92" on d0; CashTransaction in USD omits fxRateToBase on d0
+        # to verify cross-section fxRateToBase pre-indexing works without ConversionRates!
+        minimal_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="MinimalEasyAF" type="AF"><FlexStatements count="1">'
+            f'<FlexStatement accountId="U7654321" baseCurrency="EUR" fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
+            '<AccountInformation accountId="U7654321" currency="EUR" />'
+            '<ChangeInNAV accountId="U7654321" fromDate="2025-01-02" toDate="2025-03-31" '
+            'startingValue="20000.00" endingValue="21895.00" twr="9.48" />'
+            f'<EquitySummaryInBase>{"".join(eq_rows)}</EquitySummaryInBase>'
+            '<Trades>'
+            f'<Trade accountId="U7654321" ibExecID="EX-MIN-1" symbol="MSFT" assetCategory="STK" '
+            f'buySell="BUY" quantity="100" tradePrice="100.00" currency="USD" fxRateToBase="{fx}" '
+            f'ibCommission="1.00" ibCommissionCurrency="USD" dateTime="{d0.isoformat()};15:00:00" levelOfDetail="EXECUTION" />'
+            '</Trades>'
+            '<CashTransactions>'
+            f'<CashTransaction accountId="U7654321" type="Dividends" description="MSFT CASH DIV" '
+            f'symbol="MSFT" currency="USD" amount="15.00" dateTime="{d0.isoformat()};18:00:00" />'
+            '</CashTransactions>'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        min_ledger = parse_ibkr_flex_xml(
+            minimal_xml,
+            blinding_salt_hex=_SALT,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
+        )
+        perf = calculate_portfolio_performance_detailed(min_ledger)
+        self.assertFalse(perf.withheld)
+        self.assertGreater(perf.summary.twr_decimal or 0.0, 0.05)
+
+        recon = reconcile_portfolio_ledger(min_ledger)
+        # Because OpenPositions was omitted in the minimal query, reconciliation must report
+        # INSUFFICIENT_SECTIONS (0 discrepancies), NEVER a false UNEXPLAINED_RESIDUAL!
+        self.assertEqual(recon.status, ReconciliationStatus.INSUFFICIENT_SECTIONS, recon.findings)
+        self.assertEqual(recon.discrepancy_count, 0, recon.findings)
+        self.assertIn("OpenPositions", recon.missing_sections)
+
+        # Conversely, when <OpenPositions /> IS explicitly enabled and empty while stock > 0,
+        # reconciliation MUST still flag UNEXPLAINED_RESIDUAL!
+        tampered_xml = minimal_xml.replace(
+            b"</EquitySummaryInBase>",
+            b"</EquitySummaryInBase><PriorPeriodPositions /><OpenPositions /><Transfers /><CorporateActions /><OptionEAE />",
+        )
+        tampered_ledger = parse_ibkr_flex_xml(
+            tampered_xml,
+            blinding_salt_hex=_SALT,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
+        )
+        tampered_recon = reconcile_portfolio_ledger(tampered_ledger)
+        self.assertEqual(tampered_recon.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertGreater(tampered_recon.discrepancy_count, 0)
+
+    def test_ibkr_mixed_date_time_formats_and_closed_daily_open_positions_and_lot_only_exports(
+        self,
+    ) -> None:
+        from n170_verify.connectors.ibkr_flex_template import IBKR_FLEX_AI_BUILDER_PROMPT
+        from n170_verify.contracts import AccountScope, ProviderApprovalState
+
+        # AI builder prompt must fit IBKR's <=200-char limit while covering custody sections
+        # so published badge.svg achieves RECONCILIATION: Reconciled (not Insufficient Sections).
+        self.assertLessEqual(len(IBKR_FLEX_AI_BUILDER_PROMPT), 200)
+        self.assertIn("Open Positions", IBKR_FLEX_AI_BUILDER_PROMPT)
+        self.assertIn("Transfers", IBKR_FLEX_AI_BUILDER_PROMPT)
+        self.assertIn("Corporate Actions", IBKR_FLEX_AI_BUILDER_PROMPT)
+
+        # Case 1: Trader buys 10 AAPL on 2025-01-02 (dateTime="2025-01-02;150000" -> yyyy-MM-dd + HHmmss),
+        # deposits 5,000 EUR on 2025-01-10 (dateTime="2025-01-10;19:15:00 EST"),
+        # sells all 10 AAPL on 2025-02-14 (dateTime="20250214;15:30:00" -> yyyyMMdd + HH:mm:ss),
+        # and holds 100% cash through 2025-03-31 while <OpenPositions> has daily snapshots through 2025-02-13.
+        d0 = date(2025, 1, 2)
+        d_dep = date(2025, 1, 10)
+        d_sell = date(2025, 2, 14)
+        d1 = date(2025, 3, 31)
+        bdays = _business_days(d0, d1)
+        eq_rows: list[str] = []
+        daily_open_rows: list[str] = []
+        fx = 0.92
+        cash_eur = 10_000.0
+        shares = 0.0
+        px = 100.0
+        for d in bdays:
+            if d == d0:
+                shares = 10.0
+                cash_eur = round(cash_eur - (10.0 * px * fx), 2)
+            elif d == d_dep:
+                cash_eur = round(cash_eur + 5_000.0, 2)
+            elif d == d_sell:
+                px = 110.0
+                cash_eur = round(cash_eur + (10.0 * px * fx), 2)
+                shares = 0.0
+            stock_eur = round(shares * px * fx, 2)
+            tot_eur = round(cash_eur + stock_eur, 2)
+            eq_rows.append(
+                f'<EquitySummaryByReportDateInBase accountId="U7654321" reportDate="{d.isoformat()}" '
+                f'cash="{cash_eur:.2f}" stock="{stock_eur:.2f}" options="0.00" '
+                f'dividendAccruals="0.00" interestAccruals="0.00" total="{tot_eur:.2f}" />'
+            )
+            if shares > 0:
+                daily_open_rows.append(
+                    f'<OpenPosition accountId="U7654321" symbol="AAPL" assetCategory="STK" '
+                    f'currency="USD" fxRateToBase="{fx}" reportDate="{d.isoformat()}" '
+                    f'position="10" costBasisMoney="1000.00" positionValue="{10.0 * px:.2f}" '
+                    f'levelOfDetail="SUMMARY" />'
+                )
+
+        closed_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="MixedFmtClosedPos" type="AF"><FlexStatements count="1">'
+            f'<FlexStatement accountId="U7654321" baseCurrency="EUR" fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
+            '<AccountInformation accountId="U7654321" currency="EUR" />'
+            f'<EquitySummaryInBase>{"".join(eq_rows)}</EquitySummaryInBase>'
+            '<PriorPeriodPositions>'
+            f'<PriorPeriodPosition accountId="U7654321" symbol="EUR" assetCategory="CASH" currency="EUR" '
+            f'fxRateToBase="1.0" reportDate="{d0.isoformat()}" position="10000.00" costBasisMoney="10000.00" positionValue="10000.00" levelOfDetail="SUMMARY" />'
+            '</PriorPeriodPositions>'
+            f'<OpenPositions>{"".join(daily_open_rows)}</OpenPositions>'
+            '<Trades>'
+            f'<Trade accountId="U7654321" ibExecID="EX-M1" symbol="AAPL" assetCategory="STK" '
+            f'buySell="BUY" quantity="10" tradePrice="100.00" currency="USD" fxRateToBase="{fx}" '
+            f'ibCommission="0.00" ibCommissionCurrency="USD" dateTime="2025-01-02;150000" levelOfDetail="EXECUTION" />'
+            f'<Trade accountId="U7654321" ibExecID="EX-M2" symbol="AAPL" assetCategory="STK" '
+            f'buySell="SELL" quantity="-10" tradePrice="110.00" currency="USD" fxRateToBase="{fx}" '
+            f'ibCommission="0.00" ibCommissionCurrency="USD" dateTime="20250214;15:30:00" levelOfDetail="EXECUTION" />'
+            f'<Trade accountId="U7654321" tradeID="LOT-CLOSED-1" symbol="AAPL" assetCategory="STK" '
+            f'buySell="SELL" quantity="-10" tradePrice="110.00" currency="USD" fxRateToBase="{fx}" '
+            f'dateTime="20250214;15:30:00" levelOfDetail="LOT" />'
+            '</Trades>'
+            '<CashTransactions>'
+            '<CashTransaction accountId="U7654321" type="Deposits/Withdrawals" description="ELECTRONIC FUND TRANSFER" '
+            'currency="EUR" amount="5000.00" dateTime="2025-01-10;19:15:00 EST" />'
+            '</CashTransactions>'
+            '<Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        closed_ledger = parse_ibkr_flex_xml(
+            closed_xml,
+            blinding_salt_hex=_SALT,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
+        )
+        self.assertEqual(len(closed_ledger.trades), 2)
+        self.assertEqual(len(closed_ledger.flows), 1)
+        self.assertEqual(closed_ledger.flows[0].timestamp_utc, "2025-01-10T19:15:00Z")
+        self.assertEqual(closed_ledger.ending_positions, [])
+        closed_recon = reconcile_portfolio_ledger(closed_ledger)
+        self.assertTrue(closed_recon.ledger_completeness_ok, closed_recon.missing_sections)
+        self.assertEqual(closed_recon.missing_sections, [])
+        self.assertEqual(closed_recon.discrepancy_count, 0, closed_recon.findings)
+        self.assertNotEqual(closed_recon.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertNotEqual(closed_recon.status, ReconciliationStatus.INSUFFICIENT_SECTIONS)
+
+        # Case 2: LOT-only OpenPositions across multiple reportDates omitting positionValue (markPrice only)
+        lot_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="LotOnly" type="AF"><FlexStatements count="1">'
+            '<FlexStatement accountId="U7654321" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-06">'
+            '<AccountInformation accountId="U7654321" currency="EUR" />'
+            '<EquitySummaryInBase>'
+            '<EquitySummaryByReportDateInBase accountId="U7654321" reportDate="2025-01-02" cash="5400.00" stock="4600.00" total="10000.00" />'
+            '<EquitySummaryByReportDateInBase accountId="U7654321" reportDate="2025-01-03" cash="2640.00" stock="7360.00" total="10000.00" />'
+            '<EquitySummaryByReportDateInBase accountId="U7654321" reportDate="2025-01-06" cash="2640.00" stock="7728.00" total="10368.00" />'
+            '</EquitySummaryInBase>'
+            '<PriorPeriodPositions>'
+            '<PriorPeriodPosition accountId="U7654321" symbol="EUR" assetCategory="CASH" currency="EUR" fxRateToBase="1.0" reportDate="2025-01-02" position="10000.00" costBasisMoney="10000.00" positionValue="10000.00" levelOfDetail="SUMMARY" />'
+            '</PriorPeriodPositions>'
+            '<OpenPositions>'
+            '<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" currency="USD" fxRateToBase="0.92" reportDate="2025-01-02" position="50" costBasisMoney="5000.00" markPrice="100.00" levelOfDetail="LOT" />'
+            '<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" currency="USD" fxRateToBase="0.92" reportDate="2025-01-06" position="50" costBasisMoney="5000.00" markPrice="105.00" levelOfDetail="LOT" />'
+            '<OpenPosition accountId="U7654321" symbol="NVDA" assetCategory="STK" currency="USD" fxRateToBase="0.92" reportDate="2025-01-06" position="30" costBasisMoney="3000.00" markPrice="105.00" levelOfDetail="LOT" />'
+            '</OpenPositions>'
+            '<Trades>'
+            '<Trade accountId="U7654321" ibExecID="EX-L1" symbol="NVDA" assetCategory="STK" buySell="BUY" quantity="50" tradePrice="100.00" currency="USD" fxRateToBase="0.92" ibCommission="0.00" dateTime="2025-01-02;143000" levelOfDetail="EXECUTION" />'
+            '<Trade accountId="U7654321" ibExecID="EX-L2" symbol="NVDA" assetCategory="STK" buySell="BUY" quantity="30" tradePrice="100.00" currency="USD" fxRateToBase="0.92" ibCommission="0.00" dateTime="2025-01-03;143000" levelOfDetail="EXECUTION" />'
+            '</Trades>'
+            '<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+        lot_ledger = parse_ibkr_flex_xml(
+            lot_xml,
+            blinding_salt_hex=_SALT,
+            claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+            provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+            account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
+        )
+        self.assertEqual(len(lot_ledger.ending_positions), 2)
+        self.assertAlmostEqual(sum(p.quantity for p in lot_ledger.ending_positions), 80.0)
+        self.assertAlmostEqual(sum(p.market_value_base for p in lot_ledger.ending_positions), 7728.0)
+        lot_recon = reconcile_portfolio_ledger(lot_ledger)
+        self.assertEqual(lot_recon.discrepancy_count, 0, lot_recon.findings)
+
 
 if __name__ == "__main__":
     unittest.main()
