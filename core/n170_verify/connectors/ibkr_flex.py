@@ -66,9 +66,9 @@ IBKR_FLEX_GET_STATEMENT_URL = (
 )
 DEFAULT_IBKR_FLEX_USER_AGENT = "N170-Verify/0.3 (ReadOnlyFlexClient)"
 
-DEFAULT_MAX_FLEX_BYTES = 50 * 1024 * 1024
-DEFAULT_MAX_FLEX_ELEMENTS = 150_000
-DEFAULT_MAX_SECTION_ROWS = 25_000
+DEFAULT_MAX_FLEX_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_FLEX_ELEMENTS = 1_000_000
+DEFAULT_MAX_SECTION_ROWS = 250_000
 
 _PAPER_IBKR_ACCOUNT_RE = re.compile(r"^D[UF][0-9]{4,}$", re.IGNORECASE)
 _SPLIT_RATIO_RE = re.compile(
@@ -189,15 +189,25 @@ def _parse_flex_float(raw: str | None, *, default: float | None = None) -> float
     return 0.0 if fval == 0.0 else fval
 
 
+_TRAILING_FLEX_TZ_LABEL_RE = re.compile(
+    r"\s+(?:UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT|CET|CEST|EET|EEST|BST|JST|HKT|SGT|AEST|AEDT|[A-Za-z]+/[A-Za-z0-9_+-]+)$",
+    re.IGNORECASE,
+)
+_ISO_NUMERIC_OFFSET_RE = re.compile(r"[-+]\d{2}:\d{2}$")
+
+
 def _parse_flex_timestamp_utc(raw: str | None) -> str | None:
     if not raw:
         return None
-    candidate = raw.strip()
-    # Common IBKR Flex formats:
+    candidate = _TRAILING_FLEX_TZ_LABEL_RE.sub("", raw.strip()).strip()
+    # Common IBKR Flex formats (including mixed Date Format + Time Format settings):
     # "20240103", "2024-01-03", "20240103;154512", "2024-01-03;15:45:12",
-    # "2024-01-03, 15:45:12", "2024-01-03T15:45:12Z"
-    normalized = candidate.replace(", ", "T").replace(";", "T").replace(" ", "T")
-    if normalized.endswith(("Z", "z")) or "+" in normalized[10:]:
+    # "2024-01-03;154512", "20240103;15:45:12", "2024-01-03, 15:45:12",
+    # "2024-01-03;15:45:12 EST", "2024-01-03T15:45:12Z"
+    normalized = candidate.replace(", ", "T").replace(",", "T").replace(";", "T").replace(" ", "T")
+    while "TT" in normalized:
+        normalized = normalized.replace("TT", "T")
+    if normalized.endswith(("Z", "z")) or _ISO_NUMERIC_OFFSET_RE.search(normalized[10:]):
         try:
             dt = datetime.fromisoformat(normalized.replace("Z", "+00:00").replace("z", "+00:00"))
             return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -207,6 +217,8 @@ def _parse_flex_timestamp_utc(raw: str | None) -> str | None:
     for fmt in (
         "%Y%m%dT%H%M%S",
         "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H%M%S",
+        "%Y%m%dT%H:%M:%S",
         "%Y%m%d",
         "%Y-%m-%d",
     ):
@@ -544,26 +556,49 @@ def parse_ibkr_flex_xml(
                     _mark_section("PriorPeriodPositions")
                 elif ltag == "priorperiodposition":
                     _mark_section("PriorPeriodPositions")
-                    _append_bounded_indexed(
-                        prior_pos_by_stmt, current_stmt_idx, elem.attrib, "PriorPeriodPositions"
-                    )
+                    lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
+                    if lod not in {"BASE_SUMMARY", "CURRENCY", "ASSET_SUMMARY", "SYMBOL_SUMMARY"}:
+                        _append_bounded_indexed(
+                            prior_pos_by_stmt, current_stmt_idx, elem.attrib, "PriorPeriodPositions"
+                        )
                 elif ltag == "openpositions":
                     _mark_section("OpenPositions")
                 elif ltag == "openposition":
                     _mark_section("OpenPositions")
-                    _append_bounded_indexed(
-                        open_pos_by_stmt, current_stmt_idx, elem.attrib, "OpenPositions"
-                    )
+                    lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
+                    if lod not in {"BASE_SUMMARY", "CURRENCY", "ASSET_SUMMARY", "SYMBOL_SUMMARY"}:
+                        _append_bounded_indexed(
+                            open_pos_by_stmt, current_stmt_idx, elem.attrib, "OpenPositions"
+                        )
                 elif ltag == "trades":
                     _mark_section("Trades")
                 elif ltag == "trade":
                     _mark_section("Trades")
-                    _append_bounded(trade_rows, elem.attrib, "Trades")
+                    lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
+                    if lod not in {
+                        "BASE_SUMMARY",
+                        "CURRENCY",
+                        "ASSET_SUMMARY",
+                        "SYMBOL_SUMMARY",
+                        "SUMMARY",
+                        "WASH_SALE",
+                        "CLOSED_LOT",
+                        "LOT",
+                    }:
+                        _append_bounded(trade_rows, elem.attrib, "Trades")
                 elif ltag == "cashtransactions":
                     _mark_section("CashTransactions")
                 elif ltag == "cashtransaction":
                     _mark_section("CashTransactions")
-                    _append_bounded(cash_tx_rows, elem.attrib, "CashTransactions")
+                    lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
+                    if lod not in {
+                        "BASE_SUMMARY",
+                        "CURRENCY",
+                        "ASSET_SUMMARY",
+                        "SYMBOL_SUMMARY",
+                        "SUMMARY",
+                    }:
+                        _append_bounded(cash_tx_rows, elem.attrib, "CashTransactions")
                 elif ltag == "transfers":
                     _mark_section("Transfers")
                 elif ltag == "transfer":
@@ -573,7 +608,15 @@ def parse_ibkr_flex_xml(
                     _mark_section("CorporateActions")
                 elif ltag == "corporateaction":
                     _mark_section("CorporateActions")
-                    _append_bounded(corp_action_rows, elem.attrib, "CorporateActions")
+                    lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
+                    if lod not in {
+                        "BASE_SUMMARY",
+                        "CURRENCY",
+                        "ASSET_SUMMARY",
+                        "SYMBOL_SUMMARY",
+                        "SUMMARY",
+                    }:
+                        _append_bounded(corp_action_rows, elem.attrib, "CorporateActions")
                 elif ltag == "optioneae":
                     _mark_section("OptionEAE")
                     if _first_attr(elem.attrib, ("transactionType", "symbol", "date", "reportDate")):
@@ -712,6 +755,46 @@ def parse_ibkr_flex_xml(
                 dated_conversion_rates[(d_str, from_ccy, to_ccy)] = rate
             _record_pair_rate(from_ccy, to_ccy, rate, date_str=d_str, source_prio=1)
 
+    # Pre-index explicit row-level fxRateToBase across all sections so minimal Flex queries
+    # omitting <ConversionRates> still resolve exact statement FX rates without order sensitivity.
+    for section_rows in (
+        [attrs for _, attrs in prior_pos_by_stmt],
+        [attrs for _, attrs in open_pos_by_stmt],
+        [attrs for _, attrs in cash_report_by_stmt],
+        trade_rows,
+        cash_tx_rows,
+        transfer_rows,
+        corp_action_rows,
+        option_eae_rows,
+    ):
+        for s_row in section_rows:
+            s_fx = _parse_flex_float(_first_attr(s_row, ("fxRateToBase", "fxRate")))
+            if s_fx is None or s_fx <= 0.0:
+                continue
+            s_ccy = _normalize_flex_currency(
+                _first_attr(s_row, ("currency", "currencyPrimary")), base_ccy
+            )
+            if not s_ccy or s_ccy == base_ccy:
+                continue
+            s_ts = _parse_flex_timestamp_utc(
+                _first_attr(
+                    s_row,
+                    (
+                        "dateTime",
+                        "reportDate",
+                        "tradeDate",
+                        "settleDate",
+                        "fromDate",
+                        "asOfDate",
+                        "date",
+                    ),
+                )
+            )
+            s_date = s_ts[:10] if s_ts is not None else ""
+            if s_date:
+                dated_conversion_rates.setdefault((s_date, s_ccy, base_ccy), s_fx)
+            _record_pair_rate(s_ccy, base_ccy, s_fx, date_str=s_date, source_prio=0)
+
     def _resolve_fx(attrs: dict[str, str], ccy: str, *, row_ts: str | None = None) -> float:
         ccy_upper = _normalize_flex_currency(ccy, base_ccy)
         date_key = row_ts[:10] if row_ts else None
@@ -838,14 +921,44 @@ def parse_ibkr_flex_xml(
     }
 
     def _parse_positions(rows: list[dict[str, str]], boundary: str) -> list[NormalizedPosition]:
-        has_summary = any(
-            (_first_attr(r, ("levelOfDetail",)) or "").upper() == "SUMMARY" for r in rows
-        )
-        out: list[NormalizedPosition] = []
+        non_rollup: list[tuple[dict[str, str], str | None]] = []
+        dated_ymds: list[str] = []
         for r in rows:
             lod = (_first_attr(r, ("levelOfDetail",)) or "").upper()
             if lod in _SUMMARY_ROLLUP_LODS:
                 continue
+            pos_ts = _parse_flex_timestamp_utc(_first_attr(r, ("reportDate", "date", "asOfDate")))
+            if pos_ts is not None:
+                dated_ymds.append(pos_ts[:10])
+            non_rollup.append((r, pos_ts))
+        target_ymd: str | None = None
+        if dated_ymds:
+            target_ymd = min(dated_ymds) if boundary == "prior" else max(dated_ymds)
+        stale_dated_ending = False
+        if boundary == "ending" and target_ymd is not None and nav_points:
+            last_pt = nav_points[-1]
+            last_nav_ymd = last_pt.timestamp_utc[:10]
+            if target_ymd < last_nav_ymd and (
+                (last_pt.positions_base is not None and abs(last_pt.positions_base) <= 1e-6)
+                or (date.fromisoformat(last_nav_ymd) - date.fromisoformat(target_ymd)).days > 4
+            ):
+                stale_dated_ending = True
+        scoped_rows = [
+            (r, pos_ts)
+            for r, pos_ts in non_rollup
+            if (
+                pos_ts is None
+                if stale_dated_ending
+                else (target_ymd is None or pos_ts is None or pos_ts[:10] == target_ymd)
+            )
+        ]
+        has_summary = any(
+            (_first_attr(r, ("levelOfDetail",)) or "").upper() == "SUMMARY"
+            for r, _ in scoped_rows
+        )
+        out: list[NormalizedPosition] = []
+        for r, pos_ts in scoped_rows:
+            lod = (_first_attr(r, ("levelOfDetail",)) or "").upper()
             if has_summary and lod and lod != "SUMMARY":
                 continue
             sym = _first_text_attr(r, ("symbol", "underlyingSymbol", "description"))
@@ -853,11 +966,14 @@ def parse_ibkr_flex_xml(
                 continue
             qty = _parse_flex_float(_first_attr(r, ("position", "quantity")), default=0.0) or 0.0
             cost = _parse_flex_float(_first_attr(r, ("costBasisMoney", "costBasis", "costBasisPrice")), default=0.0) or 0.0
-            mv = _parse_flex_float(
-                _first_attr(r, ("positionValue", "markToMarket", "marketValue", "value")),
-                default=0.0,
-            ) or 0.0
-            pos_ts = _parse_flex_timestamp_utc(_first_attr(r, ("reportDate", "date", "asOfDate")))
+            mult = _parse_flex_float(_first_attr(r, ("multiplier",)))
+            eff_mult = mult if mult and mult > 0 else 1.0
+            raw_mv_attr = _first_attr(r, ("positionValue", "markToMarket", "marketValue", "value"))
+            if raw_mv_attr is not None:
+                mv = _parse_flex_float(raw_mv_attr, default=0.0) or 0.0
+            else:
+                mark_px = _parse_flex_float(_first_attr(r, ("markPrice", "closePrice")), default=None)
+                mv = (qty * mark_px * eff_mult) if mark_px is not None else 0.0
             ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
             fx = _resolve_fx(r, ccy, row_ts=pos_ts)
             ac = _map_ibkr_asset_class(
@@ -865,7 +981,6 @@ def parse_ibkr_flex_xml(
                 sub_cat=_first_attr(r, ("subCategory",)),
                 symbol=sym,
             )
-            mult = _parse_flex_float(_first_attr(r, ("multiplier",)))
             put_call = _first_attr(r, ("putCall",))
             opt_right = put_call.upper()[0] if put_call and put_call.upper()[0] in {"C", "P"} else None
             out.append(
@@ -942,7 +1057,7 @@ def parse_ibkr_flex_xml(
     trades_by_id: dict[str, NormalizedTrade] = {}
     for idx, r in enumerate(trade_rows):
         lod = (_first_attr(r, ("levelOfDetail",)) or "").upper()
-        if lod in (_SUMMARY_ROLLUP_LODS | {"SUMMARY", "WASH_SALE"}):
+        if lod in (_SUMMARY_ROLLUP_LODS | {"SUMMARY", "WASH_SALE", "CLOSED_LOT", "LOT"}):
             continue
         if has_exec_lod and lod and lod != "EXECUTION":
             continue
@@ -1522,35 +1637,62 @@ def merge_ibkr_flex_ledgers(
     )
 
 
-def _parse_flex_service_envelope(raw_xml: bytes, secrets: Sequence[str]) -> tuple[str, str | None, str | None, str | None]:
+def _parse_flex_service_envelope(
+    raw_xml: bytes,
+    secrets: Sequence[str],
+    *,
+    max_bytes: int = DEFAULT_MAX_FLEX_BYTES,
+) -> tuple[str, str | None, str | None, str | None]:
     """Return ``(status, reference_code, error_code, error_message)`` while ignoring ``<Url>``."""
-    safe_bytes = _decode_and_guard_xml_bytes(raw_xml, max_bytes=2 * 1024 * 1024)
-    try:
-        root = ET.fromstring(safe_bytes)
-    except ET.ParseError as exc:
-        raise IbkrFlexServiceError("Invalid XML returned by IBKR Flex Web Service") from exc
-
-    if _local_tag(root.tag) != "flexstatementresponse":
-        return "StatementReady", None, None, None
-
+    safe_bytes = _decode_and_guard_xml_bytes(raw_xml, max_bytes=max_bytes)
+    root_tag: str | None = None
+    is_envelope = False
     status = ""
     ref_code: str | None = None
     err_code: str | None = None
     err_msg: str | None = None
-    for child in root:
-        ctag = _local_tag(child.tag)
-        val = (child.text or "").strip()
-        if ctag == "status":
-            status = val
-        elif ctag == "referencecode":
-            ref_code = val
-        elif ctag == "errorcode":
-            err_code = val
-        elif ctag == "errormessage":
-            err_msg = redact_sensitive_text(val, secrets)
-        elif ctag == "url":
-            # EXPLICITLY IGNORE deprecated <Url> pointing to gdcdyn.interactivebrokers.com (Error 1001).
-            continue
+    stack: list[ET.Element] = []
+    elem_count = 0
+    try:
+        for ev, elem in ET.iterparse(BytesIO(safe_bytes), events=("start", "end")):
+            if ev == "start":
+                elem_count += 1
+                if elem_count > DEFAULT_MAX_FLEX_ELEMENTS:
+                    raise IbkrFlexParseError(
+                        f"Flex XML exceeds {DEFAULT_MAX_FLEX_ELEMENTS}-element safety limit"
+                    )
+                stack.append(elem)
+                if root_tag is None:
+                    root_tag = _local_tag(elem.tag)
+                    is_envelope = root_tag == "flexstatementresponse"
+                continue
+
+            if is_envelope and len(stack) == 2:
+                ctag = _local_tag(elem.tag)
+                val = (elem.text or "").strip()
+                if ctag == "status":
+                    status = val
+                elif ctag == "referencecode":
+                    ref_code = val
+                elif ctag == "errorcode":
+                    err_code = val
+                elif ctag == "errormessage":
+                    err_msg = redact_sensitive_text(val, secrets)
+                elif ctag == "url":
+                    # EXPLICITLY IGNORE deprecated <Url> pointing to gdcdyn.interactivebrokers.com (Error 1001).
+                    pass
+
+            if len(stack) > 1:
+                stack[-2].remove(elem)
+            elem.clear()
+            stack.pop()
+    except ET.ParseError as exc:
+        raise IbkrFlexServiceError("Invalid XML returned by IBKR Flex Web Service") from exc
+
+    if root_tag is None:
+        raise IbkrFlexServiceError("Invalid XML returned by IBKR Flex Web Service")
+    if not is_envelope:
+        return "StatementReady", None, None, None
     return status, ref_code, err_code, err_msg
 
 

@@ -32,6 +32,20 @@ RECOMMENDED_IBKR_FLEX_SECTIONS: tuple[str, ...] = (
     "CashReport",
 )
 
+MINIMAL_IBKR_FLEX_SECTIONS: tuple[str, ...] = (
+    "AccountInformation",
+    "EquitySummaryInBase",
+    "ChangeInNAV",
+    "Trades",
+    "CashTransactions",
+)
+
+IBKR_FLEX_AI_BUILDER_PROMPT: str = (
+    "XML, yyyy-MM-dd, 365 Days, all fields: Account Information, NAV in Base, "
+    "Change in NAV, Prior Period & Open Positions (Summary), Trades (Executions), "
+    "Cash Transactions, Transfers, Corporate Actions."
+)
+
 
 @dataclass(slots=True)
 class IbkrFlexSectionSpec(ContractModelMixin):
@@ -65,6 +79,8 @@ class IbkrFlexSetupGuide(ContractModelMixin):
     section_checklist: list[IbkrFlexSectionSpec] = field(default_factory=list)
     recommended_sections: list[str] = field(default_factory=list)
     recommended_section_checklist: list[IbkrFlexSectionSpec] = field(default_factory=list)
+    minimal_sections: list[str] = field(default_factory=list)
+    ai_builder_prompt: str = IBKR_FLEX_AI_BUILDER_PROMPT
     steps: list[dict[str, Any]] = field(default_factory=list)
     format_configuration: dict[str, Any] = field(default_factory=dict)
     security_settings: dict[str, Any] = field(default_factory=dict)
@@ -78,6 +94,8 @@ class IbkrFlexSetupGuide(ContractModelMixin):
         missing = [s for s in REQUIRED_IBKR_FLEX_SECTIONS if s not in self.required_sections]
         if missing:
             raise ValueError(f"IbkrFlexSetupGuide missing required section(s): {missing}")
+        if self.ai_builder_prompt and len(self.ai_builder_prompt) > 200:
+            raise ValueError("IbkrFlexSetupGuide.ai_builder_prompt must be <= 200 characters")
 
     def __getitem__(self, key: str) -> Any:
         return self.to_dict()[key]
@@ -195,13 +213,16 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
         },
         {
             "step": 2,
-            "title": "Enable All 9 Required Reconciliation Sections (+ ChangeInNAV & AccountInformation)",
+            "title": "Quick 5-Section Setup (or Paste <=200-Char AI Prompt)",
             "instruction": (
-                "Enable EquitySummaryInBase (Net Asset Value in Base), ChangeInNAV (Change in NAV), "
-                "AccountInformation, PriorPeriodPositions, OpenPositions (SUMMARY), Trades (EXECUTION), "
-                "CashTransactions, Transfers, CorporateActions, OptionEAE, and ConversionRates, "
-                "selecting 'Select All' fields in each section."
+                "For the fastest, compact export, paste the AI builder prompt or enable just 5 sections: "
+                "AccountInformation, EquitySummaryInBase (Net Asset Value in Base), ChangeInNAV (Change in NAV), "
+                "Trades (Executions only), and CashTransactions (Detail) with all fields. "
+                "For full custody position roll-forward reconciliation, also enable PriorPeriodPositions, "
+                "OpenPositions (SUMMARY), Transfers, CorporateActions, OptionEAE, and ConversionRates."
             ),
+            "minimal_sections": list(MINIMAL_IBKR_FLEX_SECTIONS),
+            "ai_builder_prompt": IBKR_FLEX_AI_BUILDER_PROMPT,
             "required_sections": list(REQUIRED_IBKR_FLEX_SECTIONS),
             "recommended_sections": list(RECOMMENDED_IBKR_FLEX_SECTIONS),
         },
@@ -229,11 +250,13 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
     return IbkrFlexSetupGuide(
         broker_id="ibkr",
         title="Interactive Brokers Activity Flex Query Setup Guide (Read-Only)",
-        estimated_setup_minutes=3,
+        estimated_setup_minutes=2,
         required_sections=list(REQUIRED_IBKR_FLEX_SECTIONS),
         section_checklist=checklist,
         recommended_sections=list(RECOMMENDED_IBKR_FLEX_SECTIONS),
         recommended_section_checklist=recommended_checklist,
+        minimal_sections=list(MINIMAL_IBKR_FLEX_SECTIONS),
+        ai_builder_prompt=IBKR_FLEX_AI_BUILDER_PROMPT,
         steps=steps,
         format_configuration={
             "format": "XML",
@@ -272,8 +295,10 @@ def get_ibkr_flex_setup_guide() -> IbkrFlexSetupGuide:
 
 
 __all__ = [
+    "IBKR_FLEX_AI_BUILDER_PROMPT",
     "IbkrFlexSectionSpec",
     "IbkrFlexSetupGuide",
+    "MINIMAL_IBKR_FLEX_SECTIONS",
     "RECOMMENDED_IBKR_FLEX_SECTIONS",
     "REQUIRED_IBKR_FLEX_SECTIONS",
     "get_ibkr_flex_setup_guide",

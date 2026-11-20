@@ -99,6 +99,7 @@ class _EphemeralSnapTradeSession:
     expires_at_utc: str
     expires_monotonic: float
     is_personal: bool = False
+    created_monotonic: float = 0.0
 
 
 def _utc_iso_from_dt(dt: datetime) -> str:
@@ -651,6 +652,7 @@ class SnapTradeRelayCoordinator:
         is_personal: bool = False,
     ) -> _EphemeralSnapTradeSession:
         self.purge_expired_sessions()
+        now_mono = self._clock()
         now_utc = datetime.now(timezone.utc)
         exp_utc = now_utc + timedelta(seconds=self.session_ttl_seconds)
         token = secrets.token_urlsafe(32)
@@ -662,8 +664,9 @@ class SnapTradeRelayCoordinator:
             user_secret=user_secret,
             created_at_utc=_utc_iso_from_dt(now_utc),
             expires_at_utc=_utc_iso_from_dt(exp_utc),
-            expires_monotonic=self._clock() + self.session_ttl_seconds,
+            expires_monotonic=now_mono + self.session_ttl_seconds,
             is_personal=is_personal,
+            created_monotonic=now_mono,
         )
         with self._lock:
             # One session holds one slot: a new session for the same user replaces the old one.
@@ -693,6 +696,32 @@ class SnapTradeRelayCoordinator:
             sess = self._sessions.get(session_token)
             if sess is not None:
                 self._users_in_use[sess.user_id] = self._users_in_use.get(sess.user_id, 0) + 1
+            return sess
+
+    def refresh_session_ttl(
+        self,
+        session_token: str,
+        *,
+        min_window_seconds: float | None = None,
+    ) -> _EphemeralSnapTradeSession | None:
+        """Extend an active session's TTL up to the hard 30-minute S3 session ceiling."""
+        now_mono = self._clock()
+        now_utc = datetime.now(timezone.utc)
+        window = max(self.session_ttl_seconds, float(min_window_seconds or 0.0))
+        max_lifetime = max(self.session_ttl_seconds, SNAPTRADE_SESSION_TTL_SECONDS)
+        with self._lock:
+            sess = self._sessions.get(session_token)
+            if sess is None:
+                return None
+            ceiling_mono = sess.created_monotonic + max_lifetime
+            if now_mono >= ceiling_mono:
+                return None
+            next_mono = min(now_mono + window, ceiling_mono)
+            if next_mono > sess.expires_monotonic:
+                sess.expires_monotonic = next_mono
+                sess.expires_at_utc = _utc_iso_from_dt(
+                    now_utc + timedelta(seconds=next_mono - now_mono)
+                )
             return sess
 
     def finish_use(
@@ -915,6 +944,82 @@ def handle_post_snaptrade_portal(
             "detail": "SnapTrade relay strictly enforces connectionType='read'; trading scope is prohibited.",
         }
 
+    raw_session_token = payload.get("session_token")
+    if raw_session_token is not None and (
+        not isinstance(raw_session_token, str) or not raw_session_token.strip()
+    ):
+        return 422, {
+            "error": "validation_error",
+            "detail": "session_token must be a non-empty string",
+        }
+    clean_session_token = (
+        raw_session_token.strip() if isinstance(raw_session_token, str) else ""
+    )
+
+    adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
+    if clean_session_token:
+        relay.cleanup_leftover_upstream_users_once(
+            adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+        )
+        relay.reap_expired_upstream_users(adapter)
+        existing_sess = relay.get_session_for_use(clean_session_token)
+        if existing_sess is None:
+            return 404, {
+                "error": "session_not_found",
+                "detail": "SnapTrade relay session_token is invalid, expired, or already released.",
+            }
+        sess_secrets = [
+            tok
+            for tok in (
+                consumer_key,
+                client_id,
+                existing_sess.user_id,
+                existing_sess.user_secret,
+                clean_session_token,
+            )
+            if tok
+        ]
+        refreshed_sess: _EphemeralSnapTradeSession | None = None
+        try:
+            portal = adapter.generate_connection_portal_url(
+                existing_sess.user_id,
+                existing_sess.user_secret,
+                broker=clean_broker or None,
+                custom_redirect=clean_redirect,
+                reconnect=clean_reconnect or None,
+                connection_type="read",
+            )
+            refreshed_sess = relay.refresh_session_ttl(existing_sess.session_token)
+        except DisallowedCapabilityError as exc:
+            safe_msg = redact_sensitive_text(str(exc), extra_secrets=sess_secrets)
+            return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+        except (SnapTradeAuthenticationError, SnapTradeServiceError, SnapTradeError) as exc:
+            safe_msg = _clean_snaptrade_upstream_detail(exc, extra_secrets=sess_secrets)
+            return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+        finally:
+            relay.finish_use(existing_sess.user_id, adapter=adapter)
+
+        if refreshed_sess is None:
+            return 404, {
+                "error": "session_not_found",
+                "detail": "SnapTrade relay session_token is invalid, expired, or already released.",
+            }
+
+        counts = relay.slot_status_dict(
+            include_slots=False, is_personal=refreshed_sess.is_personal
+        )
+        return 200, {
+            "mode": mode_label,
+            "slot_id": refreshed_sess.slot_id,
+            "slot_label": refreshed_sess.slot_label,
+            "session_token": refreshed_sess.session_token,
+            "portal_url": portal["redirectURI"],
+            "connection_type": "read",
+            "max_slots": counts["max_slots"],
+            "active_slots": counts["active_slots"],
+            "available_slots": counts["available_slots"],
+        }
+
     manager = relay._manager_for(is_personal=is_personal)
     # A personal key has exactly one upstream identity (its owner). A build key gets a fresh
     # random user per portal call, so a session can only be used by the caller that created it.
@@ -924,7 +1029,6 @@ def handle_post_snaptrade_portal(
         )
     else:
         user_id = _new_relay_user_id(config.account_blinding_salt_hex)
-    adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
     secrets_to_redact = [consumer_key, client_id, user_id]
 
     try:
@@ -1043,8 +1147,18 @@ def handle_post_snaptrade_session_status(
     secrets_to_redact = [
         tok for tok in (consumer_key, client_id, sess.user_secret, sess.user_id) if tok
     ]
+    expires_iso = sess.expires_at_utc
     try:
         sync_info = adapter.fetch_sync_status(sess.user_id, sess.user_secret)
+        if (
+            int(sync_info.get("linked_authorizations") or 0) > 0
+            or int(sync_info.get("accounts_count") or 0) > 0
+        ) and not bool(sync_info.get("ready_to_verify")):
+            refreshed_sync = relay.refresh_session_ttl(
+                sess.session_token, min_window_seconds=600.0
+            )
+            if refreshed_sync is not None:
+                expires_iso = refreshed_sync.expires_at_utc
     except DisallowedCapabilityError as exc:
         safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
         return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
@@ -1058,7 +1172,7 @@ def handle_post_snaptrade_session_status(
         "mode": mode_label,
         "session_active": True,
         "slot_id": sess.slot_id,
-        "expires_at_utc": sess.expires_at_utc,
+        "expires_at_utc": expires_iso,
         **sync_info,
     }
 

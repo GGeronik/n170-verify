@@ -57,8 +57,10 @@ from n170_verify.connectors.ibkr_flex import (
     parse_ibkr_flex_xml,
 )
 from n170_verify.connectors.ibkr_flex_template import (
+    IBKR_FLEX_AI_BUILDER_PROMPT,
     IbkrFlexSectionSpec,
     IbkrFlexSetupGuide,
+    MINIMAL_IBKR_FLEX_SECTIONS,
     RECOMMENDED_IBKR_FLEX_SECTIONS,
     REQUIRED_IBKR_FLEX_SECTIONS,
     get_ibkr_flex_setup_guide,
@@ -245,6 +247,7 @@ __all__ = [
     "IbkrFlexParseError",
     "IbkrFlexSectionSpec",
     "IbkrFlexServiceError",
+    "IBKR_FLEX_AI_BUILDER_PROMPT",
     "IbkrFlexSetupGuide",
     "IbkrFlexWebServiceAdapter",
     "IbkrFlexXmlSecurityError",
@@ -256,6 +259,7 @@ __all__ = [
     "KrakenDecayRateLimiter",
     "MAX_STATEMENT_BYTES",
     "MCP_PROTOCOL_VERSION",
+    "MINIMAL_IBKR_FLEX_SECTIONS",
     "McpAllowlistFirewall",
     "McpArgumentValidationError",
     "McpFirewallError",
