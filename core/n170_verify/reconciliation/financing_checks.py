@@ -68,10 +68,25 @@ def reconcile_fx_conversion_marks(
     findings: list[ReconciliationFinding] = []
     end_date = ledger.period_end_utc[:10]
 
+    ibkr_omitted_conv_rates = (
+        (ledger.broker_id or "").strip().lower() in {"ibkr_flex_offline", "ibkr_flex_web"}
+        and "conversionrates"
+        not in {re.sub(r"[^a-z0-9]", "", s.lower()) for s in ledger.enabled_sections if s}
+    )
+    ending_foreign_ccys = {
+        normalize_uk_currency_and_scale(pos.currency)[1]
+        for pos in ledger.ending_positions
+        if normalize_uk_currency_and_scale(pos.currency)[1] != ledger.base_currency
+    }
+
     candidate_pairs: dict[tuple[str, str], float] = {}
     for key, rate in sorted(ledger.conversion_rates.items()):
         parsed = _parse_fx_pair_key(key, ledger.base_currency)
         if parsed is not None and parsed[0] != parsed[1]:
+            if ibkr_omitted_conv_rates:
+                foreign_leg = parsed[0] if parsed[1] == ledger.base_currency else parsed[1]
+                if foreign_leg not in ending_foreign_ccys:
+                    continue
             candidate_pairs[parsed] = float(rate)
 
     for pos in ledger.ending_positions:
@@ -136,6 +151,13 @@ def reconcile_fx_conversion_marks(
             explanation = (
                 f"Closing FX mark for {pair_label} ({obs_rate:.6f} vs {ref_rate:.6f}, {spread_bps:.2f} bps) "
                 f"lies within standard {tier_label} fixing cut-off convention."
+            )
+        elif ibkr_omitted_conv_rates and spread_bps <= 250.0:
+            outcome = CheckOutcome.EXPLAINED_CONVENTION
+            explanation = (
+                f"Closing FX mark for {pair_label} ({obs_rate:.6f} vs {ref_rate:.6f}, {spread_bps:.2f} bps) "
+                "was inferred from OpenPositions/EquitySummaryInBase (2-decimal percentOfNAV rounding) "
+                "because <ConversionRates> was omitted in the IBKR Flex query."
             )
         else:
             outcome = CheckOutcome.DISCREPANCY

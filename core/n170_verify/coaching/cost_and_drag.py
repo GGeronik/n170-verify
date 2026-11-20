@@ -207,6 +207,29 @@ def _aggregate_funding_and_margin_flows(
     return margin_cost + funding_net_cost
 
 
+def _extract_forex_benchmark_rates(
+    conversion_rates: Mapping[str, float] | None,
+) -> dict[str, float]:
+    """Filter undated ``conversion_rates`` to explicit ``.FOREX`` benchmark rates.
+
+    Connector-populated ``ledger.conversion_rates`` entries (e.g. ``"USD/EUR"``) hold
+    period-ending translation marks rather than historical per-day FX midpoints; comparing
+    multi-year trades or cash flows against an undated period-end closing rate would treat
+    macro exchange-rate drift as execution spread drag.
+    """
+    if not conversion_rates:
+        return {}
+    return {
+        k: float(v)
+        for k, v in conversion_rates.items()
+        if isinstance(k, str)
+        and k.strip().upper().endswith(".FOREX")
+        and isinstance(v, (int, float))
+        and not isinstance(v, bool)
+        and v > 0.0
+    }
+
+
 def _compute_trade_fx_spread_cost_base(
     trade: NormalizedTrade,
     *,
@@ -219,6 +242,7 @@ def _compute_trade_fx_spread_cost_base(
     qty = abs(trade.quantity)
     if qty <= 0.0:
         return 0.0
+    benchmark_rates = _extract_forex_benchmark_rates(conversion_rates)
 
     if trade.asset_class in {AssetClass.FX, AssetClass.CASH}:
         parsed_pair = normalize_fx_pair(trade.symbol)
@@ -232,7 +256,7 @@ def _compute_trade_fx_spread_cost_base(
             fx_quote,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         if mid is None or mid <= 0.0:
@@ -249,7 +273,7 @@ def _compute_trade_fx_spread_cost_base(
             base_currency,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         return shortfall_quote * (quote_to_base if quote_to_base is not None else trade.fx_rate_to_base)
@@ -261,7 +285,7 @@ def _compute_trade_fx_spread_cost_base(
             base_currency,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         if mid_to_base is not None and mid_to_base > 0.0:
@@ -284,12 +308,13 @@ def _compute_flow_fx_spread_cost_base(
         return 0.0
 
     date_str = parse_utc_timestamp(flow.timestamp_utc).strftime("%Y-%m-%d")
+    benchmark_rates = _extract_forex_benchmark_rates(conversion_rates)
     mid_to_base = resolve_forex_midpoint(
         flow.currency,
         base_currency,
         base_currency=base_currency,
         date_str=date_str,
-        conversion_rates=conversion_rates,
+        conversion_rates=benchmark_rates,
         forex_midpoints=forex_midpoints,
     )
     if mid_to_base is None or mid_to_base <= 0.0:

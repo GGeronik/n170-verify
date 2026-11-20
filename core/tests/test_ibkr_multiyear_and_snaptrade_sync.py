@@ -1959,5 +1959,429 @@ class Round3RegressionTests(unittest.TestCase):
         self.assertEqual(lot_recon.discrepancy_count, 0, lot_recon.findings)
 
 
+class IbkrAiBuilderRealSchemaAndFxDriftTests(unittest.TestCase):
+    """Regression tests for real IBKR AI-Builder Activity Flex exports omitting ConversionRates/fxRateToBase."""
+
+    def test_ai_builder_prompt_includes_conversion_rates_within_200_chars(self) -> None:
+        from n170_verify.connectors.ibkr_flex_template import IBKR_FLEX_AI_BUILDER_PROMPT
+
+        self.assertLessEqual(len(IBKR_FLEX_AI_BUILDER_PROMPT), 200)
+        for token in ("Conversion Rates", "Open Positions", "Transfers", "Corporate Actions", "XML", "yyyy-MM-dd"):
+            self.assertIn(token, IBKR_FLEX_AI_BUILDER_PROMPT)
+
+    def test_multiyear_cross_chunk_fx_discovery_funds_stamp_duty_and_ticker_reorg(self) -> None:
+        from datetime import datetime, timezone
+        from n170_verify.coaching import TraderCoachingEngine, compute_cost_and_drag_breakdown
+
+        # Year 1 (2024): EUR base, price-only PriorPeriodPosition for EUR ETF, CASH spot FX trades
+        # (EUR.USD @ 1.05, EUR.GBP @ 0.84, USD.CHF @ 0.88 -> 2-hop CHF->EUR), UK stamp duty in netCash,
+        # and ChangeInNAV lacking twr attribute (must NOT trigger deposit-day 1-day probes!).
+        chunk_2024 = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="AIBuilder" type="AF"><FlexStatements count="1">'
+            '<FlexStatement accountId="U7771111" baseCurrency="EUR" fromDate="2024-09-02" toDate="2024-12-31">'
+            '<AccountInformation accountId="U7771111" currency="EUR" dateOpened="2024-08-15" />'
+            '<ChangeInNAV accountId="U7771111" startingValue="10000.00" endingValue="25000.00" />'
+            '<EquitySummaryInBase>'
+            '<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2024-09-02" cash="5000.00" stock="0.00" funds="5000.00" total="10000.00" />'
+            '<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2024-10-15" cash="8104.30" stock="11872.29" funds="5000.00" total="25001.59" />'
+            '<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2024-12-31" cash="9077.87" stock="11400.00" funds="5100.00" total="25577.87" />'
+            '</EquitySummaryInBase>'
+            '<PriorPeriodPositions>'
+            '<PriorPeriodPosition accountId="U7771111" date="2024-09-02" symbol="VWCE" assetCategory="STK" subCategory="ETF" currency="EUR" price="100.00" />'
+            '</PriorPeriodPositions>'
+            '<OpenPositions />'
+            '<Trades>'
+            '<Trade accountId="U7771111" symbol="EUR.USD" assetCategory="CASH" buySell="SELL" quantity="-10000" tradePrice="1.0500" proceeds="10500.00" ibCommission="-2.00" netCash="10498.00" currency="USD" dateTime="2024-10-15;10:00:00" />'
+            '<Trade accountId="U7771111" symbol="EUR.GBP" assetCategory="CASH" buySell="SELL" quantity="-3000" tradePrice="0.8400" proceeds="2520.00" ibCommission="-2.00" netCash="2518.00" currency="GBP" dateTime="2024-10-15;10:05:00" />'
+            '<Trade accountId="U7771111" symbol="USD.CHF" assetCategory="CASH" buySell="SELL" quantity="-1000" tradePrice="0.8800" proceeds="880.00" ibCommission="-2.00" netCash="878.00" currency="CHF" dateTime="2024-10-15;10:10:00" />'
+            '<Trade accountId="U7771111" symbol="OLDCO" assetCategory="STK" buySell="BUY" quantity="100" tradePrice="90.00" proceeds="-9000.00" cost="9001.00" ibCommission="-1.00" netCash="-9001.00" currency="USD" dateTime="2024-10-15;14:30:00" />'
+            # UK buy with 0.5% SDRT stamp duty (10.00 GBP) embedded in netCash (-2012.00 vs proceeds -2000.00 - comm 2.00)
+            '<Trade accountId="U7771111" symbol="AZN" assetCategory="STK" buySell="BUY" quantity="20" tradePrice="100.00" proceeds="-2000.00" cost="2012.00" ibCommission="-2.00" netCash="-2012.00" currency="GBP" dateTime="2024-10-15;11:00:00" />'
+            '<Trade accountId="U7771111" symbol="NESN" assetCategory="STK" buySell="BUY" quantity="10" tradePrice="85.00" proceeds="-850.00" cost="852.00" ibCommission="-2.00" netCash="-852.00" currency="CHF" dateTime="2024-10-15;11:15:00" />'
+            '<Trade accountId="U7771111" symbol="NESN" assetCategory="STK" buySell="SELL" quantity="-10" tradePrice="86.00" proceeds="860.00" cost="-852.00" ibCommission="-2.00" netCash="858.00" currency="CHF" dateTime="2024-11-20;11:15:00" />'
+            '</Trades>'
+            '<CashTransactions>'
+            '<CashTransaction accountId="U7771111" type="Deposits/Withdrawals" currency="EUR" amount="15000.00" dateTime="2024-10-15;08:00:00" description="Wire" />'
+            '<CashTransaction accountId="U7771111" type="Dividends" symbol="OLDCO" currency="USD" amount="47.25" dateTime="2024-11-01;12:00:00" description="OLDCO Cash Dividend" />'
+            '</CashTransactions>'
+            '<Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        # Year 2 (2025): NO CASH FX trades in 2025 at all! USD/EUR drifted from 1/1.05 (0.9524) to 0.8500
+        # on closing OpenPositions; OLDCO renamed to NEWCO with exact 100 shares & 9001.00 USD costBasisMoney
+        # while CorporateActions section is empty.
+        # Ending positions on 2025-11-19:
+        # VWCE (EUR fund): 50 * 110 = 5,500 EUR
+        # NEWCO (USD stock): 100 * 120 = 12,000 USD * 0.85 = 10,200 EUR
+        # AZN (GBP stock): 20 * 105 = 2,100 GBP * 1.19047619 (from 1/0.84) = 2,500 EUR
+        # Total positions_base = 5,500 + 10,200 + 2,500 = 18,200 EUR; cash = 9,077.87 EUR -> NAV = 27,277.87 EUR
+        chunk_2025 = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="AIBuilder" type="AF"><FlexStatements count="1">'
+            '<FlexStatement accountId="U7771111" baseCurrency="EUR" fromDate="2025-01-01" toDate="2025-11-19">'
+            '<AccountInformation accountId="U7771111" currency="EUR" dateOpened="2024-08-15" />'
+            '<ChangeInNAV accountId="U7771111" startingValue="25577.87" endingValue="27277.87" />'
+            '<EquitySummaryInBase>'
+            '<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-02" cash="9077.87" stock="11400.00" funds="5100.00" total="25577.87" />'
+            '<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-11-19" cash="9077.87" stock="12700.00" funds="5500.00" total="27277.87" />'
+            '</EquitySummaryInBase>'
+            '<PriorPeriodPositions />'
+            '<OpenPositions>'
+            '<OpenPosition accountId="U7771111" symbol="VWCE" assetCategory="STK" subCategory="ETF" currency="EUR" position="50" markPrice="110.00" positionValue="5500.00" costBasisMoney="5000.00" percentOfNAV="20.16" />'
+            '<OpenPosition accountId="U7771111" symbol="NEWCO" assetCategory="STK" currency="USD" position="100" markPrice="120.00" positionValue="12000.00" costBasisMoney="9001.00" percentOfNAV="37.39" />'
+            '<OpenPosition accountId="U7771111" symbol="AZN" assetCategory="STK" currency="GBP" position="20" markPrice="105.00" positionValue="2100.00" costBasisMoney="2012.00" percentOfNAV="9.16" />'
+            '</OpenPositions>'
+            '<Trades />'
+            '<CashTransactions />'
+            '<Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        send_windows: list[tuple[str, str]] = []
+        refs = {
+            ("20240902", "20241231"): ("REF-24", chunk_2024),
+            ("20250101", "20251119"): ("REF-25", chunk_2025),
+        }
+
+        def transport(
+            _method: str, url: str, _headers: dict[str, str], _body: bytes | None
+        ) -> HttpExchangeResponse:
+            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
+                win = (qs["fd"][0], qs["td"][0])
+                send_windows.append(win)
+                ref_id, _ = refs[win]
+                return HttpExchangeResponse(
+                    status_code=200,
+                    headers={},
+                    body=f"<FlexStatementResponse><Status>Success</Status><ReferenceCode>{ref_id}</ReferenceCode></FlexStatementResponse>".encode(),
+                )
+            q_ref = qs["q"][0]
+            for r_id, payload in refs.values():
+                if r_id == q_ref:
+                    return HttpExchangeResponse(status_code=200, headers={}, body=payload)
+            raise AssertionError(f"Unexpected ref {q_ref}")
+
+        # 2025-11-20 11:00 UTC == 06:00 EST (< 18:00 NY), so auto_end must pick 2025-11-19 without 1003!
+        adapter = IbkrFlexWebServiceAdapter(
+            http_transport=transport,
+            sleep_fn=lambda _s: None,
+            now_utc_fn=lambda: datetime(2025, 11, 20, 11, 0, 0, tzinfo=timezone.utc),
+        )
+        ledger = adapter.fetch_canonical_ledger(
+            flex_token="TOK-REAL-SCHEMA",
+            query_id="778899",
+            blinding_salt_hex=_SALT,
+            start_date="2024-09-02",
+        )
+        # Must NOT send td=20251120 before NY close AND must NOT send 1-day ChangeInNAV probes when twr is absent!
+        self.assertEqual(send_windows, [("20240902", "20241231"), ("20250101", "20251119")])
+
+        # Price-only PriorPeriodPosition reconstructed VWCE = 50 shares
+        self.assertEqual(len(ledger.prior_positions), 1)
+        self.assertEqual(ledger.prior_positions[0].symbol, "VWCE")
+        self.assertAlmostEqual(ledger.prior_positions[0].quantity, 50.0, places=5)
+
+        # UK SDRT stamp duty (10 GBP) recovered on AZN buy; EUR.USD commission in EUR (fx_rate_to_base == 1.0)
+        azn_buy = next(t for t in ledger.trades if t.symbol == "AZN")
+        self.assertAlmostEqual(azn_buy.tax, 10.0, places=4)
+        eur_usd = next(t for t in ledger.trades if t.symbol == "EUR.USD")
+        self.assertAlmostEqual(eur_usd.commission * eur_usd.fx_rate_to_base, 2.0, places=5)
+
+        # Reconciliation: 0 discrepancies both offline and with live FX ReferenceDataProvider
+        recon = reconcile_portfolio_ledger(ledger)
+        self.assertEqual(recon.discrepancy_count, 0, recon.findings)
+        self.assertNotEqual(recon.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+
+        class _MockClosingFxRef:
+            is_available = True
+            provider_name = "eodhd"
+
+            def get_fx_rate(self, from_c: str, to_c: str, *, date_str: str) -> float | None:
+                rates = {("USD", "EUR"): 0.8500, ("GBP", "EUR"): 1.0 / 0.84}
+                return rates.get((from_c, to_c))
+
+            def resolve_security(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            def get_daily_bar(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            def get_dividends(self, *args: object, **kwargs: object) -> list[object]:
+                return []
+
+            def get_splits(self, *args: object, **kwargs: object) -> list[object]:
+                return []
+
+        recon_with_ref = reconcile_portfolio_ledger(ledger, reference_provider=_MockClosingFxRef())  # type: ignore[arg-type]
+        self.assertEqual(recon_with_ref.discrepancy_count, 0, recon_with_ref.findings)
+        self.assertEqual(recon_with_ref.status, ReconciliationStatus.RECONCILED_WITHIN_TOLERANCE)
+
+        class _TamperedClosingFxRef(_MockClosingFxRef):
+            def get_fx_rate(self, from_c: str, to_c: str, *, date_str: str) -> float | None:
+                rates = {("USD", "EUR"): 0.7000, ("GBP", "EUR"): 1.0 / 0.84}
+                return rates.get((from_c, to_c))
+
+        recon_bad_fx = reconcile_portfolio_ledger(ledger, reference_provider=_TamperedClosingFxRef())  # type: ignore[arg-type]
+        self.assertGreaterEqual(recon_bad_fx.discrepancy_count, 1)
+
+        # Multi-year USD/EUR drift (0.9524 in 2024 vs 0.8500 at 2025 close) must NOT fabricate FX spread drag
+        drag = compute_cost_and_drag_breakdown(ledger)
+        self.assertEqual(drag.fx_conversion_drag_bps, 0.0)
+        coach_out = TraderCoachingEngine().evaluate(ledger)
+        self.assertIsNotNone(coach_out.report.quant_dna)
+        assert coach_out.report.quant_dna is not None
+        self.assertGreater(coach_out.report.quant_dna.cost_efficiency_score, 70.0)
+
+    def test_adversarial_negative_guards_for_reorg_accruals_and_missing_fx(self) -> None:
+        from n170_verify.contracts import CanonicalPortfolioLedger
+
+        # 1. Missing FX with NO ConversionRates, NO fxRateToBase, NO CASH FX trades, and NO OpenPositions -> IbkrFlexParseError
+        missing_fx_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="MissingFX" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7771111" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-02" cash="10000.00" stock="0.00" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-10" cash="10000.00" stock="0.00" total="10000.00" />'
+            b'</EquitySummaryInBase>'
+            b'<Trades>'
+            b'<Trade accountId="U7771111" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="10" tradePrice="180.00" currency="USD" ibCommission="-1.00" dateTime="2025-01-03;15:00:00" />'
+            b'<Trade accountId="U7771111" symbol="AAPL" assetCategory="STK" buySell="SELL" quantity="-10" tradePrice="182.00" currency="USD" ibCommission="-1.00" dateTime="2025-01-08;15:00:00" />'
+            b'</Trades>'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        with self.assertRaises(IbkrFlexParseError):
+            parse_ibkr_flex_xml(missing_fx_xml, blinding_salt_hex=_SALT)
+
+        # 2. Mismatched cost basis on symbol rename MUST NOT match 1:1 reorg -> UNEXPLAINED_RESIDUAL
+        bad_reorg_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="BadReorg" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7771111" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-02" cash="10000.00" stock="0.00" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-10" cash="1000.00" stock="9000.00" total="10000.00" />'
+            b'</EquitySummaryInBase>'
+            b'<PriorPeriodPositions />'
+            b'<OpenPositions>'
+            b'<OpenPosition accountId="U7771111" symbol="FAKECO" assetCategory="STK" currency="EUR" position="100" markPrice="90.00" positionValue="9000.00" costBasisMoney="12500.00" />'
+            b'</OpenPositions>'
+            b'<Trades>'
+            b'<Trade accountId="U7771111" symbol="OLDCO" assetCategory="STK" buySell="BUY" quantity="100" tradePrice="90.00" cost="9000.00" currency="EUR" ibCommission="0.00" dateTime="2025-01-03;15:00:00" />'
+            b'</Trades>'
+            b'<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        bad_reorg_rec = reconcile_portfolio_ledger(parse_ibkr_flex_xml(bad_reorg_xml, blinding_salt_hex=_SALT))
+        self.assertEqual(bad_reorg_rec.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertGreaterEqual(bad_reorg_rec.discrepancy_count, 2)
+
+        # 3. >50 bps tampered snapshot total when accruals_base is None MUST flag UNEXPLAINED_RESIDUAL;
+        # and 25 bps residual when dividendAccruals="0.00" IS explicitly exported MUST ALSO flag UNEXPLAINED_RESIDUAL!
+        tampered_snap_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="TamperedSnap" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7771111" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-02" cash="100000.00" stock="0.00" total="101500.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7771111" reportDate="2025-01-10" cash="100000.00" stock="0.00" dividendAccruals="0.00" total="100250.00" />'
+            b'</EquitySummaryInBase>'
+            b'<PriorPeriodPositions /><OpenPositions /><Trades /><CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        tampered_snap_ldg = CanonicalPortfolioLedger.from_dict(
+            parse_ibkr_flex_xml(tampered_snap_xml, blinding_salt_hex=_SALT).to_dict()
+        )
+        tampered_snap_rec = reconcile_portfolio_ledger(tampered_snap_ldg)
+        self.assertEqual(tampered_snap_rec.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        nav_comp_discs = [
+            f for f in tampered_snap_rec.findings
+            if f.category == "nav_component_identity" and f.outcome.value == "discrepancy"
+        ]
+        self.assertEqual(len(nav_comp_discs), 2)
+
+        # 4. Non-IBKR ledgers (e.g. Hyperliquid) with accruals_base=None MUST keep strict 5 bps nav_component_identity
+        hl_tampered = CanonicalPortfolioLedger.from_dict(
+            {
+                **tampered_snap_ldg.to_dict(),
+                "broker_id": "hyperliquid",
+                "nav_points": [
+                    {
+                        "timestamp_utc": "2025-01-02T23:59:59Z",
+                        "nav_base": 100000.0,
+                        "cash_base": 100000.0,
+                        "positions_base": 0.0,
+                    },
+                    {
+                        "timestamp_utc": "2025-01-10T23:59:59Z",
+                        "nav_base": 100400.0,  # 40 bps tampering (accruals_base is None)
+                        "cash_base": 100000.0,
+                        "positions_base": 0.0,
+                    },
+                ],
+            }
+        )
+        hl_rec = reconcile_portfolio_ledger(hl_tampered)
+        self.assertGreaterEqual(hl_rec.discrepancy_count, 1)
+
+        # 5. Spoofed INFERRED_SINGLE_PRIOR_POSITION_WARNING in USD-base / nonzero-basis / non-IBKR ledger MUST fail
+        from n170_verify.connectors.ibkr_flex import INFERRED_SINGLE_PRIOR_POSITION_WARNING
+
+        spoof_prior_ldg = CanonicalPortfolioLedger.from_dict(
+            {
+                **tampered_snap_ldg.to_dict(),
+                "base_currency": "USD",
+                "enabled_sections": [
+                    "AccountInformation",
+                    "EquitySummaryInBase",
+                    "OpenPositions",
+                    "Trades",
+                    "CashTransactions",
+                    "Transfers",
+                    "CorporateActions",
+                ],
+                "parser_warnings": [INFERRED_SINGLE_PRIOR_POSITION_WARNING],
+                "nav_points": [
+                    {
+                        "timestamp_utc": "2025-01-02T23:59:59Z",
+                        "nav_base": 200000.0,
+                        "cash_base": 0.0,
+                        "positions_base": 200000.0,
+                        "accruals_base": 0.0,
+                    },
+                    {
+                        "timestamp_utc": "2025-01-10T23:59:59Z",
+                        "nav_base": 224000.0,
+                        "cash_base": 0.0,
+                        "positions_base": 224000.0,
+                        "accruals_base": 0.0,
+                    },
+                ],
+                "prior_positions": [
+                    {
+                        "prior_period_or_ending": "prior",
+                        "symbol": "AAPL",
+                        "asset_class": "equity",
+                        "quantity": 1000.0,
+                        "cost_basis": 0.0,
+                        "market_value": 200000.0,
+                        "currency": "USD",
+                        "fx_rate_to_base": 1.0,
+                    }
+                ],
+                "ending_positions": [
+                    {
+                        "prior_period_or_ending": "ending",
+                        "symbol": "AAPL",
+                        "asset_class": "equity",
+                        "quantity": 1120.0,  # +12% fabricated share jump in same-currency account!
+                        "cost_basis": 150000.0,
+                        "market_value": 224000.0,
+                        "currency": "USD",
+                        "fx_rate_to_base": 1.0,
+                    }
+                ],
+            }
+        )
+        spoof_rec = reconcile_portfolio_ledger(spoof_prior_ldg)
+        self.assertEqual(spoof_rec.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertGreaterEqual(spoof_rec.discrepancy_count, 1)
+
+    def test_cross_chunk_closing_fx_backfill_bond_accrued_int_and_post_rename_addon_buy(self) -> None:
+        from datetime import datetime, timezone
+
+        # Chunk 1 (2024): EUR base, NO CASH FX trades, NO ConversionRates, NO fxRateToBase;
+        # buys 100 OLDCO in USD + buys EUR bond with accruedInt="-150.00" (must NOT become tax!).
+        # Also tests <Trades> appearing BEFORE <AccountInformation currency="EUR"> in XML!
+        c1 = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="Backfill" type="AF"><FlexStatements count="1">'
+            '<FlexStatement accountId="U7772222" fromDate="2024-09-02" toDate="2024-12-31">'
+            '<Trades>'
+            '<Trade accountId="U7772222" symbol="OLDCO" assetCategory="STK" buySell="BUY" quantity="100" tradePrice="50.00" proceeds="-5000.00" cost="5001.00" ibCommission="-1.00" netCash="-5001.00" currency="USD" dateTime="2024-10-10;15:00:00" />'
+            '<Trade accountId="U7772222" symbol="DE10Y" assetCategory="BOND" buySell="BUY" quantity="10000" tradePrice="1.00" proceeds="-10000.00" ibCommission="-5.00" accruedInt="-150.00" netCash="-10155.00" currency="EUR" dateTime="2024-10-12;10:00:00" />'
+            '</Trades>'
+            '<AccountInformation accountId="U7772222" currency="EUR" />'
+            '<EquitySummaryInBase>'
+            '<EquitySummaryByReportDateInBase accountId="U7772222" reportDate="2024-09-02" cashLong="25000.00" cashShort="-5000.00" stock="0.00" bonds="0.00" total="20000.00" />'
+            '<EquitySummaryByReportDateInBase accountId="U7772222" reportDate="2024-12-31" cash="5344.10" stock="4500.00" bonds="10000.00" total="19844.10" />'
+            '</EquitySummaryInBase>'
+            '<PriorPeriodPositions /><OpenPositions />'
+            '<CashTransactions>'
+            '<CashTransaction accountId="U7772222" type="Bond Interest Paid" currency="EUR" amount="-150.00" dateTime="2024-10-12;10:00:00" description="Purchased Bond Accrued Interest" />'
+            '</CashTransactions>'
+            '<Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        # Chunk 2 (2025): OLDCO renamed 1:1 to NEWCO + trader bought 50 MORE shares of NEWCO @ $60 ($3001 w/ comm)
+        # -> ending 150 NEWCO with costBasisMoney="8002.00", closing USD/EUR = 0.90 from OpenPositions + EquitySummaryInBase!
+        c2 = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<FlexQueryResponse queryName="Backfill" type="AF"><FlexStatements count="1">'
+            '<FlexStatement accountId="U7772222" fromDate="2025-01-01" toDate="2025-11-19">'
+            '<AccountInformation accountId="U7772222" currency="EUR" />'
+            '<EquitySummaryInBase>'
+            '<EquitySummaryByReportDateInBase accountId="U7772222" reportDate="2025-01-02" cash="5344.10" stock="4500.00" bonds="10000.00" total="19844.10" />'
+            '<EquitySummaryByReportDateInBase accountId="U7772222" reportDate="2025-11-19" cash="2643.20" stock="8640.00" bonds="10000.00" total="21283.20" />'
+            '</EquitySummaryInBase>'
+            '<PriorPeriodPositions />'
+            '<OpenPositions>'
+            '<OpenPosition accountId="U7772222" symbol="NEWCO" assetCategory="STK" currency="USD" position="150" markPrice="64.00" positionValue="9600.00" costBasisMoney="8002.00" percentOfNAV="40.59" />'
+            '<OpenPosition accountId="U7772222" symbol="DE10Y" assetCategory="BOND" currency="EUR" position="10000" markPrice="1.00" positionValue="10000.00" costBasisMoney="10005.00" percentOfNAV="46.99" />'
+            '</OpenPositions>'
+            '<Trades>'
+            '<Trade accountId="U7772222" symbol="NEWCO" assetCategory="STK" buySell="BUY" quantity="50" tradePrice="60.00" proceeds="-3000.00" cost="3001.00" ibCommission="-1.00" netCash="-3001.00" currency="USD" dateTime="2025-03-10;15:00:00" />'
+            '</Trades>'
+            '<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            '</FlexStatement></FlexStatements></FlexQueryResponse>'
+        ).encode("utf-8")
+
+        refs = {
+            ("20240902", "20241231"): ("R-C1", c1),
+            ("20250101", "20251119"): ("R-C2", c2),
+        }
+
+        def transport(
+            _method: str, url: str, _headers: dict[str, str], _body: bytes | None
+        ) -> HttpExchangeResponse:
+            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
+                ref_id, _ = refs[(qs["fd"][0], qs["td"][0])]
+                return HttpExchangeResponse(
+                    status_code=200,
+                    headers={},
+                    body=f"<FlexStatementResponse><Status>Success</Status><ReferenceCode>{ref_id}</ReferenceCode></FlexStatementResponse>".encode(),
+                )
+            q_ref = qs["q"][0]
+            for r_id, payload in refs.values():
+                if r_id == q_ref:
+                    return HttpExchangeResponse(status_code=200, headers={}, body=payload)
+            raise AssertionError(q_ref)
+
+        adapter = IbkrFlexWebServiceAdapter(
+            http_transport=transport,
+            sleep_fn=lambda _s: None,
+            now_utc_fn=lambda: datetime(2025, 11, 20, 11, 0, 0, tzinfo=timezone.utc),
+        )
+        ldg = adapter.fetch_canonical_ledger(
+            flex_token="TOK-BACKFILL",
+            query_id="889900",
+            blinding_salt_hex=_SALT,
+            start_date="2024-09-02",
+        )
+        # cashLong + cashShort on 2024-09-02 == 20,000.00 EUR
+        self.assertAlmostEqual(ldg.nav_points[0].cash_base or 0.0, 20000.0, places=2)
+        # Bond accruedInt (-150 EUR) MUST NOT be misclassified as transaction tax
+        bond_tr = next(t for t in ldg.trades if t.symbol == "DE10Y")
+        self.assertEqual(bond_tr.tax, 0.0)
+        # Post-rename add-on purchase (100 OLDCO + 50 NEWCO -> 150 NEWCO w/ conserved 8002 USD basis) reconciles with 0 discrepancies
+        rec = reconcile_portfolio_ledger(ldg)
+        self.assertEqual(rec.discrepancy_count, 0, rec.findings)
+
+
 if __name__ == "__main__":
     unittest.main()
