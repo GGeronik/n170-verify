@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import math
 import re
 
+from n170_verify.coaching.cost_and_drag import normalize_fx_pair, resolve_forex_midpoint
 from n170_verify.contracts import (
     AssetClass,
     CanonicalPortfolioLedger,
@@ -20,6 +21,7 @@ from n170_verify.contracts import (
     NormalizedNavPoint,
     NormalizedPosition,
     NormalizedTrade,
+    OriginAssurance,
     ReconciliationFinding,
     parse_utc_timestamp,
 )
@@ -573,6 +575,8 @@ def _estimate_unsettled_trade_cash_near_boundary(
     window_start = boundary_dt - timedelta(days=4)
     net = 0.0
     for tr in trades:
+        if tr.asset_class in {AssetClass.CASH, AssetClass.FX}:
+            continue
         ts = parse_utc_timestamp(tr.timestamp_utc)
         if window_start <= ts <= boundary_dt:
             cash_leg = -tr.notional_base if tr.side == "buy" else tr.notional_base
@@ -810,7 +814,72 @@ def reconcile_nav_identities(
             for tr in ledger.trades
         )
         if not has_futures_or_perps:
-            opening_cash_and_accruals = float(start_pt.nav_base) - prior_mv_sum
+            is_cfd_fx_broker = ledger.broker_id in {"mt4", "mt5", "ctrader"}
+            pre_start_flows = [
+                fl
+                for fl in ledger.flows
+                if parse_utc_timestamp(fl.timestamp_utc) <= start_dt
+            ]
+            pre_start_all_trades = [
+                tr
+                for tr in ledger.trades
+                if parse_utc_timestamp(tr.timestamp_utc) <= start_dt
+            ]
+            pre_start_non_fx_trades = [
+                tr
+                for tr in pre_start_all_trades
+                if tr.asset_class not in {AssetClass.CASH, AssetClass.FX}
+            ]
+            pre_start_comm_trades = [
+                tr
+                for tr in pre_start_all_trades
+                if tr.asset_class != AssetClass.FX or not is_cfd_fx_broker
+            ]
+            pre_start_explicit_comm = math.fsum(
+                abs(float(fl.amount_base or 0.0))
+                for fl in pre_start_flows
+                if fl.kind == FlowKind.COMMISSION_FEE
+            )
+            pre_start_trade_comm = math.fsum(
+                (abs(float(tr.commission)) + abs(float(tr.tax))) * float(tr.fx_rate_to_base)
+                for tr in pre_start_comm_trades
+            )
+            pre_start_unbooked_comm = max(0.0, pre_start_trade_comm - pre_start_explicit_comm)
+            pre_start_trade_gross_cash = math.fsum(
+                (-tr.notional_base if tr.side == "buy" else tr.notional_base)
+                for tr in pre_start_non_fx_trades
+            )
+
+            start_comp_consistent = (
+                start_pt.cash_base is not None
+                and start_pt.positions_base is not None
+                and abs(
+                    float(start_pt.nav_base)
+                    - (
+                        float(start_pt.cash_base)
+                        + float(start_pt.positions_base)
+                        + float(start_pt.accruals_base or 0.0)
+                    )
+                )
+                <= max(2.0, 0.0010 * abs(start_pt.nav_base))
+            )
+            if start_comp_consistent and (
+                pre_start_all_trades
+                or abs(float(start_pt.positions_base or 0.0) - prior_mv_sum)
+                > max(2.0, 0.0010 * abs(start_pt.nav_base))
+            ):
+                opening_cash_and_accruals = float(start_pt.cash_base or 0.0) + float(
+                    start_pt.accruals_base or 0.0
+                )
+            elif pre_start_non_fx_trades:
+                opening_cash_and_accruals = (
+                    float(start_pt.nav_base)
+                    - prior_mv_sum
+                    + pre_start_trade_gross_cash
+                    - pre_start_unbooked_comm
+                )
+            else:
+                opening_cash_and_accruals = float(start_pt.nav_base) - prior_mv_sum
 
             in_window_flows = [
                 fl
@@ -824,11 +893,20 @@ def reconcile_nav_identities(
                 if fl.kind == FlowKind.COMMISSION_FEE
             )
 
-            in_window_trades = [
+            in_window_all_trades = [
                 tr
                 for tr in ledger.trades
                 if start_dt < parse_utc_timestamp(tr.timestamp_utc) <= end_dt
-                and tr.asset_class not in {AssetClass.CASH, AssetClass.FX}
+            ]
+            in_window_trades = [
+                tr
+                for tr in in_window_all_trades
+                if tr.asset_class not in {AssetClass.CASH, AssetClass.FX}
+            ]
+            comm_eligible_trades = [
+                tr
+                for tr in in_window_all_trades
+                if tr.asset_class != AssetClass.FX or not is_cfd_fx_broker
             ]
             trade_gross_cash = math.fsum(
                 (-tr.notional_base if tr.side == "buy" else tr.notional_base)
@@ -836,7 +914,7 @@ def reconcile_nav_identities(
             )
             trade_comm_and_tax = math.fsum(
                 (abs(float(tr.commission)) + abs(float(tr.tax))) * float(tr.fx_rate_to_base)
-                for tr in in_window_trades
+                for tr in comm_eligible_trades
             )
             net_unbooked_trade_costs = max(0.0, trade_comm_and_tax - explicit_comm_flows)
 
@@ -879,11 +957,376 @@ def reconcile_nav_identities(
                 pending_div = _estimate_pending_dividend_accrual_base(
                     ledger, end_pt.timestamp_utc[:10], reference_provider
                 )
-                has_multi_ccy = any(p.currency != ledger.base_currency for p in non_cash_ending) or any(
-                    fl.currency != ledger.base_currency for fl in in_window_flows
+                all_flows_le_end = [*pre_start_flows, *in_window_flows]
+                all_trades_le_end = [*pre_start_all_trades, *in_window_all_trades]
+                has_multi_ccy = (
+                    any(p.currency != ledger.base_currency for p in [*ledger.prior_positions, *non_cash_ending])
+                    or any(fl.currency != ledger.base_currency for fl in all_flows_le_end)
+                    or any(
+                        tr.currency != ledger.base_currency or tr.asset_class == AssetClass.CASH
+                        for tr in all_trades_le_end
+                    )
+                    or bool(ledger.conversion_rates)
                 )
 
-                if abs(unsettled_end) > 0.0 and min(
+                # Multi-currency cash conservation sub-ledger: tracks non-base cash balances
+                # across spot FX conversions (e.g. IBKR EUR.USD), foreign trades, and flows,
+                # then marks closing foreign cash at closing FX rates.
+                multiccy_candidates: list[float] = []
+                opening_fx_drift_ok = False
+                if has_multi_ccy and not is_cfd_fx_broker:
+                    open_or_prior_fx_pairs = {
+                        pair
+                        for pos in [*ledger.prior_positions, *ledger.ending_positions]
+                        if pos.asset_class == AssetClass.FX
+                        for pair in (normalize_fx_pair(pos.symbol),)
+                        if pair is not None
+                    }
+                    prior_cash_pos = [p for p in ledger.prior_positions if p.asset_class == AssetClass.CASH]
+                    earliest_fx_by_ccy: dict[str, float] = {}
+                    latest_fx_by_ccy: dict[str, float] = {}
+                    latest_fx_date_by_ccy: dict[str, str] = {}
+                    for pos in ledger.prior_positions:
+                        if pos.currency != ledger.base_currency and pos.fx_rate_to_base > 0.0:
+                            earliest_fx_by_ccy.setdefault(pos.currency, float(pos.fx_rate_to_base))
+
+                    def _record_event_fx(ccy_code: str, rate_val: float, date_s: str) -> None:
+                        if ccy_code == ledger.base_currency or rate_val <= 0.0:
+                            return
+                        earliest_fx_by_ccy.setdefault(ccy_code, rate_val)
+                        prev_d = latest_fx_date_by_ccy.get(ccy_code, "")
+                        if date_s >= prev_d:
+                            latest_fx_date_by_ccy[ccy_code] = date_s
+                            latest_fx_by_ccy[ccy_code] = rate_val
+
+                    def _replay_cash_maps(
+                        seed_cash: dict[str, float],
+                        flows_seq: Sequence[NormalizedFlow],
+                        trades_seq: Sequence[NormalizedTrade],
+                        comm_scale: float,
+                        extra_base_cash: float,
+                    ) -> tuple[dict[str, float], dict[str, float]]:
+                        c_map: dict[str, float] = defaultdict(float, seed_cash)
+                        afx_map: dict[str, float] = defaultdict(float, seed_cash)
+                        ev_list: list[tuple[datetime, int, int, object]] = []
+                        for idx_f, fl_item in enumerate(flows_seq):
+                            ev_list.append((parse_utc_timestamp(fl_item.timestamp_utc), 0, idx_f, fl_item))
+                        for idx_t, tr_item in enumerate(trades_seq):
+                            ev_list.append((parse_utc_timestamp(tr_item.timestamp_utc), 1, idx_t, tr_item))
+                        ev_list.sort(key=lambda item: (item[0], item[1], item[2]))
+
+                        for _, ev_kind, _, ev_obj in ev_list:
+                            if ev_kind == 0:
+                                assert isinstance(ev_obj, NormalizedFlow)
+                                _record_event_fx(
+                                    ev_obj.currency,
+                                    float(ev_obj.fx_rate_to_base),
+                                    ev_obj.timestamp_utc[:10],
+                                )
+                                if ev_obj.kind in {
+                                    FlowKind.TRANSFER_IN_KIND,
+                                    FlowKind.TRANSFER_OUT_KIND,
+                                    FlowKind.FX_TRANSLATION,
+                                }:
+                                    continue
+                                raw_a = float(ev_obj.amount)
+                                if ev_obj.kind in {
+                                    FlowKind.WITHDRAWAL,
+                                    FlowKind.WITHHOLDING_TAX,
+                                    FlowKind.COMMISSION_FEE,
+                                    FlowKind.MARGIN_INTEREST,
+                                }:
+                                    amt_ccy = -abs(raw_a)
+                                else:
+                                    amt_ccy = raw_a
+                                c_map[ev_obj.currency] += amt_ccy
+                                afx_map[ev_obj.currency] += amt_ccy
+                                if (
+                                    ev_obj.currency != ledger.base_currency
+                                    and afx_map[ev_obj.currency] < -1e-9
+                                ):
+                                    deficit = -afx_map[ev_obj.currency]
+                                    afx_map[ev_obj.currency] = 0.0
+                                    afx_map[ledger.base_currency] -= deficit * float(ev_obj.fx_rate_to_base)
+                            else:
+                                assert isinstance(ev_obj, NormalizedTrade)
+                                d_s = ev_obj.timestamp_utc[:10]
+                                _record_event_fx(ev_obj.currency, float(ev_obj.fx_rate_to_base), d_s)
+                                comm_ccy = (
+                                    (abs(float(ev_obj.commission)) + abs(float(ev_obj.tax))) * comm_scale
+                                )
+                                pair = normalize_fx_pair(ev_obj.symbol)
+                                is_spot_fx = ev_obj.asset_class == AssetClass.CASH or (
+                                    ev_obj.asset_class == AssetClass.FX and pair not in open_or_prior_fx_pairs
+                                )
+                                if is_spot_fx:
+                                    if pair is not None:
+                                        fx_b, fx_q = pair
+                                        mult = float(ev_obj.multiplier) if ev_obj.multiplier is not None else 1.0
+                                        qty_b = abs(float(ev_obj.quantity)) * mult
+                                        qty_q = qty_b * float(ev_obj.price)
+                                        if ev_obj.side == "buy":
+                                            c_map[fx_b] += qty_b
+                                            c_map[fx_q] -= qty_q
+                                            afx_map[fx_b] += qty_b
+                                            afx_map[fx_q] -= qty_q
+                                        else:
+                                            c_map[fx_b] -= qty_b
+                                            c_map[fx_q] += qty_q
+                                            afx_map[fx_b] -= qty_b
+                                            afx_map[fx_q] += qty_q
+                                        if fx_b == ledger.base_currency and fx_q != ledger.base_currency and ev_obj.price > 0.0:
+                                            _record_event_fx(fx_q, 1.0 / float(ev_obj.price), d_s)
+                                        elif fx_q == ledger.base_currency and fx_b != ledger.base_currency and ev_obj.price > 0.0:
+                                            _record_event_fx(fx_b, float(ev_obj.price), d_s)
+                                    c_map[ev_obj.currency] -= comm_ccy
+                                    afx_map[ev_obj.currency] -= comm_ccy
+                                elif ev_obj.asset_class not in {AssetClass.CASH, AssetClass.FX}:
+                                    mult = float(ev_obj.multiplier) if ev_obj.multiplier is not None else 1.0
+                                    gross_ccy = abs(float(ev_obj.quantity)) * float(ev_obj.price) * mult
+                                    delta_ccy = (-gross_ccy if ev_obj.side == "buy" else gross_ccy) - comm_ccy
+                                    c_map[ev_obj.currency] += delta_ccy
+                                    afx_map[ev_obj.currency] += delta_ccy
+                                    if (
+                                        ev_obj.currency != ledger.base_currency
+                                        and afx_map[ev_obj.currency] < -1e-9
+                                    ):
+                                        deficit = -afx_map[ev_obj.currency]
+                                        afx_map[ev_obj.currency] = 0.0
+                                        afx_map[ledger.base_currency] -= deficit * float(
+                                            ev_obj.fx_rate_to_base
+                                        )
+
+                        c_map[ledger.base_currency] += extra_base_cash
+                        afx_map[ledger.base_currency] += extra_base_cash
+                        return c_map, afx_map
+
+                    seed_in_window: dict[str, float] = defaultdict(float)
+                    if prior_cash_pos:
+                        for p in prior_cash_pos:
+                            seed_in_window[p.currency] += float(p.market_value)
+                        seed_in_window[ledger.base_currency] += opening_cash_and_accruals - math.fsum(
+                            p.market_value_base for p in prior_cash_pos
+                        )
+                    else:
+                        seed_in_window[ledger.base_currency] = opening_cash_and_accruals
+
+                    unbooked_comm_scale = (
+                        max(0.0, (trade_comm_and_tax - explicit_comm_flows) / trade_comm_and_tax)
+                        if trade_comm_and_tax > 1e-9
+                        else 0.0
+                    )
+                    cash_by_ccy, autofx_cash_by_ccy = _replay_cash_maps(
+                        seed_in_window,
+                        in_window_flows,
+                        in_window_all_trades,
+                        unbooked_comm_scale,
+                        corp_cash_in_lieu + implied_option_cash_delta_base,
+                    )
+                    candidate_maps: list[dict[str, float]] = [cash_by_ccy, autofx_cash_by_ccy]
+
+                    # When flows or trades occurred on/before start_dt (e.g. Day-1 deposit +
+                    # EUR.USD conversion + USD stock buy before Day-1 EOD valuation), also replay
+                    # from pre-Day-1 cash so Day-1 currency conversions split EUR/USD cash accurately.
+                    if (pre_start_flows or pre_start_all_trades) and not prior_cash_pos:
+                        pre_flow_sum_base = math.fsum(
+                            _signed_cash_flow_delta_base(fl) for fl in pre_start_flows
+                        )
+                        pre_spot_fx_base_delta = 0.0
+                        for tr_pre in pre_start_all_trades:
+                            pair_pre = normalize_fx_pair(tr_pre.symbol)
+                            is_spot_pre = tr_pre.asset_class == AssetClass.CASH or (
+                                tr_pre.asset_class == AssetClass.FX
+                                and pair_pre not in open_or_prior_fx_pairs
+                            )
+                            if is_spot_pre and pair_pre is not None:
+                                fb, fq = pair_pre
+                                mult_p = float(tr_pre.multiplier) if tr_pre.multiplier is not None else 1.0
+                                qb = abs(float(tr_pre.quantity)) * mult_p
+                                qq = qb * float(tr_pre.price)
+                                r_q = float(tr_pre.fx_rate_to_base) if tr_pre.currency == fq else None
+                                r_b = (
+                                    1.0
+                                    if fb == ledger.base_currency
+                                    else (
+                                        float(tr_pre.price) * r_q
+                                        if r_q is not None and fq != ledger.base_currency
+                                        else (float(tr_pre.price) if fq == ledger.base_currency else None)
+                                    )
+                                )
+                                if r_q is None:
+                                    r_q = 1.0 if fq == ledger.base_currency else None
+                                if r_b is not None and r_q is not None:
+                                    leg_b = qb * r_b
+                                    leg_q = qq * r_q
+                                    pre_spot_fx_base_delta += (
+                                        (leg_b - leg_q) if tr_pre.side == "buy" else (leg_q - leg_b)
+                                    )
+                        pre_corp_lieu = math.fsum(
+                            float(ca.cash_in_lieu_base)
+                            for ca in ledger.corporate_actions
+                            if parse_utc_timestamp(ca.timestamp_utc) <= start_dt
+                        )
+                        pre_net_cash_base = (
+                            pre_flow_sum_base
+                            + pre_start_trade_gross_cash
+                            + pre_spot_fx_base_delta
+                            - pre_start_unbooked_comm
+                            + pre_corp_lieu
+                        )
+                        pre_period_base_cash = opening_cash_and_accruals - pre_net_cash_base
+                        total_comm = pre_start_trade_comm + trade_comm_and_tax
+                        total_exp_comm = pre_start_explicit_comm + explicit_comm_flows
+                        full_comm_scale = (
+                            max(0.0, (total_comm - total_exp_comm) / total_comm)
+                            if total_comm > 1e-9
+                            else 0.0
+                        )
+                        full_c_map, full_afx_map = _replay_cash_maps(
+                            {ledger.base_currency: pre_period_base_cash},
+                            all_flows_le_end,
+                            all_trades_le_end,
+                            full_comm_scale,
+                            pre_corp_lieu + corp_cash_in_lieu + implied_option_cash_delta_base,
+                        )
+                        candidate_maps.extend([full_c_map, full_afx_map])
+
+                    end_date_str = end_pt.timestamp_utc[:10]
+                    ending_fx_by_ccy: dict[str, float] = {ledger.base_currency: 1.0}
+                    for pos in ledger.ending_positions:
+                        if pos.currency != ledger.base_currency and pos.fx_rate_to_base > 0.0:
+                            ending_fx_by_ccy[pos.currency] = float(pos.fx_rate_to_base)
+
+                    def _closing_fx(ccy_code: str) -> float | None:
+                        if ccy_code == ledger.base_currency:
+                            return 1.0
+                        if ccy_code in ending_fx_by_ccy:
+                            return ending_fx_by_ccy[ccy_code]
+                        if latest_fx_date_by_ccy.get(ccy_code) == end_date_str:
+                            return latest_fx_by_ccy[ccy_code]
+                        if reference_provider is not None and reference_provider.is_available:
+                            ref_fx = reference_provider.get_fx_rate(
+                                ccy_code, ledger.base_currency, date_str=end_date_str
+                            )
+                            if ref_fx is not None and ref_fx > 0.0:
+                                return float(ref_fx)
+                        conv_fx = resolve_forex_midpoint(
+                            ccy_code,
+                            ledger.base_currency,
+                            base_currency=ledger.base_currency,
+                            date_str=end_date_str,
+                            conversion_rates=ledger.conversion_rates,
+                        )
+                        if conv_fx is not None and conv_fx > 0.0:
+                            return float(conv_fx)
+                        return latest_fx_by_ccy.get(ccy_code)
+
+                    for candidate_map in candidate_maps:
+                        ok_all = True
+                        total_c_base = 0.0
+                        for c_code, c_amt in candidate_map.items():
+                            if abs(c_amt) <= 1e-9:
+                                continue
+                            c_fx = _closing_fx(c_code)
+                            if c_fx is None or c_fx <= 0.0:
+                                ok_all = False
+                                break
+                            total_c_base += c_amt * c_fx
+                        if ok_all:
+                            multiccy_candidates.append(total_c_base + ending_mv_sum)
+
+                best_multiccy_expected = (
+                    min(multiccy_candidates, key=lambda v: abs(float(end_pt.nav_base) - v))
+                    if multiccy_candidates
+                    else None
+                )
+                multiccy_residual = (
+                    float(end_pt.nav_base) - best_multiccy_expected
+                    if best_multiccy_expected is not None
+                    else None
+                )
+                multiccy_tol = (
+                    max(5.0, 0.0015 * max(abs(best_multiccy_expected), abs(end_pt.nav_base)))
+                    if best_multiccy_expected is not None
+                    else tol_abs
+                )
+
+                # Strictly for broker-retrieved origins (never SELF_REPORTED!) when opening
+                # per-currency CashReport was omitted: check directional FX drift on opening cash.
+                if (
+                    has_multi_ccy
+                    and not is_cfd_fx_broker
+                    and not [p for p in ledger.prior_positions if p.asset_class == AssetClass.CASH]
+                    and ledger.claimed_origin_assurance
+                    in {
+                        OriginAssurance.OPERATOR_RETRIEVED,
+                        OriginAssurance.INDEPENDENTLY_WITNESSED_TLS,
+                        OriginAssurance.BROKER_SIGNED,
+                    }
+                ):
+                    same_day_base_deposits = math.fsum(
+                        float(fl.amount_base or 0.0)
+                        for fl in ledger.flows
+                        if fl.kind == FlowKind.DEPOSIT
+                        and fl.currency == ledger.base_currency
+                        and float(fl.amount_base or 0.0) > 0.0
+                        and parse_utc_timestamp(fl.timestamp_utc) <= start_dt
+                        and fl.timestamp_utc[:10] == start_pt.timestamp_utc[:10]
+                    )
+                    opening_cash_signed = (
+                        float(start_pt.cash_base)
+                        if start_pt.cash_base is not None
+                        else opening_cash_and_accruals
+                    )
+                    unattrib_mag = max(0.0, abs(opening_cash_signed) - same_day_base_deposits)
+                    res_to_check = (
+                        multiccy_residual if multiccy_residual is not None else nav_residual
+                    )
+                    if unattrib_mag > 0.0:
+                        min_rel = 0.0
+                        max_rel = 0.0
+                        for c_key, r_open in earliest_fx_by_ccy.items():
+                            r_close = _closing_fx(c_key)
+                            if r_open > 0.0 and r_close is not None and r_close > 0.0:
+                                rel = max(-0.25, min(0.25, (r_close - r_open) / r_open))
+                                if opening_cash_signed < 0.0:
+                                    rel = -rel
+                                min_rel = min(min_rel, rel)
+                                max_rel = max(max_rel, rel)
+                        lower_bound = unattrib_mag * min_rel - multiccy_tol
+                        upper_bound = unattrib_mag * max_rel + multiccy_tol
+                        if (min_rel < 0.0 or max_rel > 0.0) and (
+                            lower_bound <= res_to_check <= upper_bound
+                        ):
+                            opening_fx_drift_ok = True
+
+                if multiccy_residual is not None and abs(multiccy_residual) <= multiccy_tol:
+                    assert best_multiccy_expected is not None
+                    mc_bps = (
+                        abs(multiccy_residual)
+                        / max(abs(best_multiccy_expected), abs(end_pt.nav_base), 1.0)
+                    ) * 10_000.0
+                    findings.append(
+                        ReconciliationFinding(
+                            category="nav_continuity_bridge",
+                            outcome=CheckOutcome.EXPLAINED_CONVENTION,
+                            date_or_timestamp=end_pt.timestamp_utc,
+                            expected_value=best_multiccy_expected,
+                            observed_value=float(end_pt.nav_base),
+                            residual_bps=mc_bps,
+                            residual_base_currency=multiccy_residual,
+                            math_identity="EndingNAV == sum_ccy(EndingCash_ccy * ClosingFX_ccy) + EndingPositionsMV",
+                            technical_explanation=(
+                                "Multi-currency cash sub-ledger (accounting for FX cash conversions and "
+                                "closing FX re-marking on non-base cash) reconciles ending NAV within tolerance."
+                            ),
+                            benign_causes_considered=[
+                                "FX translation on non-base currency cash balances",
+                                "Explicit spot FX cash conversion legs",
+                            ],
+                        )
+                    )
+                elif abs(unsettled_end) > 0.0 and min(
                     abs(nav_residual - unsettled_end), abs(nav_residual + unsettled_end)
                 ) <= max(5.0, 0.0020 * abs(end_pt.nav_base)):
                     findings.append(
@@ -948,18 +1391,22 @@ def reconcile_nav_identities(
                             ],
                         )
                     )
-                elif has_multi_ccy and nav_res_bps <= 60.0:
+                elif has_multi_ccy and (nav_res_bps <= 60.0 or opening_fx_drift_ok):
                     findings.append(
                         ReconciliationFinding(
                             category="nav_continuity_bridge",
                             outcome=CheckOutcome.EXPLAINED_CONVENTION,
                             date_or_timestamp=end_pt.timestamp_utc,
-                            expected_value=expected_ending_nav,
+                            expected_value=(
+                                best_multiccy_expected
+                                if best_multiccy_expected is not None
+                                else expected_ending_nav
+                            ),
                             observed_value=float(end_pt.nav_base),
                             residual_bps=nav_res_bps,
                             residual_base_currency=nav_residual,
                             math_identity="EndingNAV == ImpliedCash + EndingPositionsMV + FxTranslationDrift",
-                            technical_explanation="Small multi-currency NAV residual (<= 60 bps) consistent with intra-period FX translation on non-base cash.",
+                            technical_explanation="Multi-currency NAV residual consistent with FX translation on non-base currency cash balances.",
                             benign_causes_considered=[
                                 "FX translation on non-base currency cash balances",
                                 "Broker FX closing mark spread",

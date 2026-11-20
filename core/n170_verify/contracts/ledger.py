@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 import hmac
+import math
 
 from n170_verify.contracts.assurance import (
     AccountScope,
@@ -355,6 +356,7 @@ class CanonicalPortfolioLedger(ContractModelMixin):
     flows: list[NormalizedFlow] = field(default_factory=list)
     corporate_actions: list[CorporateActionRecord] = field(default_factory=list)
     conversion_rates: dict[str, float] = field(default_factory=dict)
+    broker_period_returns: dict[str, float] = field(default_factory=dict)
     enabled_sections: list[str] = field(default_factory=list)
     parser_warnings: list[str] = field(default_factory=list)
 
@@ -402,6 +404,15 @@ class CanonicalPortfolioLedger(ContractModelMixin):
         for pair, rate in self.conversion_rates.items():
             if rate <= 0.0:
                 raise ValueError(f"conversion_rates[{pair!r}] must be > 0")
+        for ts_key, ret_val in self.broker_period_returns.items():
+            parse_utc_timestamp(
+                ts_key,
+                field_name=f"CanonicalPortfolioLedger.broker_period_returns[{ts_key!r}]",
+            )
+            if isinstance(ret_val, bool) or not math.isfinite(ret_val) or ret_val <= -1.0:
+                raise ValueError(
+                    f"broker_period_returns[{ts_key!r}] must be a finite return > -1.0"
+                )
 
 
 __all__ = [

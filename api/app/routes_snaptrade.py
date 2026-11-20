@@ -41,6 +41,7 @@ from n170_verify.connectors import (
     MAX_SNAPTRADE_PERSONAL_SLOTS,
     MAX_SNAPTRADE_POC_SLOTS,
     PaperOrSandboxAccountRejectedError,
+    SNAPTRADE_INITIAL_SYNC_PENDING_MESSAGE,
     SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE,
     SnapTradeAuthenticationError,
     SnapTradeError,
@@ -74,7 +75,10 @@ SWEEP_RETRY_MAX_SECONDS: float = 900.0
 # A verify refusal with this reason can succeed on retry (the visitor has not finished linking
 # an account yet), so the session and its seat are kept. Across the worker boundary only the
 # message survives, so the connector's own message is matched there.
-_RETRYABLE_REFUSAL_MARKERS: tuple[str, ...] = (SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE,)
+_RETRYABLE_REFUSAL_MARKERS: tuple[str, ...] = (
+    SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE,
+    SNAPTRADE_INITIAL_SYNC_PENDING_MESSAGE,
+)
 
 # One request retries at most this many queued upstream deletes before it answers.
 MAX_QUEUED_DELETES_PER_REQUEST: int = 2
@@ -995,6 +999,70 @@ def handle_post_snaptrade_portal(
         return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
 
 
+def handle_post_snaptrade_session_status(
+    payload: Any,
+    *,
+    config: ApiConfig,
+    relay: SnapTradeRelayCoordinator,
+    headers: Mapping[str, str] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    """Serve ``POST /api/v1/connect/snaptrade/session-status`` with zero PII/secrets."""
+    if not isinstance(payload, Mapping):
+        return 400, {"error": "invalid_request", "detail": "Request body must be a JSON object"}
+
+    configured, client_id, consumer_key, dev_key, auth_mode = _resolve_snaptrade_runtime(config)
+    if not configured:
+        return 503, {"error": "snaptrade_unconfigured", "detail": SNAPTRADE_UNCONFIGURED_DETAIL}
+
+    dev_ok, dev_err = _verify_dev_key_if_required(payload, headers, dev_key)
+    if not dev_ok and dev_err is not None:
+        return dev_err
+
+    raw_token = payload.get("session_token")
+    if not isinstance(raw_token, str) or not raw_token.strip():
+        return 422, {"error": "validation_error", "detail": "session_token is required"}
+
+    try:
+        is_personal, mode_label, _ = _resolve_snaptrade_mode(
+            configured, client_id, auth_mode=auth_mode
+        )
+        adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
+    except SnapTradeAuthenticationError as exc:
+        return 500, {"error": "snaptrade_config_error", "detail": str(exc)}
+    refusal = _personal_mode_refusal(config, is_personal=is_personal, dev_key=dev_key)
+    if refusal is not None:
+        return refusal
+
+    sess = relay.get_session_for_use(raw_token.strip())
+    if sess is None:
+        return 404, {
+            "error": "session_not_found",
+            "detail": "SnapTrade relay session_token is invalid, expired, or already released.",
+        }
+
+    secrets_to_redact = [
+        tok for tok in (consumer_key, client_id, sess.user_secret, sess.user_id) if tok
+    ]
+    try:
+        sync_info = adapter.fetch_sync_status(sess.user_id, sess.user_secret)
+    except DisallowedCapabilityError as exc:
+        safe_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_to_redact)
+        return 422, {"error": "read_only_capability_violation", "detail": safe_msg}
+    except (SnapTradeAuthenticationError, SnapTradeServiceError, SnapTradeError) as exc:
+        safe_msg = _clean_snaptrade_upstream_detail(exc, extra_secrets=secrets_to_redact)
+        return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+    finally:
+        relay.finish_use(sess.user_id, adapter=adapter)
+
+    return 200, {
+        "mode": mode_label,
+        "session_active": True,
+        "slot_id": sess.slot_id,
+        "expires_at_utc": sess.expires_at_utc,
+        **sync_info,
+    }
+
+
 def handle_post_snaptrade_verify(
     payload: Any,
     *,
@@ -1465,6 +1533,7 @@ __all__ = [
     "handle_get_snaptrade_status",
     "handle_post_snaptrade_portal",
     "handle_post_snaptrade_release",
+    "handle_post_snaptrade_session_status",
     "handle_post_snaptrade_verify",
     "validate_snaptrade_redirect_url",
 ]

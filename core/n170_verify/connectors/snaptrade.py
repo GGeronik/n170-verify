@@ -502,6 +502,9 @@ def _parse_iso_ts(value: Any, *, end_of_day: bool = False) -> str | None:
 # Stable text of the "no brokerage account is linked yet" refusal. Across a process boundary
 # that forwards only the message, this text is what identifies the refusal.
 SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE = "No brokerage accounts are connected to this SnapTrade session yet"
+SNAPTRADE_INITIAL_SYNC_PENDING_MESSAGE = (
+    "Brokerage account connected, initial holdings and transaction sync is still in progress"
+)
 
 
 class SnapTradeNoLinkedAccountError(ValueError):
@@ -514,8 +517,20 @@ class SnapTradeNoLinkedAccountError(ValueError):
     reason_code = "no_linked_account"
 
 
+class SnapTradeInitialSyncPendingError(SnapTradeNoLinkedAccountError):
+    """Brokerage account is linked, but SnapTrade initial sync has not finished yet."""
+
+    reason_code = "initial_sync_pending"
+
+
 class SnapTradeUnreadableDateError(ValueError):
     """A row that feeds a valuation or a flow has no readable date."""
+
+
+class SnapTradeActivityPaginationLimitError(ValueError):
+    """SnapTrade activities pagination hit MAX_ACTIVITIES_PAGES without exhausting history."""
+
+    reason_code = "activities_pagination_limit_exceeded"
 
 
 _TRADE_ACTIVITY_TYPES = frozenset({"buy", "sell", "rei"})
@@ -1318,6 +1333,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         require_live: bool = True,
         start_date: str | None = None,
         end_date: str | None = None,
+        as_of_utc: str | None = None,
     ) -> CanonicalPortfolioLedger:
         """Normalize raw SnapTrade V1 JSON responses into ``CanonicalPortfolioLedger``."""
         if isinstance(payload, (bytes, str)):
@@ -1945,7 +1961,8 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 has_snapshot_row = True
             if has_snapshot_row:
                 # The fetch time is used, once, only when no account carries a timestamp.
-                b_ts = max(snap_ts_values) if snap_ts_values else _fetch_time_ts()
+                resolved_as_of = _parse_iso_ts(as_of_utc) if as_of_utc else None
+                b_ts = max(snap_ts_values) if snap_ts_values else (resolved_as_of or _fetch_time_ts())
                 # Explicit points that do not form a curve are never combined with the
                 # snapshot: values from two sources never make one return series.
                 nav_by_ts = {b_ts: (snap_total, snap_cash)}
@@ -1980,11 +1997,24 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         )
         norm_start = _normalize_date_param(start_date, field_name="start_date")
         norm_end = _normalize_date_param(end_date, field_name="end_date")
+        fallback_as_of = _parse_iso_ts(as_of_utc) if as_of_utc else None
         default_start = (
-            min(all_ts) if all_ts else datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+            min(all_ts)
+            if all_ts
+            else (
+                f"{fallback_as_of[:10]}T00:00:00Z"
+                if fallback_as_of
+                else datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+            )
         )
         default_end = (
-            max(all_ts) if all_ts else datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59Z")
+            max(all_ts)
+            if all_ts
+            else (
+                fallback_as_of
+                if fallback_as_of
+                else datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59Z")
+            )
         )
         period_start = f"{norm_start}T00:00:00Z" if norm_start else default_start
         period_end = f"{norm_end}T23:59:59Z" if norm_end else default_end
@@ -2023,15 +2053,59 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         flows = [f for f in flows if _in_period(f.timestamp_utc)]
         corporate_actions = [c for c in corporate_actions if _in_period(c.timestamp_utc)]
 
+        prior_positions: list[NormalizedPosition] = []
+        raw_prior_positions = data.get("prior_positions")
+        if isinstance(raw_prior_positions, list):
+            for pp in raw_prior_positions:
+                if not isinstance(pp, Mapping):
+                    continue
+                aid = str(pp.get("account_id") or "").strip()
+                if selected_set and aid and aid not in selected_set:
+                    continue
+                sym_str, pos_ccy, asset_cls, mult = _position_asset_info(pp, base_currency)
+                pos_fx = _require_fx_rate(pos_ccy, base_currency, pair_rates)
+                units = _extract_units(pp)
+                price = float(pp.get("price") or pp.get("current_price") or 0.0)
+                avg_cost = pp.get("average_purchase_price")
+                if pp.get("cost_basis") is not None:
+                    cost_basis = float(pp["cost_basis"])
+                elif avg_cost is not None:
+                    cost_basis = units * float(avg_cost) * mult
+                else:
+                    cost_basis = units * price * mult
+                prior_positions.append(
+                    NormalizedPosition(
+                        prior_period_or_ending="prior",
+                        symbol=sym_str or "UNKNOWN",
+                        asset_class=asset_cls,
+                        quantity=units,
+                        cost_basis=cost_basis,
+                        market_value=units * price * mult,
+                        currency=pos_ccy,
+                        fx_rate_to_base=pos_fx,
+                        multiplier=mult,
+                    )
+                )
+
         enabled_secs = [
             "snaptrade_accounts",
             "snaptrade_holdings",
             "snaptrade_positions",
             "snaptrade_activities",
-            "Transfers",
-            "CorporateActions",
-            "OptionEAE",
         ]
+        # SnapTrade's live holdings/activities endpoints do not return pre-window opening
+        # positions unless prior_positions is explicitly supplied; avoid claiming completeness
+        # over pre-window positions when prior_positions is empty so pre-existing holdings
+        # classify as INSUFFICIENT_SECTIONS instead of a false UNEXPLAINED_RESIDUAL.
+        if prior_positions:
+            enabled_secs.extend(
+                [
+                    "PriorPeriodPositions",
+                    "Transfers",
+                    "CorporateActions",
+                    "OptionEAE",
+                ]
+            )
 
         return CanonicalPortfolioLedger(
             blinded_account_tag=blinded_tag,
@@ -2049,12 +2123,160 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             trades=sorted(trades, key=lambda t: (t.timestamp_utc, t.native_entry_id)),
             flows=sorted(flows, key=lambda f: f.timestamp_utc),
             corporate_actions=sorted(corporate_actions, key=lambda c: c.timestamp_utc),
+            prior_positions=prior_positions,
             ending_positions=ending_positions,
             nav_points=nav_points,
             conversion_rates=conversion_rates_out,
             enabled_sections=enabled_secs,
             parser_warnings=parser_warnings,
         )
+
+    @staticmethod
+    def _summarize_accounts_sync_state(
+        accounts_list: Sequence[Any],
+        *,
+        selected_account_ids: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        selected_filter = (
+            {str(aid).strip() for aid in selected_account_ids if str(aid).strip()}
+            if selected_account_ids
+            else set()
+        )
+        valid_accounts: list[Mapping[str, Any]] = []
+        for acct in accounts_list:
+            if not isinstance(acct, Mapping):
+                continue
+            aid = _extract_account_id(acct)
+            if not aid:
+                continue
+            if selected_filter and aid not in selected_filter:
+                continue
+            valid_accounts.append(acct)
+
+        accounts_count = len(valid_accounts)
+        holdings_pending = False
+        transactions_pending = False
+        first_dates: list[str] = []
+
+        for acct in valid_accounts:
+            sync_st = acct.get("sync_status")
+            if not isinstance(sync_st, Mapping):
+                continue
+            h_st = sync_st.get("holdings")
+            if isinstance(h_st, Mapping) and h_st.get("initial_sync_completed") is False:
+                holdings_pending = True
+            t_st = sync_st.get("transactions")
+            if isinstance(t_st, Mapping):
+                if t_st.get("initial_sync_completed") is False:
+                    transactions_pending = True
+                raw_first = t_st.get("first_transaction_date")
+                if isinstance(raw_first, str) and raw_first.strip():
+                    parsed_first = _parse_iso_ts(raw_first.strip())
+                    if parsed_first is not None:
+                        first_dates.append(parsed_first[:10])
+
+        holdings_synced = bool(accounts_count > 0 and not holdings_pending)
+        transactions_synced = bool(accounts_count > 0 and not transactions_pending)
+        return {
+            "accounts_count": accounts_count,
+            "holdings_synced": holdings_synced,
+            "transactions_synced": transactions_synced,
+            "first_transaction_date": min(first_dates) if first_dates else None,
+            "ready_to_verify": bool(
+                accounts_count > 0 and holdings_synced and transactions_synced
+            ),
+        }
+
+    def fetch_sync_status(
+        self,
+        user_id: str = "",
+        user_secret: str = "",
+    ) -> dict[str, Any]:
+        """Inspect read-only SnapTrade authorization and account initial-sync progress (zero PII)."""
+        if self.is_personal_key:
+            clean_user = (user_id or self.user_id or "").strip() or "personal-owner"
+            clean_secret = ""
+            req_user: str | None = None
+            req_secret: str | None = None
+        else:
+            clean_user = (user_id or "").strip()
+            clean_secret = (user_secret or "").strip()
+            if not clean_user:
+                raise SnapTradeAuthenticationError("user_id is required for live SnapTrade queries")
+            if not clean_secret:
+                raise SnapTradeAuthenticationError("user_secret is required for live SnapTrade queries")
+            req_user = clean_user
+            req_secret = clean_secret
+
+        secrets_list = self._collect_secrets(clean_secret, clean_user)
+        try:
+            auth_count: int | None = None
+            auth_resp = self._execute_signed(
+                "GET",
+                "/api/v1/authorizations",
+                user_id=req_user,
+                user_secret=req_secret,
+            )
+            if auth_resp.status_code == 200:
+                auth_raw = self._decode_json_or_raise(
+                    auth_resp,
+                    api_path="/api/v1/authorizations",
+                    extra_secrets=(clean_secret, clean_user),
+                )
+                auth_items = (
+                    auth_raw
+                    if isinstance(auth_raw, list)
+                    else ([auth_raw] if isinstance(auth_raw, Mapping) and auth_raw else [])
+                )
+                auth_count = sum(
+                    1
+                    for item in auth_items
+                    if isinstance(item, Mapping) and item.get("disabled") is not True
+                )
+            elif auth_resp.status_code not in {404, 405, 501}:
+                self._decode_json_or_raise(
+                    auth_resp,
+                    api_path="/api/v1/authorizations",
+                    extra_secrets=(clean_secret, clean_user),
+                )
+
+            accts_resp = self._execute_signed(
+                "GET",
+                "/api/v1/accounts",
+                user_id=req_user,
+                user_secret=req_secret,
+            )
+            accts_raw = self._decode_json_or_raise(
+                accts_resp,
+                api_path="/api/v1/accounts",
+                extra_secrets=(clean_secret, clean_user),
+            )
+            accounts_list = (
+                accts_raw
+                if isinstance(accts_raw, list)
+                else ([accts_raw] if isinstance(accts_raw, Mapping) and accts_raw else [])
+            )
+            summary = self._summarize_accounts_sync_state(accounts_list)
+            linked_auths = (
+                auth_count
+                if auth_count is not None
+                else (1 if summary["accounts_count"] > 0 else 0)
+            )
+            return {
+                "linked_authorizations": linked_auths,
+                "accounts_count": summary["accounts_count"],
+                "holdings_synced": summary["holdings_synced"],
+                "transactions_synced": summary["transactions_synced"],
+                "first_transaction_date": summary["first_transaction_date"],
+                "ready_to_verify": summary["ready_to_verify"],
+            }
+        except Exception as exc:
+            redacted_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_list)
+            if isinstance(exc, (SnapTradeError, DisallowedCapabilityError, ValueError)):
+                raise type(exc)(redacted_msg) from None
+            raise SnapTradeServiceError(
+                f"SnapTrade sync status query failed: {redacted_msg}"
+            ) from None
 
     def fetch_live_ledger(
         self,
@@ -2066,6 +2288,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         end_date: str | None = None,
         selected_account_ids: Sequence[str] | None = None,
         require_live: bool = True,
+        as_of_utc: str | None = None,
     ) -> CanonicalPortfolioLedger:
         """Fetch live read-only accounts, holdings/positions, and paginated activities via SnapTrade V1."""
         if self.is_personal_key:
@@ -2115,6 +2338,14 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 raise SnapTradeNoLinkedAccountError(
                     f"{SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE}; "
                     "complete the read-only broker sign-in first."
+                )
+
+            sync_summary = self._summarize_accounts_sync_state(
+                accounts_list, selected_account_ids=selected_account_ids
+            )
+            if sync_summary["accounts_count"] > 0 and not sync_summary["ready_to_verify"]:
+                raise SnapTradeInitialSyncPendingError(
+                    f"{SNAPTRADE_INITIAL_SYNC_PENDING_MESSAGE}; try again in a few seconds."
                 )
 
             # 2. GET /api/v1/holdings (with fallback to per-account positions & balances)
@@ -2216,10 +2447,11 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     extra_secrets=(clean_secret, clean_user),
                 )
 
-            # 3. GET /api/v1/activities (paginated up to MAX_ACTIVITIES_PAGES; per-account fallback)
+            # 3. GET /api/v1/activities (paginated up to MAX_ACTIVITIES_PAGES; fail closed on cap)
             activities_list: list[Any] = []
             offset = 0
             use_per_account_activities = False
+            exhausted_global_activities = False
             for _ in range(MAX_ACTIVITIES_PAGES):
                 act_params: dict[str, Any] = {
                     "limit": MAX_ACTIVITIES_PAGE_SIZE,
@@ -2242,6 +2474,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                     or (has_account_ids and act_resp.status_code in {401, 403, 422})
                 ):
                     use_per_account_activities = True
+                    exhausted_global_activities = True
                     break
                 act_raw = self._decode_json_or_raise(
                     act_resp,
@@ -2259,8 +2492,16 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
 
                 activities_list.extend(page_items)
                 if len(page_items) < MAX_ACTIVITIES_PAGE_SIZE:
+                    exhausted_global_activities = True
                     break
                 offset += MAX_ACTIVITIES_PAGE_SIZE
+
+            if not use_per_account_activities and not exhausted_global_activities:
+                raise SnapTradeActivityPaginationLimitError(
+                    f"SnapTrade activities pagination reached {MAX_ACTIVITIES_PAGES} full pages "
+                    f"({MAX_ACTIVITIES_PAGES * MAX_ACTIVITIES_PAGE_SIZE} rows); refusing silent "
+                    "truncation of brokerage history."
+                )
 
             if use_per_account_activities:
                 for acct in accounts_list:
@@ -2271,6 +2512,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                         continue
                     safe_aid = urllib.parse.quote(aid, safe="")
                     acct_offset = 0
+                    exhausted_acct_activities = False
                     for _ in range(MAX_ACTIVITIES_PAGES):
                         acct_act_params: dict[str, Any] = {
                             "limit": MAX_ACTIVITIES_PAGE_SIZE,
@@ -2308,8 +2550,15 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                                 item_copy.setdefault("account_id", aid)
                                 activities_list.append(item_copy)
                         if len(acct_items) < MAX_ACTIVITIES_PAGE_SIZE:
+                            exhausted_acct_activities = True
                             break
                         acct_offset += MAX_ACTIVITIES_PAGE_SIZE
+                    if not exhausted_acct_activities:
+                        raise SnapTradeActivityPaginationLimitError(
+                            f"SnapTrade per-account activities pagination reached {MAX_ACTIVITIES_PAGES} "
+                            f"full pages ({MAX_ACTIVITIES_PAGES * MAX_ACTIVITIES_PAGE_SIZE} rows); "
+                            "refusing silent truncation of brokerage history."
+                        )
 
             # 3b. Opportunistic GET /api/v1/currencies/rates ONLY when non-USD or multi-currency
             # holdings/balances/activities exist (gracefully ignored if unavailable).
@@ -2536,6 +2785,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
                 require_live=require_live,
                 start_date=norm_start,
                 end_date=norm_end,
+                as_of_utc=as_of_utc,
             )
         except Exception as exc:
             redacted_msg = redact_sensitive_text(str(exc), extra_secrets=secrets_list)
@@ -2563,6 +2813,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
         end_date: str | None = None,
         selected_account_ids: Sequence[str] | None = None,
         require_live: bool = True,
+        as_of_utc: str | None = None,
     ) -> CanonicalPortfolioLedger:
         """Read-only canonical ledger adapter entrypoint delegating to ``fetch_live_ledger``."""
         target_user = (user_id or self.user_id or "").strip()
@@ -2585,6 +2836,7 @@ class SnapTradeReadOnlyAdapter(ReadOnlyBrokerAdapter):
             end_date=resolved_end,
             selected_account_ids=selected_account_ids,
             require_live=require_live,
+            as_of_utc=as_of_utc,
         )
 
 
@@ -2593,11 +2845,16 @@ __all__ = [
     "MAX_SNAPTRADE_PERSONAL_SLOTS",
     "MAX_SNAPTRADE_POC_SLOTS",
     "SNAPTRADE_BLOCKED_MUTATING_ENDPOINTS",
+    "SNAPTRADE_INITIAL_SYNC_PENDING_MESSAGE",
     "SNAPTRADE_LIVE_BASE_URL",
+    "SNAPTRADE_NO_LINKED_ACCOUNT_MESSAGE",
     "SignedSnapTradeRequest",
+    "SnapTradeActivityPaginationLimitError",
     "SnapTradeAuthenticationError",
     "SnapTradeConnectionSlot",
     "SnapTradeError",
+    "SnapTradeInitialSyncPendingError",
+    "SnapTradeNoLinkedAccountError",
     "SnapTradeReadOnlyAdapter",
     "SnapTradeServiceError",
     "SnapTradeSlotCapExceededError",

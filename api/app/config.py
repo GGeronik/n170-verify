@@ -222,8 +222,12 @@ class ApiConfig:
         )
         if self.sync_backup_retention_hours < 0:
             raise ValueError("sync_backup_retention_hours must be >= 0")
-        if self.worker_timeout_seconds <= 0.0:
-            raise ValueError("worker_timeout_seconds must be > 0")
+        if (
+            isinstance(self.worker_timeout_seconds, bool)
+            or not math.isfinite(self.worker_timeout_seconds)
+            or self.worker_timeout_seconds <= 0.0
+        ):
+            raise ValueError("worker_timeout_seconds must be finite and > 0")
         if self.delayed_trade_guard_days < 1:
             raise ValueError("delayed_trade_guard_days must be >= 1")
         self.snaptrade_session_ttl_seconds = _check_snaptrade_session_ttl(

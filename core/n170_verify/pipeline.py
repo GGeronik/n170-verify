@@ -167,6 +167,7 @@ def _call_adapter_fetch(
     period_end_utc: str | None,
     base_currency: str | None,
     require_live: bool = True,
+    as_of_utc: str | None = None,
     extra_fetch_kwargs: Mapping[str, Any] | None = None,
 ) -> CanonicalPortfolioLedger:
     fetch_fn = getattr(adapter, "fetch_canonical_ledger", None) or getattr(
@@ -210,6 +211,8 @@ def _call_adapter_fetch(
         call_kwargs["base_currency"] = base_currency
     if "require_live" in params:
         call_kwargs["require_live"] = require_live
+    if as_of_utc is not None and "as_of_utc" in params:
+        call_kwargs["as_of_utc"] = as_of_utc
 
     if extra_fetch_kwargs:
         if any(str(key).strip().lower() == "blinding_salt_hex" for key in extra_fetch_kwargs):
@@ -278,6 +281,14 @@ def _clamp_same_day_eod_valuations(
         ledger_dict["period_end_utc"] = issued_norm
     if ledger.period_start_utc in clamped_stamps:
         ledger_dict["period_start_utc"] = issued_norm
+    bpr = ledger_dict.get("broker_period_returns")
+    if isinstance(bpr, dict) and any(ts in bpr for ts in clamped_stamps):
+        remapped_bpr = dict(bpr)
+        for old_ts in clamped_stamps:
+            if old_ts in remapped_bpr:
+                val = remapped_bpr.pop(old_ts)
+                remapped_bpr.setdefault(issued_norm, val)
+        ledger_dict["broker_period_returns"] = remapped_bpr
     return CanonicalPortfolioLedger.from_dict(ledger_dict)
 
 
@@ -412,6 +423,7 @@ def ingest_portfolio_ledger(
     base_currency: str | None = None,
     require_live: bool = True,
     allow_filesystem_paths: bool = True,
+    as_of_utc: str | None = None,
 ) -> CanonicalPortfolioLedger:
     """Normalize supported offline statements or live read-only connectors into ``CanonicalPortfolioLedger``."""
     salt_hex = (blinding_salt_hex or secrets.token_hex(32)).strip().lower()
@@ -431,6 +443,7 @@ def ingest_portfolio_ledger(
             period_end_utc=period_end_utc,
             base_currency=base_currency,
             require_live=require_live,
+            as_of_utc=as_of_utc,
             extra_fetch_kwargs=connector_fetch_kwargs,
         )
     elif flex_xml is not None:
@@ -558,6 +571,7 @@ def ingest_portfolio_ledger(
             period_end_utc=period_end_utc,
             base_currency=base_currency,
             require_live=effective_req_live,
+            as_of_utc=as_of_utc,
             extra_fetch_kwargs=connector_fetch_kwargs,
         )
     else:
@@ -877,6 +891,7 @@ def verify_portfolio(
         base_currency=base_currency,
         require_live=require_live,
         allow_filesystem_paths=allow_filesystem_paths,
+        as_of_utc=issued_iso,
     )
 
     canonical_ledger = _clamp_same_day_eod_valuations(canonical_ledger, issued_iso)
@@ -1090,6 +1105,21 @@ def has_real_pipeline_input(job_payload: Mapping[str, Any]) -> bool:
             raw_addr = job_payload.get(addr_key)
             if isinstance(raw_addr, str) and raw_addr.strip():
                 return True
+    if norm_broker == "ibkr_flex_web":
+        fetch_kw = job_payload.get("connector_fetch_kwargs")
+        if isinstance(fetch_kw, Mapping):
+            raw_tok = fetch_kw.get("flex_token")
+            raw_qid = fetch_kw.get("query_id")
+            raw_qids = fetch_kw.get("query_ids")
+            if isinstance(raw_tok, str) and raw_tok.strip() and (
+                (isinstance(raw_qid, str) and raw_qid.strip())
+                or (isinstance(raw_qids, str) and raw_qids.strip())
+                or (
+                    isinstance(raw_qids, (list, tuple))
+                    and any(isinstance(x, str) and x.strip() for x in raw_qids)
+                )
+            ):
+                return True
 
     raw_text = (
         job_payload.get("raw_statement_text")
@@ -1151,7 +1181,15 @@ _PAPER_OR_SANDBOX_URL_TOKENS: tuple[str, ...] = ("paper", "sandbox", "demo", "te
 # The account-tag salt and the queried account identity come from the server and the
 # connector credentials; fetch options may only narrow what is read.
 _WORKER_SERVER_ONLY_FETCH_KEYS: frozenset[str] = frozenset(
-    {"blinding_salt_hex", "wallet_address", "address", "user", "as_of_utc"}
+    {
+        "blinding_salt_hex",
+        "wallet_address",
+        "address",
+        "user",
+        "as_of_utc",
+        "preloaded_xml_chunks",
+        "fetched_xml_chunks_out",
+    }
 )
 
 
@@ -1338,6 +1376,20 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             internal_st_transport = getattr(importlib.import_module(mod_name), attr_name)
         connector_kw["http_transport"] = internal_st_transport
 
+    if (
+        broker_id == "ibkr_flex_web"
+        and job_payload.get("_internal_ibkr_flex_transport") is not None
+    ):
+        internal_ibkr_transport = job_payload["_internal_ibkr_flex_transport"]
+        if isinstance(internal_ibkr_transport, str) and ":" in internal_ibkr_transport:
+            import importlib
+
+            mod_name, attr_name = internal_ibkr_transport.split(":", 1)
+            internal_ibkr_transport = getattr(importlib.import_module(mod_name), attr_name)
+        connector_kw["http_transport"] = internal_ibkr_transport
+        connector_kw.setdefault("chunk_pacing_seconds", 0.0)
+        connector_kw.setdefault("poll_interval_seconds", 0.0)
+
     raw_fetch_kw = dict(job_payload.get("connector_fetch_kwargs") or {})
     connector_fetch_kw: dict[str, Any] = {}
     for k, v in raw_fetch_kw.items():
@@ -1365,13 +1417,25 @@ def api_worker_pipeline_entrypoint(job_payload: Mapping[str, Any]) -> dict[str, 
             )
         connector_fetch_kw[k_str] = v
 
-    if broker_id not in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+    if broker_id not in {
+        "hyperliquid",
+        "snaptrade",
+        "snaptrade_relay",
+        "snaptrade_poc",
+        "ibkr_flex_web",
+    }:
         if period_start is None and job_payload.get("period_start_utc"):
             connector_fetch_kw.setdefault("period_start_utc", str(job_payload["period_start_utc"]))
         if period_end is None and job_payload.get("period_end_utc"):
             connector_fetch_kw.setdefault("period_end_utc", str(job_payload["period_end_utc"]))
 
-    if broker_id in {"hyperliquid", "snaptrade", "snaptrade_relay", "snaptrade_poc"}:
+    if broker_id in {
+        "hyperliquid",
+        "snaptrade",
+        "snaptrade_relay",
+        "snaptrade_poc",
+        "ibkr_flex_web",
+    }:
         if job_payload.get("start_date") is not None and str(job_payload["start_date"]).strip():
             connector_fetch_kw.setdefault("start_date", str(job_payload["start_date"]).strip())
         elif period_start is not None:
