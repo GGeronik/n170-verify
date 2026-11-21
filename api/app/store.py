@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -239,6 +239,56 @@ class StoredProofEntry:
     stored_at_utc: str
 
 
+class ProfileNotFoundError(KeyError):
+    """Raised when a holder profile handle or key does not exist."""
+
+
+class ProfileOwnershipError(PermissionError):
+    """Raised when a handle is already owned by a different Ed25519 holder key."""
+
+    http_status: int = 403
+    error_code: str = "handle_owned_by_another_key"
+
+
+class ProfileSequenceError(RuntimeError):
+    """Raised when a signed profile update has a non-monotonic sequence_number."""
+
+    http_status: int = 409
+    error_code: str = "stale_profile_sequence"
+
+
+class ProfileInvalidError(ValueError):
+    """Raised when a holder profile claim fails validation or Ed25519 verification."""
+
+    http_status: int = 422
+    error_code: str = "invalid_profile_claim"
+
+    def __init__(self, message: str, *, errors: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.errors = list(errors or [message])
+
+
+@dataclass(slots=True)
+class StoredHolderProfile:
+    """Cryptographic holder-signed trader profile keyed by Ed25519 public key."""
+
+    holder_public_key_hex: str
+    handle: str
+    display_name: str
+    bio: str
+    profile_url: str | None
+    strategy_notes: str
+    watchlist: list[dict[str, Any]]
+    conviction_list: list[dict[str, Any]]
+    list_on_leaderboard: bool
+    pinned_proof_id: str | None
+    sequence_number: int
+    signed_claim: dict[str, Any]
+    updated_at_utc: str
+    created_at_utc: str
+    leaderboard_signed_claim: dict[str, Any] | None = None
+
+
 def enforce_bundle_governance(
     *,
     provider_approval_state: ProviderApprovalState,
@@ -266,27 +316,52 @@ def enforce_bundle_seven_day_trade_guard(
 ) -> tuple[VerifyProofBundle, bool]:
     """Ensure no stored ``VerifyProofBundle`` exposes trades closed fewer than ``min_delay_days`` ago.
 
+    Accepts both the canonical ``pipeline.py`` dict envelope
+    (``{"embargo_days": ..., "trades": [...], ...}``) and legacy flat lists.
     If a pre-signed bundle discloses ``delayed_closed_trades`` containing any trade with
-    ``exit_timestamp_utc > issued_at_utc - min_delay_days``, the leaf is cryptographically
-    redacted into ``undisclosed_leaf_hashes`` (preserving ``merkle_root`` and ``signature_hex``).
+    ``exit_timestamp_utc > issued_at_utc - min_delay_days`` (or malformed payload/timestamps
+    or ``embargo_days < min_delay_days``), the leaf is cryptographically redacted into
+    ``undisclosed_leaf_hashes`` (preserving ``merkle_root`` and ``signature_hex``).
     """
     try:
         trades_payload = bundle.get_disclosed_payload("delayed_closed_trades")
     except KeyError:
         return bundle, False
 
-    if not isinstance(trades_payload, list):
+    if isinstance(trades_payload, dict):
+        embargo_days = trades_payload.get("embargo_days")
+        if embargo_days is not None:
+            if (
+                isinstance(embargo_days, bool)
+                or not isinstance(embargo_days, (int, float))
+                or not math.isfinite(float(embargo_days))
+                or float(embargo_days) < float(min_delay_days)
+            ):
+                return bundle.redact_leaves(["delayed_closed_trades"]), True
+        raw_trades = trades_payload.get("trades")
+        if not isinstance(raw_trades, list):
+            return bundle.redact_leaves(["delayed_closed_trades"]), True
+        trades_list = raw_trades
+    elif isinstance(trades_payload, list):
+        trades_list = trades_payload
+    else:
         return bundle.redact_leaves(["delayed_closed_trades"]), True
 
     issued_dt = parse_utc_timestamp(bundle.issued_at_utc, field_name="bundle.issued_at_utc")
     cutoff_dt = issued_dt - timedelta(days=min_delay_days)
-    for item in trades_payload:
+    for item in trades_list:
         if not isinstance(item, dict) or "exit_timestamp_utc" not in item:
             return bundle.redact_leaves(["delayed_closed_trades"]), True
-        exit_dt = parse_utc_timestamp(
-            str(item["exit_timestamp_utc"]),
-            field_name="delayed_closed_trades.exit_timestamp_utc",
-        )
+        raw_exit_ts = item["exit_timestamp_utc"]
+        if not isinstance(raw_exit_ts, str) or not raw_exit_ts.strip():
+            return bundle.redact_leaves(["delayed_closed_trades"]), True
+        try:
+            exit_dt = parse_utc_timestamp(
+                raw_exit_ts,
+                field_name="delayed_closed_trades.exit_timestamp_utc",
+            )
+        except (ValueError, TypeError):
+            return bundle.redact_leaves(["delayed_closed_trades"]), True
         if exit_dt > cutoff_dt:
             return bundle.redact_leaves(["delayed_closed_trades"]), True
 
@@ -362,9 +437,52 @@ class ProofStore:
                     sequence_number INTEGER,
                     bundle_json TEXT NOT NULL,
                     opt_in_leaderboard INTEGER NOT NULL DEFAULT 0,
-                    stored_at_utc TEXT NOT NULL
+                    stored_at_utc TEXT NOT NULL,
+                    holder_public_key_hex TEXT
                 )
                 """
+            )
+            # Safe idempotent migration for existing SQLite databases created before holder profiles
+            existing_cols = {
+                str(r["name"])
+                for r in self._conn.execute("PRAGMA table_info(proofs)").fetchall()
+            }
+            if "holder_public_key_hex" not in existing_cols:
+                self._conn.execute("ALTER TABLE proofs ADD COLUMN holder_public_key_hex TEXT")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_proofs_holder_pubkey ON proofs(holder_public_key_hex)"
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS holder_profiles (
+                    holder_public_key_hex TEXT PRIMARY KEY,
+                    handle TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    bio TEXT NOT NULL DEFAULT '',
+                    profile_url TEXT,
+                    strategy_notes TEXT NOT NULL DEFAULT '',
+                    watchlist_json TEXT NOT NULL DEFAULT '[]',
+                    conviction_list_json TEXT NOT NULL DEFAULT '[]',
+                    list_on_leaderboard INTEGER NOT NULL DEFAULT 0,
+                    pinned_proof_id TEXT,
+                    sequence_number INTEGER NOT NULL DEFAULT 1,
+                    signed_claim_json TEXT NOT NULL,
+                    leaderboard_signed_claim_json TEXT,
+                    updated_at_utc TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL
+                )
+                """
+            )
+            profile_cols = {
+                str(r["name"])
+                for r in self._conn.execute("PRAGMA table_info(holder_profiles)").fetchall()
+            }
+            if "leaderboard_signed_claim_json" not in profile_cols:
+                self._conn.execute(
+                    "ALTER TABLE holder_profiles ADD COLUMN leaderboard_signed_claim_json TEXT"
+                )
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_holder_profiles_handle ON holder_profiles(handle)"
             )
             self._conn.execute(
                 """
@@ -411,6 +529,26 @@ class ProofStore:
                 END;
                 """
             )
+            self._backfill_proof_holder_pubkeys()
+
+    def _backfill_proof_holder_pubkeys(self) -> None:
+        """Populate ``proofs.holder_public_key_hex`` for pre-existing proofs carrying a valid holder claim."""
+        rows = self._conn.execute(
+            "SELECT proof_id, bundle_json FROM proofs WHERE holder_public_key_hex IS NULL"
+        ).fetchall()
+        for r in rows:
+            try:
+                bundle = VerifyProofBundle.from_dict(json.loads(str(r["bundle_json"])))
+                if bundle.holder_identity is None:
+                    continue
+                ver = verify_proof_bundle(bundle)
+                if ver.holder_claim_status == HolderClaimStatus.SELF_ASSERTED:
+                    self._conn.execute(
+                        "UPDATE proofs SET holder_public_key_hex = ? WHERE proof_id = ?",
+                        (bundle.holder_identity.holder_public_key_hex, str(r["proof_id"])),
+                    )
+            except Exception:
+                continue
 
     def total_row_counts(self) -> dict[str, int]:
         """Return row counts across all persistence tables for zero-storage verification audits."""
@@ -690,6 +828,12 @@ class ProofStore:
         )
         bundle_json = jcs_canonicalize_str(sanitized_bundle.to_dict())
         p_hash = sanitized_bundle.proof_hash()
+        holder_pubkey = (
+            sanitized_bundle.holder_identity.holder_public_key_hex
+            if verification.holder_claim_status == HolderClaimStatus.SELF_ASSERTED
+            and sanitized_bundle.holder_identity is not None
+            else None
+        )
 
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE;")
@@ -718,6 +862,30 @@ class ProofStore:
                     )
                     return stored_bundle, stored_verification, False
 
+                effective_opt_in = bool(opt_in_leaderboard)
+                profile_row = None
+                if holder_pubkey is not None:
+                    profile_row = self._conn.execute(
+                        "SELECT list_on_leaderboard, pinned_proof_id FROM holder_profiles WHERE holder_public_key_hex = ?",
+                        (holder_pubkey,),
+                    ).fetchone()
+                    if profile_row is not None:
+                        profile_listed = bool(profile_row["list_on_leaderboard"])
+                        if (
+                            profile_listed
+                            and not (
+                                self._config.hosted_multi_user_mode
+                                and sanitized_bundle.provider_approval_state
+                                in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+                            )
+                        ):
+                            effective_opt_in = True
+                        else:
+                            # Signed holder profile preference is authoritative: an unsigned
+                            # opt_in_leaderboard=True flag on POST /api/v1/proofs cannot override
+                            # an explicit holder-signed list_on_leaderboard=False preference.
+                            effective_opt_in = False
+
                 self._conn.execute(
                     """
                     INSERT INTO proofs (
@@ -729,8 +897,9 @@ class ProofStore:
                         sequence_number,
                         bundle_json,
                         opt_in_leaderboard,
-                        stored_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        stored_at_utc,
+                        holder_public_key_hex
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         sanitized_bundle.proof_id,
@@ -740,10 +909,22 @@ class ProofStore:
                         chain_id,
                         seq_num,
                         bundle_json,
-                        1 if opt_in_leaderboard else 0,
+                        1 if effective_opt_in else 0,
                         now_str,
+                        holder_pubkey,
                     ),
                 )
+                if holder_pubkey is not None and profile_row is not None:
+                    self._sync_holder_leaderboard_locked(
+                        holder_pubkey,
+                        list_on_leaderboard=bool(profile_row["list_on_leaderboard"]),
+                        pinned_proof_id=(
+                            str(profile_row["pinned_proof_id"])
+                            if profile_row["pinned_proof_id"] is not None
+                            else None
+                        ),
+                        enforce_hosted_governance=False,
+                    )
                 self._last_updated_utc = now_str
                 self._conn.execute("COMMIT;")
             except Exception:
@@ -940,10 +1121,26 @@ class ProofStore:
             now_str = logged_at_utc or utc_now_iso()
             p_hash = sanitized_bundle.proof_hash()
             bundle_json = jcs_canonicalize_str(sanitized_bundle.to_dict())
+            holder_pubkey = (
+                sanitized_bundle.holder_identity.holder_public_key_hex
+                if bundle_ver.holder_claim_status == HolderClaimStatus.SELF_ASSERTED
+                and sanitized_bundle.holder_identity is not None
+                else None
+            )
 
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
                 self._refuse_already_published(sanitized_bundle.proof_id, p_hash)
+                effective_opt_in = bool(opt_in_leaderboard)
+                profile_row = None
+                if holder_pubkey is not None:
+                    profile_row = self._conn.execute(
+                        "SELECT list_on_leaderboard, pinned_proof_id FROM holder_profiles WHERE holder_public_key_hex = ?",
+                        (holder_pubkey,),
+                    ).fetchone()
+                    if profile_row is not None:
+                        effective_opt_in = bool(profile_row["list_on_leaderboard"])
+
                 idx_row = self._conn.execute(
                     "SELECT COALESCE(MAX(log_index), -1) + 1 AS next_idx FROM continuity_log"
                 ).fetchone()
@@ -999,7 +1196,7 @@ class ProofStore:
                         link.cadence_policy.grace_window_seconds,
                         link.sequence_number,
                         p_hash,
-                        1 if opt_in_leaderboard else 0,
+                        1 if effective_opt_in else 0,
                         now_str,
                     ),
                 )
@@ -1014,8 +1211,9 @@ class ProofStore:
                         sequence_number,
                         bundle_json,
                         opt_in_leaderboard,
-                        stored_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        stored_at_utc,
+                        holder_public_key_hex
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         sanitized_bundle.proof_id,
@@ -1025,10 +1223,22 @@ class ProofStore:
                         link.chain_id,
                         link.sequence_number,
                         bundle_json,
-                        1 if opt_in_leaderboard else 0,
+                        1 if effective_opt_in else 0,
                         now_str,
+                        holder_pubkey,
                     ),
                 )
+                if holder_pubkey is not None and profile_row is not None:
+                    self._sync_holder_leaderboard_locked(
+                        holder_pubkey,
+                        list_on_leaderboard=bool(profile_row["list_on_leaderboard"]),
+                        pinned_proof_id=(
+                            str(profile_row["pinned_proof_id"])
+                            if profile_row["pinned_proof_id"] is not None
+                            else None
+                        ),
+                        enforce_hosted_governance=False,
+                    )
                 self._last_updated_utc = now_str
                 self._conn.execute("COMMIT;")
             except Exception:
@@ -1140,10 +1350,25 @@ class ProofStore:
             now_str = logged_at_utc or utc_now_iso()
             p_hash = sanitized_bundle.proof_hash()
             bundle_json = jcs_canonicalize_str(sanitized_bundle.to_dict())
+            holder_pubkey = (
+                sanitized_bundle.holder_identity.holder_public_key_hex
+                if bundle_ver.holder_claim_status == HolderClaimStatus.SELF_ASSERTED
+                and sanitized_bundle.holder_identity is not None
+                else None
+            )
 
             self._conn.execute("BEGIN IMMEDIATE;")
             try:
                 self._refuse_already_published(sanitized_bundle.proof_id, p_hash)
+                profile_row = None
+                if holder_pubkey is not None:
+                    profile_row = self._conn.execute(
+                        "SELECT list_on_leaderboard, pinned_proof_id FROM holder_profiles WHERE holder_public_key_hex = ?",
+                        (holder_pubkey,),
+                    ).fetchone()
+                    if profile_row is not None:
+                        resolved_opt_in = bool(profile_row["list_on_leaderboard"])
+
                 idx_row = self._conn.execute(
                     "SELECT COALESCE(MAX(log_index), -1) + 1 AS next_idx FROM continuity_log"
                 ).fetchone()
@@ -1205,8 +1430,9 @@ class ProofStore:
                         sequence_number,
                         bundle_json,
                         opt_in_leaderboard,
-                        stored_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        stored_at_utc,
+                        holder_public_key_hex
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         sanitized_bundle.proof_id,
@@ -1218,8 +1444,20 @@ class ProofStore:
                         bundle_json,
                         1 if resolved_opt_in else 0,
                         now_str,
+                        holder_pubkey,
                     ),
                 )
+                if holder_pubkey is not None and profile_row is not None:
+                    self._sync_holder_leaderboard_locked(
+                        holder_pubkey,
+                        list_on_leaderboard=bool(profile_row["list_on_leaderboard"]),
+                        pinned_proof_id=(
+                            str(profile_row["pinned_proof_id"])
+                            if profile_row["pinned_proof_id"] is not None
+                            else None
+                        ),
+                        enforce_hosted_governance=False,
+                    )
                 self._last_updated_utc = now_str
                 self._conn.execute("COMMIT;")
             except Exception:
@@ -1227,6 +1465,419 @@ class ProofStore:
                 raise
 
         return sanitized_bundle, log_leaf, chain_res
+
+    @staticmethod
+    def _parse_stored_timestamp(raw: str) -> datetime:
+        try:
+            return parse_utc_timestamp(raw, field_name="stored_at_utc")
+        except (ValueError, TypeError):
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _sort_holder_proof_entries(entries: list[StoredProofEntry]) -> list[StoredProofEntry]:
+        return sorted(
+            entries,
+            key=lambda e: (
+                parse_utc_timestamp(e.bundle.period_end_utc),
+                parse_utc_timestamp(e.bundle.issued_at_utc),
+                ProofStore._parse_stored_timestamp(e.stored_at_utc),
+                e.bundle.proof_id,
+            ),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _row_to_holder_profile(row: sqlite3.Row) -> StoredHolderProfile:
+        lb_claim_raw = row["leaderboard_signed_claim_json"]
+        return StoredHolderProfile(
+            holder_public_key_hex=str(row["holder_public_key_hex"]),
+            handle=str(row["handle"]),
+            display_name=str(row["display_name"]),
+            bio=str(row["bio"]),
+            profile_url=str(row["profile_url"]) if row["profile_url"] is not None else None,
+            strategy_notes=str(row["strategy_notes"]),
+            watchlist=json.loads(str(row["watchlist_json"])),
+            conviction_list=json.loads(str(row["conviction_list_json"])),
+            list_on_leaderboard=bool(row["list_on_leaderboard"]),
+            pinned_proof_id=(
+                str(row["pinned_proof_id"]) if row["pinned_proof_id"] is not None else None
+            ),
+            sequence_number=int(row["sequence_number"]),
+            signed_claim=json.loads(str(row["signed_claim_json"])),
+            updated_at_utc=str(row["updated_at_utc"]),
+            created_at_utc=str(row["created_at_utc"]),
+            leaderboard_signed_claim=(
+                json.loads(str(lb_claim_raw)) if lb_claim_raw is not None else None
+            ),
+        )
+
+    def _list_proofs_for_holder_key_locked(self, norm_pubkey: str) -> list[StoredProofEntry]:
+        rows = self._conn.execute(
+            """
+            SELECT proof_hash, bundle_json, opt_in_leaderboard, stored_at_utc
+            FROM proofs
+            WHERE holder_public_key_hex = ?
+            """,
+            (norm_pubkey,),
+        ).fetchall()
+        entries: list[StoredProofEntry] = []
+        for r in rows:
+            bundle = VerifyProofBundle.from_dict(json.loads(str(r["bundle_json"])))
+            entries.append(
+                StoredProofEntry(
+                    bundle=bundle,
+                    proof_hash=str(r["proof_hash"]),
+                    opt_in_leaderboard=bool(r["opt_in_leaderboard"]),
+                    stored_at_utc=str(r["stored_at_utc"]),
+                )
+            )
+        return self._sort_holder_proof_entries(entries)
+
+    def _clear_holder_leaderboard_flags_locked(self, holder_pubkey: str) -> None:
+        self._conn.execute(
+            "UPDATE proofs SET opt_in_leaderboard = 0 WHERE holder_public_key_hex = ?",
+            (holder_pubkey,),
+        )
+        self._conn.execute(
+            """
+            UPDATE chains
+            SET opt_in_leaderboard = 0
+            WHERE chain_id IN (
+                SELECT DISTINCT chain_id
+                FROM proofs
+                WHERE holder_public_key_hex = ? AND chain_id IS NOT NULL
+            )
+            """,
+            (holder_pubkey,),
+        )
+
+    def _sync_holder_leaderboard_locked(
+        self,
+        holder_pubkey: str,
+        *,
+        list_on_leaderboard: bool,
+        pinned_proof_id: str | None,
+        enforce_hosted_governance: bool,
+    ) -> None:
+        """Synchronize ``proofs.opt_in_leaderboard`` and ``chains.opt_in_leaderboard`` for a holder key."""
+        if not list_on_leaderboard:
+            self._clear_holder_leaderboard_flags_locked(holder_pubkey)
+            return
+
+        entries = self._list_proofs_for_holder_key_locked(holder_pubkey)
+        if not entries:
+            return
+
+        active = entries[0]
+        if pinned_proof_id is not None:
+            for item in entries:
+                if item.bundle.proof_id == pinned_proof_id:
+                    active = item
+                    break
+
+        unproven = (
+            self._config.hosted_multi_user_mode
+            and active.bundle.provider_approval_state in CHAIN_REFUSED_APPROVAL_STATES_IN_HOSTED_MODE
+        )
+        if unproven:
+            if enforce_hosted_governance:
+                raise LeaderboardRequiresProvenOwnershipError(
+                    "This host does not list a record made from a public address without proof of ownership on the public leaderboard"
+                )
+            self._clear_holder_leaderboard_flags_locked(holder_pubkey)
+            return
+
+        self._clear_holder_leaderboard_flags_locked(holder_pubkey)
+        self._conn.execute(
+            "UPDATE proofs SET opt_in_leaderboard = 1 WHERE proof_id = ?",
+            (active.bundle.proof_id,),
+        )
+        if active.bundle.prospective_chain_link is not None:
+            self._conn.execute(
+                "UPDATE chains SET opt_in_leaderboard = 1 WHERE chain_id = ?",
+                (active.bundle.prospective_chain_link.chain_id,),
+            )
+
+    def upsert_holder_profile(
+        self,
+        *,
+        holder_public_key_hex: str,
+        handle: str,
+        display_name: str,
+        bio: str,
+        profile_url: str | None,
+        strategy_notes: str,
+        watchlist: list[dict[str, Any]],
+        conviction_list: list[dict[str, Any]],
+        list_on_leaderboard: bool,
+        pinned_proof_id: str | None,
+        sequence_number: int,
+        signed_claim: Mapping[str, Any],
+        now_utc_str: str | None = None,
+    ) -> tuple[StoredHolderProfile, bool]:
+        """Claim or update an Ed25519-keyed holder profile and sync leaderboard visibility."""
+        norm_pubkey = validate_hex_digest(
+            holder_public_key_hex, field_name="holder_public_key_hex", num_bytes=32
+        )
+        norm_handle = handle.strip().lstrip("@").lower()
+        now_str = now_utc_str or utc_now_iso()
+        watchlist_json = jcs_canonicalize_str(watchlist)
+        conviction_json = jcs_canonicalize_str(conviction_list)
+        signed_claim_json = jcs_canonicalize_str(dict(signed_claim))
+
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE;")
+            try:
+                existing_by_key = self._conn.execute(
+                    "SELECT * FROM holder_profiles WHERE holder_public_key_hex = ?",
+                    (norm_pubkey,),
+                ).fetchone()
+                existing_by_handle = self._conn.execute(
+                    "SELECT holder_public_key_hex FROM holder_profiles WHERE handle = ?",
+                    (norm_handle,),
+                ).fetchone()
+                if (
+                    existing_by_handle is not None
+                    and str(existing_by_handle["holder_public_key_hex"]) != norm_pubkey
+                ):
+                    raise ProfileOwnershipError(
+                        f"Handle '@{norm_handle}' is already claimed by another holder key"
+                    )
+
+                if existing_by_key is not None:
+                    current_seq = int(existing_by_key["sequence_number"])
+                    if sequence_number <= current_seq:
+                        raise ProfileSequenceError(
+                            f"sequence_number must be greater than current profile sequence ({current_seq})"
+                        )
+                    created = False
+                    created_at = str(existing_by_key["created_at_utc"])
+                else:
+                    if sequence_number < 1:
+                        raise ProfileSequenceError("sequence_number must be at least 1")
+                    created = True
+                    created_at = now_str
+
+                if pinned_proof_id is not None:
+                    pin_row = self._conn.execute(
+                        "SELECT holder_public_key_hex FROM proofs WHERE proof_id = ?",
+                        (pinned_proof_id,),
+                    ).fetchone()
+                    if pin_row is None or str(pin_row["holder_public_key_hex"] or "") != norm_pubkey:
+                        raise ProfileInvalidError(
+                            "pinned_proof_id must reference a published record signed by this holder key"
+                        )
+
+                if created:
+                    self._conn.execute(
+                        """
+                        INSERT INTO holder_profiles (
+                            holder_public_key_hex,
+                            handle,
+                            display_name,
+                            bio,
+                            profile_url,
+                            strategy_notes,
+                            watchlist_json,
+                            conviction_list_json,
+                            list_on_leaderboard,
+                            pinned_proof_id,
+                            sequence_number,
+                            signed_claim_json,
+                            leaderboard_signed_claim_json,
+                            updated_at_utc,
+                            created_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                        """,
+                        (
+                            norm_pubkey,
+                            norm_handle,
+                            display_name,
+                            bio,
+                            profile_url,
+                            strategy_notes,
+                            watchlist_json,
+                            conviction_json,
+                            1 if list_on_leaderboard else 0,
+                            pinned_proof_id,
+                            sequence_number,
+                            signed_claim_json,
+                            now_str,
+                            created_at,
+                        ),
+                    )
+                else:
+                    self._conn.execute(
+                        """
+                        UPDATE holder_profiles
+                        SET handle = ?,
+                            display_name = ?,
+                            bio = ?,
+                            profile_url = ?,
+                            strategy_notes = ?,
+                            watchlist_json = ?,
+                            conviction_list_json = ?,
+                            list_on_leaderboard = ?,
+                            pinned_proof_id = ?,
+                            sequence_number = ?,
+                            signed_claim_json = ?,
+                            leaderboard_signed_claim_json = NULL,
+                            updated_at_utc = ?
+                        WHERE holder_public_key_hex = ?
+                        """,
+                        (
+                            norm_handle,
+                            display_name,
+                            bio,
+                            profile_url,
+                            strategy_notes,
+                            watchlist_json,
+                            conviction_json,
+                            1 if list_on_leaderboard else 0,
+                            pinned_proof_id,
+                            sequence_number,
+                            signed_claim_json,
+                            now_str,
+                            norm_pubkey,
+                        ),
+                    )
+
+                self._sync_holder_leaderboard_locked(
+                    norm_pubkey,
+                    list_on_leaderboard=bool(list_on_leaderboard),
+                    pinned_proof_id=pinned_proof_id,
+                    enforce_hosted_governance=True,
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM holder_profiles WHERE holder_public_key_hex = ?",
+                    (norm_pubkey,),
+                ).fetchone()
+                self._conn.execute("COMMIT;")
+            except Exception:
+                self._conn.execute("ROLLBACK;")
+                raise
+
+        assert row is not None
+        return self._row_to_holder_profile(row), created
+
+    def set_holder_leaderboard_listing(
+        self,
+        *,
+        holder_public_key_hex: str,
+        handle: str,
+        list_on_leaderboard: bool,
+        sequence_number: int,
+        signed_claim: Mapping[str, Any],
+        now_utc_str: str | None = None,
+    ) -> StoredHolderProfile:
+        """Apply a holder-signed leaderboard list/unlist toggle for an existing handle."""
+        norm_pubkey = validate_hex_digest(
+            holder_public_key_hex, field_name="holder_public_key_hex", num_bytes=32
+        )
+        norm_handle = handle.strip().lstrip("@").lower()
+        now_str = now_utc_str or utc_now_iso()
+        lb_claim_json = jcs_canonicalize_str(dict(signed_claim))
+
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE;")
+            try:
+                existing = self._conn.execute(
+                    "SELECT * FROM holder_profiles WHERE handle = ?",
+                    (norm_handle,),
+                ).fetchone()
+                if existing is None:
+                    raise ProfileNotFoundError(f"Profile '@{norm_handle}' not found")
+                if str(existing["holder_public_key_hex"]) != norm_pubkey:
+                    raise ProfileOwnershipError(
+                        f"Handle '@{norm_handle}' is owned by a different holder key"
+                    )
+                current_seq = int(existing["sequence_number"])
+                if sequence_number <= current_seq:
+                    raise ProfileSequenceError(
+                        f"sequence_number must be greater than current profile sequence ({current_seq})"
+                    )
+
+                pinned_proof_id = (
+                    str(existing["pinned_proof_id"])
+                    if existing["pinned_proof_id"] is not None
+                    else None
+                )
+                self._sync_holder_leaderboard_locked(
+                    norm_pubkey,
+                    list_on_leaderboard=bool(list_on_leaderboard),
+                    pinned_proof_id=pinned_proof_id,
+                    enforce_hosted_governance=True,
+                )
+                self._conn.execute(
+                    """
+                    UPDATE holder_profiles
+                    SET list_on_leaderboard = ?,
+                        sequence_number = ?,
+                        leaderboard_signed_claim_json = ?,
+                        updated_at_utc = ?
+                    WHERE holder_public_key_hex = ?
+                    """,
+                    (
+                        1 if list_on_leaderboard else 0,
+                        sequence_number,
+                        lb_claim_json,
+                        now_str,
+                        norm_pubkey,
+                    ),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM holder_profiles WHERE holder_public_key_hex = ?",
+                    (norm_pubkey,),
+                ).fetchone()
+                self._conn.execute("COMMIT;")
+            except Exception:
+                self._conn.execute("ROLLBACK;")
+                raise
+
+        assert row is not None
+        return self._row_to_holder_profile(row)
+
+    def get_holder_profile_by_handle(self, handle: str) -> StoredHolderProfile:
+        norm_handle = handle.strip().lstrip("@").lower()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM holder_profiles WHERE handle = ?",
+                (norm_handle,),
+            ).fetchone()
+        if row is None:
+            raise ProfileNotFoundError(f"Profile '@{norm_handle}' not found")
+        return self._row_to_holder_profile(row)
+
+    def get_holder_profile_by_key(self, holder_public_key_hex: str) -> StoredHolderProfile:
+        norm_pubkey = validate_hex_digest(
+            holder_public_key_hex, field_name="holder_public_key_hex", num_bytes=32
+        )
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM holder_profiles WHERE holder_public_key_hex = ?",
+                (norm_pubkey,),
+            ).fetchone()
+        if row is None:
+            raise ProfileNotFoundError(f"Profile for key {norm_pubkey!r} not found")
+        return self._row_to_holder_profile(row)
+
+    def list_proofs_for_holder_key(self, holder_public_key_hex: str) -> list[StoredProofEntry]:
+        norm_pubkey = validate_hex_digest(
+            holder_public_key_hex, field_name="holder_public_key_hex", num_bytes=32
+        )
+        with self._lock:
+            return self._list_proofs_for_holder_key_locked(norm_pubkey)
+
+    def list_holder_handles_by_key(self) -> dict[str, tuple[str, str]]:
+        """Map ``holder_public_key_hex`` -> ``(handle, display_name)`` for leaderboard enrichment."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT holder_public_key_hex, handle, display_name FROM holder_profiles"
+            ).fetchall()
+        return {
+            str(r["holder_public_key_hex"]): (str(r["handle"]), str(r["display_name"]))
+            for r in rows
+        }
 
     def close(self) -> None:
         with self._lock:
@@ -1243,6 +1894,10 @@ __all__ = [
     "GovernanceBlockedError",
     "LeaderboardRequiresProvenOwnershipError",
     "PaperOrSandboxRejectedError",
+    "ProfileInvalidError",
+    "ProfileNotFoundError",
+    "ProfileOwnershipError",
+    "ProfileSequenceError",
     "ProofAlreadyPublishedError",
     "ProofBundleInvalidError",
     "ProofConflictError",
@@ -1250,6 +1905,7 @@ __all__ = [
     "ProofStore",
     "ProviderApprovalPendingError",
     "PublisherKeyNotInRegistryError",
+    "StoredHolderProfile",
     "StoredProofEntry",
     "enforce_bundle_governance",
     "enforce_bundle_seven_day_trade_guard",

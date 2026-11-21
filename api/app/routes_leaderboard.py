@@ -18,6 +18,7 @@ from n170_verify.contracts import (
     AccountScope,
     CapitalBracket,
     ChainContinuityMode,
+    HolderClaimStatus,
     OriginAssurance,
     ReconciliationStatus,
     SignerTrustStatus,
@@ -124,6 +125,7 @@ def handle_get_leaderboard(
     # One registry document and one copy of the continuity log for the whole request.
     registry_doc = store.build_registry_document()
     continuity_leaves = store.list_all_continuity_leaves()
+    holder_handles = store.list_holder_handles_by_key()
 
     for cand in candidates:
         bundle = cand.bundle
@@ -208,6 +210,13 @@ def handle_get_leaderboard(
         )
         max_dd_dec = finite_real_number(metrics.get("max_drawdown_decimal"))
 
+        profile_pair = (
+            holder_handles.get(bundle.holder_identity.holder_public_key_hex)
+            if verification.holder_claim_status == HolderClaimStatus.SELF_ASSERTED
+            and bundle.holder_identity is not None
+            else None
+        )
+
         entries.append(
             {
                 "proof_id": bundle.proof_id,
@@ -229,6 +238,8 @@ def handle_get_leaderboard(
                 "twr_pct": twr_pct,
                 "probabilistic_sharpe_ratio": psr_val,
                 "max_drawdown_decimal": max_dd_dec,
+                "holder_handle": f"@{profile_pair[0]}" if profile_pair is not None else None,
+                "holder_display_name": profile_pair[1] if profile_pair is not None else None,
                 "badge_url": f"/api/v1/badges/{bundle.proof_id}.svg",
             }
         )

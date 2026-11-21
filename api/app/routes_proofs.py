@@ -11,12 +11,13 @@ from app.store import (
     ChainResetConflictError,
     ChainViolationError,
     GovernanceBlockedError,
+    ProfileNotFoundError,
     ProofBundleInvalidError,
     ProofConflictError,
     ProofNotFoundError,
     ProofStore,
 )
-from n170_verify.contracts import VerifyProofBundle, validate_hex_digest
+from n170_verify.contracts import HolderClaimStatus, VerifyProofBundle, validate_hex_digest
 from n170_verify.crypto import verify_prospective_chain
 
 
@@ -128,12 +129,30 @@ def handle_get_proof(
         return 404, {"error": "proof_not_found", "detail": f"Proof {proof_id!r} not found"}
 
     verification = store.verify_bundle_against_live_state(entry.bundle)
+    holder_profile_summary: dict[str, Any] | None = None
+    if (
+        verification.holder_claim_status == HolderClaimStatus.SELF_ASSERTED
+        and entry.bundle.holder_identity is not None
+    ):
+        try:
+            prof = store.get_holder_profile_by_key(
+                entry.bundle.holder_identity.holder_public_key_hex
+            )
+            holder_profile_summary = {
+                "handle": prof.handle,
+                "handle_at": f"@{prof.handle}",
+                "profile_path": f"/@{prof.handle}",
+                "display_name": prof.display_name,
+            }
+        except ProfileNotFoundError:
+            holder_profile_summary = None
     return 200, {
         "proof_bundle": entry.bundle.to_dict(),
         "proof_hash": entry.proof_hash,
         "opt_in_leaderboard": entry.opt_in_leaderboard,
         "stored_at_utc": entry.stored_at_utc,
         "verification": verification.to_dict(),
+        "holder_profile": holder_profile_summary,
     }
 
 
