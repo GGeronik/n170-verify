@@ -475,7 +475,7 @@ def evaluate_portfolio_catalyst_context(
             pre_event_window_hours=pre_event_window_hours,
             post_event_window_hours=post_event_window_hours,
         )
-        won = rt.net_pnl_base > 0.0
+        won = rt.effective_net_pnl > 0.0
         if entry_obs.alignment_class == CatalystAlignmentClass.QUIET_NON_CATALYST_REGIME:
             quiet_trip_wins.append(won)
         else:

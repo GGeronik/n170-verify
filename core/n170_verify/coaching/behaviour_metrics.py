@@ -49,10 +49,21 @@ class ClosedRoundTrip:
     entry_price: float
     exit_price: float
     multiplier: float
-    gross_pnl_base: float
-    net_pnl_base: float
+    gross_pnl_base: float | None
+    net_pnl_base: float | None
     return_pct: float
     holding_hours: float
+    currency: str = "USD"
+    gross_pnl_native: float | None = None
+    net_pnl_native: float | None = None
+
+    @property
+    def effective_net_pnl(self) -> float:
+        if self.net_pnl_base is not None:
+            return self.net_pnl_base
+        if self.net_pnl_native is not None:
+            return self.net_pnl_native
+        return self.return_pct
 
     def to_redacted(self) -> RedactedClosedTrade:
         """Strip all dollar/quantity notionals for delayed leaf disclosure."""
@@ -75,9 +86,11 @@ class _OpenLot:
     remaining_qty: float
     entry_price: float
     multiplier: float
-    fx_rate_to_base: float
-    entry_fee_per_unit_base: float
+    fx_rate_to_base: float | None
+    entry_fee_per_unit_base: float | None
     entry_timestamp_utc: str
+    currency: str = "USD"
+    entry_fee_per_unit_native: float = 0.0
     option_right: str | None = None
     strike: float | None = None
     expiry: str | None = None
@@ -90,7 +103,7 @@ class _OpeningFill:
     opened_quantity: float
     price: float
     multiplier: float
-    fx_rate_to_base: float
+    fx_rate_to_base: float | None
 
 
 @dataclass(slots=True)
@@ -158,7 +171,9 @@ def _apply_corporate_action(
             for lot in queue:
                 lot.remaining_qty *= factor
                 lot.entry_price /= factor
-                lot.entry_fee_per_unit_base /= factor
+                if lot.entry_fee_per_unit_base is not None:
+                    lot.entry_fee_per_unit_base /= factor
+                lot.entry_fee_per_unit_native /= factor
 
     elif action.action_type == CorporateActionType.SYMBOL_CHANGE and action.new_symbol:
         new_sym = action.new_symbol.strip().upper()
@@ -334,8 +349,13 @@ def _run_fifo_ledger_simulation(
             continue
 
         mult = record.multiplier if record.multiplier is not None else 1.0
-        total_trade_fee_base = (abs(record.commission) + abs(record.tax)) * record.fx_rate_to_base
-        fee_per_unit_base = total_trade_fee_base / qty
+        total_trade_fee_native = abs(record.commission) + abs(record.tax)
+        fee_per_unit_native = total_trade_fee_native / qty
+        fee_per_unit_base: float | None = (
+            (total_trade_fee_native * record.fx_rate_to_base) / qty
+            if record.fx_rate_to_base is not None
+            else None
+        )
         trade_lot_side = "long" if record.side == "buy" else "short"
 
         key = _instrument_key(
@@ -352,28 +372,46 @@ def _run_fifo_ledger_simulation(
         while remaining_to_process > 1e-12 and queue and queue[0].side != trade_lot_side:
             lot = queue[0]
             matched = min(lot.remaining_qty, remaining_to_process)
-            exit_fee_base = fee_per_unit_base * matched
-            entry_fee_base = lot.entry_fee_per_unit_base * matched
             eff_mult = lot.multiplier
 
-            entry_notional_base = matched * lot.entry_price * eff_mult * lot.fx_rate_to_base
+            exit_fee_native = fee_per_unit_native * matched
+            entry_fee_native = lot.entry_fee_per_unit_native * matched
+            entry_notional_native = matched * lot.entry_price * eff_mult
             if lot.side == "long":
-                if record.fx_rate_to_base == lot.fx_rate_to_base:
-                    gross_pnl_base = (
-                        (record.price - lot.entry_price) * matched * eff_mult * record.fx_rate_to_base
-                    )
-                else:
-                    exit_notional_base = matched * record.price * eff_mult * record.fx_rate_to_base
-                    gross_pnl_base = exit_notional_base - entry_notional_base
+                gross_pnl_native = (record.price - lot.entry_price) * matched * eff_mult
             else:
-                gross_pnl_base = (
-                    (lot.entry_price - record.price) * matched * eff_mult * record.fx_rate_to_base
-                )
+                gross_pnl_native = (lot.entry_price - record.price) * matched * eff_mult
+            net_pnl_native = gross_pnl_native - entry_fee_native - exit_fee_native
 
-            net_pnl_base = gross_pnl_base - entry_fee_base - exit_fee_base
-            return_pct = (
-                (net_pnl_base / entry_notional_base) * 100.0 if entry_notional_base > 0.0 else 0.0
-            )
+            gross_pnl_base: float | None = None
+            net_pnl_base: float | None = None
+            if (
+                lot.fx_rate_to_base is not None
+                and record.fx_rate_to_base is not None
+                and lot.entry_fee_per_unit_base is not None
+                and fee_per_unit_base is not None
+            ):
+                exit_fee_base = fee_per_unit_base * matched
+                entry_fee_base = lot.entry_fee_per_unit_base * matched
+                entry_notional_base = entry_notional_native * lot.fx_rate_to_base
+                if lot.side == "long":
+                    if record.fx_rate_to_base == lot.fx_rate_to_base:
+                        gross_pnl_base = gross_pnl_native * record.fx_rate_to_base
+                    else:
+                        exit_notional_base = matched * record.price * eff_mult * record.fx_rate_to_base
+                        gross_pnl_base = exit_notional_base - entry_notional_base
+                else:
+                    gross_pnl_base = gross_pnl_native * record.fx_rate_to_base
+                net_pnl_base = gross_pnl_base - entry_fee_base - exit_fee_base
+                return_pct = (
+                    (net_pnl_base / entry_notional_base) * 100.0 if entry_notional_base > 0.0 else 0.0
+                )
+            else:
+                return_pct = (
+                    (net_pnl_native / entry_notional_native) * 100.0
+                    if entry_notional_native > 0.0
+                    else 0.0
+                )
             entry_dt = parse_utc_timestamp(lot.entry_timestamp_utc)
             holding_hours = max(0.0, (dt_utc - entry_dt).total_seconds() / SECONDS_PER_HOUR)
 
@@ -392,10 +430,14 @@ def _run_fifo_ledger_simulation(
                     net_pnl_base=net_pnl_base,
                     return_pct=return_pct,
                     holding_hours=holding_hours,
+                    currency=lot.currency,
+                    gross_pnl_native=gross_pnl_native,
+                    net_pnl_native=net_pnl_native,
                 )
             )
             sym_side_key = (lot.symbol, lot.side)
-            day_realized_pnl[sym_side_key] = day_realized_pnl.get(sym_side_key, 0.0) + net_pnl_base
+            day_pnl_val = net_pnl_base if net_pnl_base is not None else net_pnl_native
+            day_realized_pnl[sym_side_key] = day_realized_pnl.get(sym_side_key, 0.0) + day_pnl_val
 
             lot.remaining_qty -= matched
             remaining_to_process -= matched
@@ -415,6 +457,8 @@ def _run_fifo_ledger_simulation(
                     fx_rate_to_base=record.fx_rate_to_base,
                     entry_fee_per_unit_base=fee_per_unit_base,
                     entry_timestamp_utc=record.timestamp_utc,
+                    currency=record.currency,
+                    entry_fee_per_unit_native=fee_per_unit_native,
                     option_right=record.option_right,
                     strike=record.strike,
                     expiry=record.expiry,
@@ -653,10 +697,15 @@ def _build_nav_drawdown_series(
         (
             (
                 parse_utc_timestamp(f.timestamp_utc),
-                float(f.amount_base if f.amount_base is not None else f.amount * f.fx_rate_to_base),
+                float(
+                    f.amount_base
+                    if f.amount_base is not None
+                    else f.amount * float(f.fx_rate_to_base)
+                ),
             )
             for f in ledger.flows
             if f.is_external_capital_flow
+            and (f.amount_base is not None or f.fx_rate_to_base is not None)
         ),
         key=lambda item: item[0],
     )
@@ -757,6 +806,9 @@ def _compute_sizing_from_fills(
         in_drawdown = dd > drawdown_threshold
         if not (in_near_hwm or in_drawdown):
             continue
+        if fill.fx_rate_to_base is None:
+            atr_complete = False
+            continue
 
         notional_pct_nav = (
             fill.opened_quantity * fill.multiplier * fill.price * fill.fx_rate_to_base
@@ -791,6 +843,42 @@ def _compute_sizing_from_fills(
             return round(statistics.median(drawdown_notional) / med_hwm_notional, 6), False
 
     return None, False
+
+
+def _aggregate_comparable_round_trip_pnl(
+    trips: Sequence[ClosedRoundTrip],
+) -> tuple[list[ClosedRoundTrip], list[ClosedRoundTrip], float | None, float | None]:
+    """Classify winners/losers and compute single-currency profit factor & top-5 concentration.
+
+    Never mixes unvalued cross-currency PnL sums: when every round-trip is valued in base
+    currency, sums ``net_pnl_base``; when FX translation was omitted in the statement export,
+    sums ``net_pnl_native`` strictly if all closed round-trips share a single native currency,
+    and otherwise returns ``(None, None)`` for magnitude-sum ratios.
+    """
+    winners = [rt for rt in trips if rt.effective_net_pnl > 0.0]
+    losers = [rt for rt in trips if rt.effective_net_pnl < 0.0]
+    if not trips:
+        return winners, losers, None, None
+
+    if all(rt.net_pnl_base is not None for rt in trips):
+        win_vals = [float(rt.net_pnl_base) for rt in winners if rt.net_pnl_base is not None]
+        loss_vals = [float(rt.net_pnl_base) for rt in losers if rt.net_pnl_base is not None]
+    elif len({rt.currency for rt in trips}) == 1 and all(
+        rt.net_pnl_native is not None for rt in trips
+    ):
+        win_vals = [float(rt.net_pnl_native) for rt in winners if rt.net_pnl_native is not None]
+        loss_vals = [float(rt.net_pnl_native) for rt in losers if rt.net_pnl_native is not None]
+    else:
+        return winners, losers, None, None
+
+    gross_wins = sum(win_vals)
+    gross_losses = abs(sum(loss_vals))
+    pf = (gross_wins / gross_losses) if gross_losses > 0.0 else None
+    top5_conc: float | None = None
+    if gross_wins > 0.0:
+        top5 = sorted(win_vals, reverse=True)[:5]
+        top5_conc = min(100.0, max(0.0, (sum(top5) / gross_wins) * 100.0))
+    return winners, losers, pf, top5_conc
 
 
 def classify_holding_horizon(median_holding_hours: float) -> str:
@@ -943,14 +1031,10 @@ def compute_behavioural_coaching_metrics(
     median_holding_hours = round(float(statistics.median(holding_hours_list)), 6)
     horizon_label = classify_holding_horizon(median_holding_hours)
 
-    winners = [rt for rt in closed_trips if rt.net_pnl_base > 0.0]
-    losers = [rt for rt in closed_trips if rt.net_pnl_base < 0.0]
+    winners, losers, raw_pf, raw_top5_conc = _aggregate_comparable_round_trip_pnl(closed_trips)
 
     win_rate = round(len(winners) / observed_trades, 6)
-
-    gross_wins = sum(rt.net_pnl_base for rt in winners)
-    gross_losses = abs(sum(rt.net_pnl_base for rt in losers))
-    profit_factor = round(gross_wins / gross_losses, 6) if gross_losses > 0.0 else None
+    profit_factor = round(raw_pf, 6) if raw_pf is not None else None
 
     winner_vs_loser_hold_ratio: float | None = None
     if winners and losers:
@@ -964,12 +1048,9 @@ def compute_behavioural_coaching_metrics(
                 mean_win_hold = float(statistics.mean(w.holding_hours for w in winners))
                 winner_vs_loser_hold_ratio = round(mean_win_hold / mean_loss_hold, 6)
 
-    return_concentration_top5_pct: float | None = None
-    if gross_wins > 0.0:
-        top5_wins = sorted((w.net_pnl_base for w in winners), reverse=True)[:5]
-        return_concentration_top5_pct = round(
-            min(100.0, max(0.0, (sum(top5_wins) / gross_wins) * 100.0)), 6
-        )
+    return_concentration_top5_pct = (
+        round(raw_top5_conc, 6) if raw_top5_conc is not None else None
+    )
 
     odean_spread = _compute_odean_from_snapshots(day_snapshots, price_snapshots)
     sdi_ratio, atr_norm = _compute_sizing_from_fills(
@@ -1047,7 +1128,7 @@ def compute_session_expectancy_heatmap(
         if not math.isfinite(ret_pct):
             continue
         is_win = (
-            (rt.net_pnl_base > 0.0)
+            (rt.effective_net_pnl > 0.0)
             if isinstance(rt, ClosedRoundTrip)
             else (ret_pct > 0.0)
         )
@@ -1118,20 +1199,16 @@ def compute_quant_dna_profile(
     eff_top5_conc = behaviour.return_concentration_top5_pct
     eff_median_hours = behaviour.median_holding_hours
     if n_trips > 0 and eff_win_rate is None:
-        winners = [t for t in trips if t.net_pnl_base > 0.0]
-        losers = [t for t in trips if t.net_pnl_base < 0.0]
+        winners, losers, fb_pf, fb_top5 = _aggregate_comparable_round_trip_pnl(trips)
         eff_win_rate = len(winners) / n_trips
-        gross_w = sum(t.net_pnl_base for t in winners)
-        gross_l = abs(sum(t.net_pnl_base for t in losers))
-        if gross_l > 0.0:
-            eff_pf = gross_w / gross_l
+        if fb_pf is not None:
+            eff_pf = fb_pf
         if winners and losers:
             med_l = float(statistics.median(t.holding_hours for t in losers))
             if med_l > 0.0:
                 eff_hold_ratio = float(statistics.median(t.holding_hours for t in winners)) / med_l
-        if gross_w > 0.0:
-            top5 = sorted((t.net_pnl_base for t in winners), reverse=True)[:5]
-            eff_top5_conc = min(100.0, max(0.0, (sum(top5) / gross_w) * 100.0))
+        if fb_top5 is not None:
+            eff_top5_conc = fb_top5
         eff_median_hours = float(statistics.median(t.holding_hours for t in trips))
 
     # 1. Consistency score

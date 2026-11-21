@@ -107,7 +107,12 @@ class ReconciliationEngine:
             for f in findings
             if f.outcome == CheckOutcome.DISCREPANCY and f.category != "position_rollforward"
         )
-        if not ledger_completeness_ok and non_roll_discrepancies == 0:
+        custody_missing_sections = [s for s in missing_sections if s != "ConversionRates"]
+        if (
+            not ledger_completeness_ok
+            and non_roll_discrepancies == 0
+            and (discrepancy_count == 0 or bool(custody_missing_sections))
+        ):
             status = ReconciliationStatus.INSUFFICIENT_SECTIONS
             summary_text = (
                 f"Ledger completeness gate incomplete: missing section(s) {', '.join(missing_sections)} "

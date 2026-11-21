@@ -157,11 +157,12 @@ def simulate_counterfactual_twin(
     for fl in ledger.flows:
         if fl.kind not in _CAPITAL_FLOW_KINDS:
             continue
-        amt_base = (
-            float(fl.amount_base)
-            if (fl.amount_base is not None and math.isfinite(fl.amount_base))
-            else float(fl.amount) * float(fl.fx_rate_to_base)
-        )
+        if fl.amount_base is not None and math.isfinite(fl.amount_base):
+            amt_base = float(fl.amount_base)
+        elif fl.fx_rate_to_base is not None and math.isfinite(fl.fx_rate_to_base):
+            amt_base = float(fl.amount) * float(fl.fx_rate_to_base)
+        else:
+            continue
         if not math.isfinite(amt_base):
             continue
         fts = parse_utc_timestamp(fl.timestamp_utc)
@@ -217,7 +218,11 @@ def simulate_counterfactual_twin(
         open_nav = intervals[idx][3]
         if open_nav <= 0.0:
             continue
-        comm_cost_base = (abs(tr.commission) + abs(tr.tax)) * tr.fx_rate_to_base
+        comm_cost_base = (
+            (abs(tr.commission) + abs(tr.tax)) * tr.fx_rate_to_base
+            if tr.fx_rate_to_base is not None
+            else 0.0
+        )
         fx_spread_base = _compute_trade_fx_spread_cost_base(
             tr,
             base_currency=ledger.base_currency,
@@ -227,7 +232,12 @@ def simulate_counterfactual_twin(
         step_friction_dec[idx] += max(0.0, comm_cost_base + fx_spread_base) / open_nav
 
     signed_cost_convention = any(
-        (fl.amount_base if fl.amount_base is not None else fl.amount * fl.fx_rate_to_base) < 0.0
+        (
+            fl.amount_base
+            if fl.amount_base is not None
+            else (fl.amount * fl.fx_rate_to_base if fl.fx_rate_to_base is not None else 0.0)
+        )
+        < 0.0
         for fl in ledger.flows
         if fl.kind
         in {
@@ -245,11 +255,12 @@ def simulate_counterfactual_twin(
         open_nav = intervals[idx][3]
         if open_nav <= 0.0:
             continue
-        amt_base = (
-            float(fl.amount_base)
-            if fl.amount_base is not None
-            else float(fl.amount) * float(fl.fx_rate_to_base)
-        )
+        if fl.amount_base is not None:
+            amt_base = float(fl.amount_base)
+        elif fl.fx_rate_to_base is not None:
+            amt_base = float(fl.amount) * float(fl.fx_rate_to_base)
+        else:
+            continue
         flow_cost = 0.0
         if fl.kind in {FlowKind.COMMISSION_FEE, FlowKind.MARGIN_INTEREST}:
             flow_cost += max(0.0, -amt_base) if signed_cost_convention or amt_base < 0.0 else abs(amt_base)
@@ -293,13 +304,17 @@ def simulate_counterfactual_twin(
     losing_trips = [
         rt
         for rt in trips
-        if rt.net_pnl_base < 0.0 and rt.return_pct < 0.0 and math.isfinite(rt.return_pct)
+        if rt.net_pnl_base is not None
+        and rt.net_pnl_base < 0.0
+        and rt.return_pct < 0.0
+        and math.isfinite(rt.return_pct)
     ]
     if len(losing_trips) >= 2:
         loss_magnitudes = np.asarray([abs(rt.return_pct) for rt in losing_trips], dtype=np.float64)
         p90_loss_pct = float(np.quantile(loss_magnitudes, 0.90))
         p95_loss_pct = float(np.quantile(loss_magnitudes, 0.95))
         for rt in losing_trips:
+            assert rt.net_pnl_base is not None
             mag = abs(rt.return_pct)
             if mag > p95_loss_pct and mag > p90_loss_pct and mag > 0.0:
                 saved_pnl_base = abs(rt.net_pnl_base) * (1.0 - (p90_loss_pct / mag))
@@ -308,7 +323,7 @@ def simulate_counterfactual_twin(
                 open_nav = intervals[step_idx][3]
                 if open_nav > 0.0:
                     step_tail_addback[step_idx] += max(0.0, saved_pnl_base / open_nav)
-    elif not trips:
+    elif not trips or all(rt.net_pnl_base is None for rt in trips):
         neg_rets = [abs(item[4]) for item in intervals if item[4] < 0.0]
         if len(neg_rets) >= 2:
             sub_mags = np.asarray(neg_rets, dtype=np.float64)

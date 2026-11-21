@@ -55,12 +55,18 @@ class CoachingEngineOutput:
 
 
 def _compute_asset_class_mix_pct(ledger: CanonicalPortfolioLedger) -> dict[str, float]:
+    non_cash = [t for t in ledger.trades if t.asset_class != AssetClass.CASH]
+    if not non_cash:
+        return {}
+    use_native_single_ccy = any(t.fx_rate_to_base is None for t in non_cash) and (
+        len({t.currency for t in non_cash}) == 1
+    )
+    if any(t.fx_rate_to_base is None for t in non_cash) and not use_native_single_ccy:
+        return {}
     totals: dict[str, float] = {}
     grand_total = 0.0
-    for trade in ledger.trades:
-        if trade.asset_class == AssetClass.CASH:
-            continue
-        notional = trade.notional_base
+    for trade in non_cash:
+        notional = trade.notional_native if use_native_single_ccy else trade.notional_base
         if notional <= 0.0:
             continue
         key = trade.asset_class.value

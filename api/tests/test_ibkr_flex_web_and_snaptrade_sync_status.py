@@ -91,6 +91,136 @@ def _read_snaptrade_counters() -> dict[str, int]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def _build_multi_eur_usd_chunk_xml(fd_s: str, td_s: str, *, mode: str) -> bytes:
+    """Build accounting-exact Sep 2024 - Nov 2026 EUR-base + USD-equities chunk XML (>10% EUR deposit)."""
+    d0 = date(int(fd_s[:4]), int(fd_s[4:6]), int(fd_s[6:8]))
+    d1 = date(int(td_s[:4]), int(td_s[4:6]), int(td_s[6:8]))
+    fx_rate = 0.92
+    include_stock = mode in {"MULTI-EUR-FULL", "MULTI-EUR-LATERFX"}
+
+    # Accounting-exact cash + stock MTM timeline from 2024-09-02 through d1:
+    # - 2024-09-02: Cash 20,000.00 EUR, Stock 0.00
+    # - 2024-09-10: BUY 20 NVDA @ $110 (-$1 comm) -> -2024.92 EUR cash, +2024.00 EUR stock
+    # - 2024-12-20: SELL 20 NVDA @ $128 (-$1 comm) -> +2354.28 EUR cash, 0.00 EUR stock
+    # - 2025-01-06: BUY 8 META @ $510 (-$1 comm) -> -3754.52 EUR cash, +3753.60 EUR stock
+    # - 2025-04-15: SEPA Deposit +6,000.00 EUR (>10% of NAV)
+    # - 2025-06-25: META Dividend +$16.00, Withholding Tax -$2.40 -> +12.512 EUR cash
+    # - 2025-11-20: SELL 8 META @ $565 (-$1 comm) -> +4157.48 EUR cash, 0.00 EUR stock
+    # - 2025-12-01: BUY 10 MSFT @ $380 (-$1 comm) -> -3496.92 EUR cash, +3496.00 EUR stock
+    # - 2026-11-18: Ending 10 MSFT @ $400 = 3,680.00 EUR stock
+    cur = date(2024, 9, 2)
+    cash_eur = 20000.00
+    rows: list[str] = []
+    idx = 0
+    while cur <= d1:
+        if cur.weekday() < 5:
+            if cur == date(2024, 9, 10):
+                cash_eur -= 20 * 110.0 * fx_rate + 1.0 * fx_rate
+            elif cur == date(2024, 12, 20):
+                cash_eur += 20 * 128.0 * fx_rate - 1.0 * fx_rate
+            elif cur == date(2025, 1, 6):
+                cash_eur -= 8 * 510.0 * fx_rate + 1.0 * fx_rate
+            elif cur == date(2025, 4, 15):
+                cash_eur += 6000.00
+            elif cur == date(2025, 6, 25):
+                cash_eur += (16.00 - 2.40) * fx_rate
+            elif cur == date(2025, 11, 20):
+                cash_eur += 8 * 565.0 * fx_rate - 1.0 * fx_rate
+            elif cur == date(2025, 12, 1):
+                cash_eur -= 10 * 380.0 * fx_rate + 1.0 * fx_rate
+
+            # Smooth MTM interpolation + small oscillation while positions are held
+            if date(2024, 9, 10) <= cur < date(2024, 12, 20):
+                frac = (cur - date(2024, 9, 10)).days / (date(2024, 12, 20) - date(2024, 9, 10)).days
+                osc = 28.0 * ((-1) ** idx) * (1.0 - frac)
+                stock_eur = 20 * (110.0 + 18.0 * frac) * fx_rate + osc
+            elif date(2025, 1, 6) <= cur < date(2025, 11, 20):
+                frac = (cur - date(2025, 1, 6)).days / (date(2025, 11, 20) - date(2025, 1, 6)).days
+                osc = 42.0 * ((-1) ** idx) * (1.0 - frac)
+                stock_eur = 8 * (510.0 + 55.0 * frac) * fx_rate + osc
+            elif cur >= date(2025, 12, 1):
+                frac = min(1.0, (cur - date(2025, 12, 1)).days / (date(2026, 11, 18) - date(2025, 12, 1)).days)
+                osc = 36.0 * ((-1) ** idx) * (1.0 - frac)
+                stock_eur = 10 * (380.0 + 20.0 * frac) * fx_rate + osc
+            else:
+                stock_eur = 0.0
+
+            cash_b = round(cash_eur, 2)
+            stock_b = round(stock_eur, 2)
+            total_b = round(cash_b + stock_b, 2)
+            if cur >= d0:
+                if include_stock:
+                    rows.append(
+                        f'<EquitySummaryByReportDateInBase accountId="U8899111" '
+                        f'reportDate="{cur.isoformat()}" cash="{cash_b:.2f}" stock="{stock_b:.2f}" total="{total_b:.2f}" />'
+                    )
+                else:
+                    rows.append(
+                        f'<EquitySummaryByReportDateInBase accountId="U8899111" '
+                        f'reportDate="{cur.isoformat()}" total="{total_b:.2f}" />'
+                    )
+            idx += 1
+        cur += timedelta(days=1)
+
+    fx_attr = f' fxRateToBase="{fx_rate:.4f}"' if mode == "MULTI-EUR-FULL" else ""
+    tr_xml = ""
+    cash_xml = ""
+    open_xml = ""
+    xfer_xml = ""
+    conv_xml = ""
+
+    if d0.year == 2024:
+        tr_xml = (
+            f'<Trade accountId="U8899111" ibExecID="A1" symbol="NVDA" assetCategory="STK" buySell="BUY" quantity="20" tradePrice="110.00" ibCommission="-1.00" currency="USD"{fx_attr} dateTime="2024-09-10;15:00:00" />'
+            f'<Trade accountId="U8899111" ibExecID="A2" symbol="NVDA" assetCategory="STK" buySell="SELL" quantity="-20" tradePrice="128.00" ibCommission="-1.00" currency="USD"{fx_attr} dateTime="2024-12-20;15:30:00" />'
+        )
+    elif d0.year == 2025:
+        tr_xml = (
+            f'<Trade accountId="U8899111" ibExecID="A3" symbol="META" assetCategory="STK" buySell="BUY" quantity="8" tradePrice="510.00" ibCommission="-1.00" currency="USD"{fx_attr} dateTime="2025-01-06;15:20:00" />'
+            f'<Trade accountId="U8899111" ibExecID="A4" symbol="META" assetCategory="STK" buySell="SELL" quantity="-8" tradePrice="565.00" ibCommission="-1.00" currency="USD"{fx_attr} dateTime="2025-11-20;15:20:00" />'
+            f'<Trade accountId="U8899111" ibExecID="A5" symbol="MSFT" assetCategory="STK" buySell="BUY" quantity="10" tradePrice="380.00" ibCommission="-1.00" currency="USD"{fx_attr} dateTime="2025-12-01;15:00:00" />'
+        )
+        extra_usd_cap = (
+            '<CashTransaction accountId="U8899111" type="Deposits/Withdrawals" currency="USD" amount="2500.00" dateTime="2025-08-01;09:00:00" description="Unvalued USD Wire" />'
+            if mode == "MULTI-EUR-USDDEP"
+            else ""
+        )
+        cash_xml = (
+            '<CashTransaction accountId="U8899111" type="Deposits/Withdrawals" currency="EUR" amount="6000.00" dateTime="2025-04-15;09:00:00" description="SEPA Deposit" />'
+            f'<CashTransaction accountId="U8899111" type="Dividends" symbol="META" currency="USD"{fx_attr} amount="16.00" dateTime="2025-06-25;12:00:00" description="META Cash Dividend" />'
+            f'<CashTransaction accountId="U8899111" type="Withholding Tax" symbol="META" currency="USD"{fx_attr} amount="-2.40" dateTime="2025-06-25;12:00:00" description="META US Tax" />'
+            f"{extra_usd_cap}"
+        )
+        if mode == "MULTI-EUR-FULL":
+            conv_xml = f'<ConversionRates><ConversionRate reportDate="2025-04-15" fromCurrency="USD" toCurrency="EUR" rate="{fx_rate:.4f}" /></ConversionRates>'
+    elif d0.year == 2026:
+        open_pos_fx = (
+            f' fxRateToBase="{fx_rate:.4f}"'
+            if mode == "MULTI-EUR-FULL"
+            else (' positionValueInBase="3680.00"' if mode == "MULTI-EUR-LATERFX" else "")
+        )
+        open_xml = (
+            f'<OpenPosition accountId="U8899111" symbol="MSFT" assetCategory="STK" currency="USD"{open_pos_fx} position="10" markPrice="400.00" positionValue="4000.00" costBasisMoney="3801.00" />'
+        )
+        if mode == "MULTI-EUR-LATERFX":
+            xfer_xml = '<Transfer accountId="U8899111" type="INTERNAL" currency="USD" positionAmount="100.00" positionAmountInBase="92.00" date="2026-11-19" />'
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<FlexQueryResponse queryName="MultiYearApi" type="AF"><FlexStatements count="1">'
+        f'<FlexStatement accountId="U8899111" baseCurrency="EUR" fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
+        '<AccountInformation accountId="U8899111" currency="EUR" />'
+        f'<EquitySummaryInBase>{"".join(rows)}</EquitySummaryInBase>'
+        '<PriorPeriodPositions />'
+        f'<OpenPositions>{open_xml}</OpenPositions>'
+        f'<Trades>{tr_xml}</Trades>'
+        f'<CashTransactions>{cash_xml}</CashTransactions>'
+        f'<Transfers>{xfer_xml}</Transfers><CorporateActions /><OptionEAE />'
+        f"{conv_xml}"
+        '</FlexStatement></FlexStatements></FlexQueryResponse>'
+    ).encode("utf-8")
+
+
 def fake_ibkr_flex_transport(
     method: str, url: str, headers: dict[str, str], body: bytes | None
 ) -> HttpExchangeResponse:
@@ -113,8 +243,15 @@ def fake_ibkr_flex_transport(
     if url.startswith(IBKR_FLEX_SEND_REQUEST_URL):
         fd = qs.get("fd", ["20250102"])[0]
         td = qs.get("td", ["20250331"])[0]
-        big_suffix = "-BIG" if tok == "BIG-FLEX-TOKEN-3MB" else ""
-        ref = f"REF-{fd}-{td}{big_suffix}"
+        if tok.startswith("MULTI-EUR-"):
+            suffix = "-" + tok
+        elif tok == "BIG-FLEX-TOKEN-3MB":
+            suffix = "-BIG"
+        elif tok == "NOFX-FLEX-TOKEN":
+            suffix = "-NOFX"
+        else:
+            suffix = ""
+        ref = f"REF-{fd}-{td}{suffix}"
         env = (
             f"<FlexStatementResponse><Status>Success</Status>"
             f"<ReferenceCode>{ref}</ReferenceCode></FlexStatementResponse>"
@@ -126,6 +263,11 @@ def fake_ibkr_flex_transport(
         parts = ref.split("-")
         fd_s, td_s = parts[1], parts[2]
         is_big = len(parts) > 3 and parts[3] == "BIG"
+        is_nofx = len(parts) > 3 and parts[3] == "NOFX"
+        multi_mode = "-".join(parts[3:]) if len(parts) > 3 and parts[3] == "MULTI" else None
+        if multi_mode:
+            xml = _build_multi_eur_usd_chunk_xml(fd_s, td_s, mode=multi_mode)
+            return HttpExchangeResponse(status_code=200, headers={}, body=xml)
         d0 = date(int(fd_s[:4]), int(fd_s[4:6]), int(fd_s[6:8]))
         d1 = date(int(td_s[:4]), int(td_s[4:6]), int(td_s[6:8]))
         cur = d0
@@ -134,10 +276,16 @@ def fake_ibkr_flex_transport(
         while cur <= d1:
             if cur.weekday() < 5:
                 nav = round(nav * 1.0007, 2)
-                rows.append(
-                    f'<EquitySummaryByReportDateInBase accountId="U8899001" '
-                    f'reportDate="{cur.isoformat()}" cash="{nav:.2f}" stock="0.00" total="{nav:.2f}" />'
-                )
+                if is_nofx:
+                    rows.append(
+                        f'<EquitySummaryByReportDateInBase accountId="U8899001" '
+                        f'reportDate="{cur.isoformat()}" total="{nav:.2f}" />'
+                    )
+                else:
+                    rows.append(
+                        f'<EquitySummaryByReportDateInBase accountId="U8899001" '
+                        f'reportDate="{cur.isoformat()}" cash="{nav:.2f}" stock="0.00" total="{nav:.2f}" />'
+                    )
             cur += timedelta(days=1)
         extra_padding = ""
         if is_big:
@@ -150,13 +298,28 @@ def fake_ibkr_flex_transport(
                 )
                 + "</UnbundledCommissionDetails>"
             )
+        if is_nofx:
+            trades_xml = (
+                f'<Trades>'
+                f'<Trade accountId="U8899001" ibExecID="NFX-{fd_s}-1" symbol="NVDA" assetCategory="STK" buySell="BUY" quantity="10" tradePrice="120.00" ibCommission="-1.00" currency="USD" dateTime="{d0.isoformat()};15:00:00" />'
+                f'<Trade accountId="U8899001" ibExecID="NFX-{fd_s}-2" symbol="NVDA" assetCategory="STK" buySell="SELL" quantity="-10" tradePrice="132.00" ibCommission="-1.00" currency="USD" dateTime="{d1.isoformat()};15:00:00" />'
+                f'</Trades>'
+                f'<CashTransactions>'
+                f'<CashTransaction accountId="U8899001" type="Dividends" symbol="NVDA" currency="USD" amount="4.00" dateTime="{d1.isoformat()};12:00:00" />'
+                f'</CashTransactions>'
+            )
+            conv_xml = ""
+        else:
+            trades_xml = ""
+            conv_xml = '<ConversionRates><ConversionRate reportDate="2025-01-02" fromCurrency="USD" toCurrency="EUR" rate="0.92" /></ConversionRates>'
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<FlexQueryResponse queryName="HostedAF" type="AF"><FlexStatements count="1">'
             f'<FlexStatement accountId="U8899001" baseCurrency="EUR" '
             f'fromDate="{d0.isoformat()}" toDate="{d1.isoformat()}">'
             f'<EquitySummaryInBase>{"".join(rows)}</EquitySummaryInBase>'
-            '<ConversionRates><ConversionRate reportDate="2025-01-02" fromCurrency="USD" toCurrency="EUR" rate="0.92" /></ConversionRates>'
+            f"{trades_xml}"
+            f"{conv_xml}"
             f"{extra_padding}"
             '</FlexStatement></FlexStatements></FlexQueryResponse>'
         ).encode("utf-8")
@@ -755,6 +918,131 @@ class HostedIbkrFlexWebAndSnapTradeSyncTests(unittest.TestCase):
             },
         )
         self.assertEqual(p_expired_cap.status_code, 404, p_expired_cap.text)
+
+    def test_hosted_ibkr_flex_web_succeeds_without_conversion_rates_or_fx_rate_to_base(self) -> None:
+        resp = self.client.post(
+            "/api/v1/verify",
+            json={
+                "broker_id": "ibkr_flex_web",
+                "connector_fetch_kwargs": {
+                    "flex_token": "NOFX-FLEX-TOKEN",
+                    "query_id": "998877",
+                    "start_date": "2024-09-02",
+                    "end_date": "2026-11-18",
+                },
+                "issued_at_utc": "2026-11-19T12:00:00Z",
+                "publish_proof": True,
+                "opt_in_leaderboard": False,
+                "disclose_leaf_names": [
+                    "core_metrics",
+                    "indexed_curve",
+                    "reconciliation",
+                    "coaching_and_context",
+                ],
+            },
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertFalse(body["performance_withheld"])
+        leaves = {
+            item["leaf_name"]: item["payload"]
+            for item in body["proof_bundle"]["disclosed_leaves"]
+        }
+        self.assertEqual(leaves["reconciliation"]["status"], "insufficient_sections")
+        self.assertIn("ConversionRates", leaves["reconciliation"]["missing_sections"])
+        self.assertIsNotNone(leaves["core_metrics"]["twr_decimal"])
+        self.assertIsNotNone(leaves["core_metrics"]["sharpe_ratio"])
+        self.assertIsNotNone(leaves["core_metrics"]["max_drawdown_decimal"])
+        self.assertIsNotNone(leaves["coaching_and_context"]["quant_dna"]["archetype_label"])
+
+    def test_verify_eur_base_usd_equities_sep2024_nov2026_all_fx_modes(self) -> None:
+        def _post_verify(tok: str) -> dict[str, Any]:
+            r = self.client.post(
+                "/api/v1/verify",
+                json={
+                    "broker_id": "ibkr_flex_web",
+                    "connector_fetch_kwargs": {
+                        "flex_token": tok,
+                        "query_id": "998877",
+                        "start_date": "2024-09-02",
+                        "end_date": "2026-11-18",
+                    },
+                    "issued_at_utc": "2026-11-19T12:00:00Z",
+                    "publish_proof": False,
+                    "disclose_leaf_names": [
+                        "core_metrics",
+                        "indexed_curve",
+                        "reconciliation",
+                        "coaching_and_context",
+                    ],
+                },
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+            return r.json()
+
+        def _leaves(body: dict[str, Any]) -> dict[str, dict[str, Any]]:
+            return {
+                item["leaf_name"]: item["payload"]
+                for item in body["proof_bundle"]["disclosed_leaves"]
+            }
+
+        # (a) WITH ConversionRates
+        b_full = _post_verify("MULTI-EUR-FULL")
+        self.assertFalse(b_full["performance_withheld"])
+        l_full = _leaves(b_full)
+        self.assertEqual(l_full["reconciliation"]["discrepancy_count"], 0)
+        cm_full = l_full["core_metrics"]
+        dna_full = l_full["coaching_and_context"]["quant_dna"]
+        self.assertIsNotNone(dna_full)
+        self.assertTrue(bool(dna_full["archetype_label"]))
+
+        # (b) WITHOUT ConversionRates/fxRateToBase on non-capital USD rows
+        b_nofx = _post_verify("MULTI-EUR-NOFX")
+        self.assertFalse(b_nofx["performance_withheld"])
+        l_nofx = _leaves(b_nofx)
+        self.assertEqual(l_nofx["reconciliation"]["status"], "insufficient_sections")
+        self.assertIn("ConversionRates", l_nofx["reconciliation"]["missing_sections"])
+        self.assertEqual(l_nofx["reconciliation"]["discrepancy_count"], 0)
+        cm_nofx = l_nofx["core_metrics"]
+        self.assertTrue(any("USD->EUR" in w for w in cm_nofx["warnings"]), cm_nofx["warnings"])
+        self.assertAlmostEqual(cm_nofx["twr_decimal"], cm_full["twr_decimal"], places=9)
+        self.assertAlmostEqual(cm_nofx["sharpe_ratio"], cm_full["sharpe_ratio"], places=9)
+        self.assertAlmostEqual(cm_nofx["max_drawdown_decimal"], cm_full["max_drawdown_decimal"], places=9)
+        self.assertAlmostEqual(cm_nofx["annualized_volatility"], cm_full["annualized_volatility"], places=9)
+        self.assertAlmostEqual(cm_nofx["probabilistic_sharpe_ratio"], cm_full["probabilistic_sharpe_ratio"], places=9)
+        dna_nofx = l_nofx["coaching_and_context"]["quant_dna"]
+        self.assertIsNotNone(dna_nofx)
+        self.assertTrue(bool(dna_nofx["archetype_label"]))
+        for k in (
+            "consistency_score",
+            "drawdown_resilience_score",
+            "cost_efficiency_score",
+            "sizing_discipline_score",
+            "exit_symmetry_score",
+            "catalyst_alignment_score",
+        ):
+            self.assertGreaterEqual(dna_nofx[k], 0.0)
+            self.assertLessEqual(dna_nofx[k], 100.0)
+
+        # (c) WITH an unvalued USD external deposit -> TWR withheld (S6)
+        b_cap = _post_verify("MULTI-EUR-USDDEP")
+        self.assertTrue(b_cap["performance_withheld"])
+        self.assertTrue(
+            any("lacks base-currency valuation" in r for r in b_cap["withheld_reasons"]),
+            b_cap["withheld_reasons"],
+        )
+
+        # (d) WITH positionValueInBase / positionAmountInBase only on later 2026 chunk -> pre-scan + nearest-date lookup succeeds
+        b_later = _post_verify("MULTI-EUR-LATERFX")
+        self.assertFalse(b_later["performance_withheld"])
+        l_later = _leaves(b_later)
+        self.assertEqual(l_later["reconciliation"]["discrepancy_count"], 0)
+        self.assertEqual(l_later["reconciliation"]["missing_sections"], [])
+        self.assertFalse(
+            any("USD->EUR" in w for w in l_later["core_metrics"]["warnings"]),
+            l_later["core_metrics"]["warnings"],
+        )
+        self.assertAlmostEqual(l_later["core_metrics"]["twr_decimal"], cm_full["twr_decimal"], places=9)
 
 
 if __name__ == "__main__":

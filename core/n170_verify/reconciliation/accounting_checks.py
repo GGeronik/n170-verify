@@ -10,6 +10,7 @@ import math
 import re
 
 from n170_verify.coaching.cost_and_drag import normalize_fx_pair, resolve_forex_midpoint
+from n170_verify.connectors.ibkr_flex import INFERRED_SINGLE_PRIOR_POSITION_WARNING
 from n170_verify.contracts import (
     AssetClass,
     CanonicalPortfolioLedger,
@@ -38,8 +39,9 @@ class _OptionTracker:
     strike: float | None = None
     multiplier: float = 100.0
     underlying_symbol: str | None = None
-    fx_rate_to_base: float = 1.0
+    fx_rate_to_base: float | None = 1.0
     signed_cost_basis_base: float = 0.0
+    has_unvalued_fx: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +73,30 @@ def _ibkr_omitted_open_positions(ledger: CanonicalPortfolioLedger) -> bool:
     return not bool(present & _ENDING_POSITIONS_SECTION_TOKENS)
 
 
+def _ledger_has_omitted_foreign_fx(ledger: CanonicalPortfolioLedger) -> bool:
+    base = ledger.base_currency
+    if any(
+        p.currency != base and p.fx_rate_to_base is None
+        for p in (*ledger.prior_positions, *ledger.ending_positions)
+    ):
+        return True
+    if any(t.currency != base and t.fx_rate_to_base is None for t in ledger.trades):
+        return True
+    if any(
+        fl.currency != base and (fl.fx_rate_to_base is None or fl.amount_base is None)
+        for fl in ledger.flows
+    ):
+        return True
+    return False
+
+
 def _find_missing_completeness_sections(
     enabled_sections: Sequence[str],
     *,
     has_options: bool,
     omitted_open_positions: bool = False,
+    omitted_prior_positions: bool = False,
+    omitted_conversion_rates: bool = False,
 ) -> list[str]:
     present = {_normalize_section_token(s) for s in enabled_sections if s and s.strip()}
     missing: list[str] = []
@@ -83,6 +104,8 @@ def _find_missing_completeness_sections(
         missing.append("OpenPositions")
         if "priorperiodpositions" not in present:
             missing.append("PriorPeriodPositions")
+    elif omitted_prior_positions and "priorperiodpositions" not in present:
+        missing.append("PriorPeriodPositions")
     if "transfers" not in present:
         missing.append("Transfers")
     if "corporateactions" not in present:
@@ -91,6 +114,8 @@ def _find_missing_completeness_sections(
         missing.append("OptionEAE")
     elif not present and "optioneae" not in missing:
         missing.append("OptionEAE")
+    if omitted_conversion_rates and "ConversionRates" not in missing:
+        missing.append("ConversionRates")
     return missing
 
 
@@ -121,6 +146,8 @@ def _infer_option_metadata_from_text(
 
 
 def _signed_option_position_basis(pos: NormalizedPosition) -> float:
+    if pos.fx_rate_to_base is None:
+        return 0.0
     raw_base = float(pos.cost_basis) * float(pos.fx_rate_to_base)
     if pos.quantity < 0.0:
         return -abs(raw_base)
@@ -161,8 +188,17 @@ def reconcile_position_rollforward(
     """Reconcile PriorPositions + Trades + InKindFlows + CorporateActions/OptionEAE == EndingPositions."""
     qty_by_sym: dict[str, float] = defaultdict(float)
     stock_basis_by_sym: dict[str, float] = defaultdict(float)
+    native_basis_by_sym: dict[str, float] = defaultdict(float)
+    rolled_ccy_by_sym: dict[str, str] = {}
+    rolled_ac_by_sym: dict[str, AssetClass] = {}
+    min_trade_ts_by_sym: dict[str, str] = {}
+    max_trade_ts_by_sym: dict[str, str] = {}
+    has_buy_by_sym: dict[str, bool] = defaultdict(bool)
+    has_sell_by_sym: dict[str, bool] = defaultdict(bool)
     option_meta: dict[str, _OptionTracker] = {}
     has_options = False
+
+    unvalued_basis_syms: set[str] = set()
 
     for pos in ledger.prior_positions:
         if pos.asset_class == AssetClass.CASH:
@@ -181,10 +217,20 @@ def reconcile_position_rollforward(
                 if pos.underlying_symbol
                 else (tracker.underlying_symbol or und_guess)
             )
-            tracker.fx_rate_to_base = float(pos.fx_rate_to_base)
+            tracker.fx_rate_to_base = (
+                float(pos.fx_rate_to_base) if pos.fx_rate_to_base is not None else None
+            )
+            if pos.fx_rate_to_base is None:
+                tracker.has_unvalued_fx = True
             tracker.signed_cost_basis_base += _signed_option_position_basis(pos)
         else:
-            stock_basis_by_sym[sym] += float(pos.cost_basis) * float(pos.fx_rate_to_base)
+            if pos.fx_rate_to_base is not None:
+                stock_basis_by_sym[sym] += float(pos.cost_basis) * float(pos.fx_rate_to_base)
+            else:
+                unvalued_basis_syms.add(sym)
+            native_basis_by_sym[sym] += float(pos.cost_basis)
+            rolled_ccy_by_sym[sym] = pos.currency
+            rolled_ac_by_sym[sym] = pos.asset_class
 
     for pos in ledger.ending_positions:
         if pos.asset_class == AssetClass.OPTION:
@@ -245,9 +291,15 @@ def reconcile_position_rollforward(
             qty_by_sym[sym] = new_q
 
             mult = float(payload.multiplier or (100.0 if payload.asset_class == AssetClass.OPTION else 1.0))
-            fx = float(payload.fx_rate_to_base)
-            comm_base = abs(float(payload.commission)) * fx + abs(float(payload.tax)) * fx
-            gross_base = abs_q * float(payload.price) * mult * fx
+            fx: float | None = (
+                float(payload.fx_rate_to_base) if payload.fx_rate_to_base is not None else None
+            )
+            comm_base = (
+                abs(float(payload.commission)) * fx + abs(float(payload.tax)) * fx
+                if fx is not None
+                else 0.0
+            )
+            gross_base = abs_q * float(payload.price) * mult * fx if fx is not None else 0.0
 
             if payload.asset_class == AssetClass.OPTION:
                 und_guess, right_guess, strike_guess = _infer_option_metadata_from_text(sym)
@@ -262,29 +314,59 @@ def reconcile_position_rollforward(
                     if payload.underlying_symbol
                     else (tracker.underlying_symbol or und_guess)
                 )
-                tracker.fx_rate_to_base = fx
+                if fx is not None:
+                    tracker.fx_rate_to_base = fx
+                else:
+                    tracker.has_unvalued_fx = True
 
                 # Update signed option basis (+cost for long, -credit for short)
-                trade_cash_cost = (gross_base + comm_base) if signed_q > 0.0 else -(gross_base - comm_base)
-                if prev_q == 0.0 or (prev_q > 0.0) == (signed_q > 0.0):
-                    tracker.signed_cost_basis_base += trade_cash_cost
-                elif abs(signed_q) <= abs(prev_q):
-                    frac_remaining = 1.0 - (abs(signed_q) / abs(prev_q))
-                    tracker.signed_cost_basis_base *= frac_remaining
-                else:
-                    residual_open = abs(signed_q) - abs(prev_q)
-                    unit_cost = trade_cash_cost / abs_q
-                    tracker.signed_cost_basis_base = residual_open * unit_cost
+                if fx is not None:
+                    trade_cash_cost = (
+                        (gross_base + comm_base) if signed_q > 0.0 else -(gross_base - comm_base)
+                    )
+                    if prev_q == 0.0 or (prev_q > 0.0) == (signed_q > 0.0):
+                        tracker.signed_cost_basis_base += trade_cash_cost
+                    elif abs(signed_q) <= abs(prev_q):
+                        frac_remaining = 1.0 - (abs(signed_q) / abs(prev_q))
+                        tracker.signed_cost_basis_base *= frac_remaining
+                    else:
+                        residual_open = abs(signed_q) - abs(prev_q)
+                        unit_cost = trade_cash_cost / abs_q
+                        tracker.signed_cost_basis_base = residual_open * unit_cost
             else:
+                if fx is None:
+                    unvalued_basis_syms.add(sym)
                 trade_cost = (gross_base + comm_base) if signed_q > 0.0 else -(gross_base - comm_base)
+                comm_native = abs(float(payload.commission)) + abs(float(payload.tax))
+                gross_native = abs_q * float(payload.price) * mult
+                trade_cost_native = (
+                    (gross_native + comm_native) if signed_q > 0.0 else -(gross_native - comm_native)
+                )
+                rolled_ccy_by_sym[sym] = payload.currency
+                rolled_ac_by_sym[sym] = payload.asset_class
+                t_iso = payload.timestamp_utc
+                if sym not in min_trade_ts_by_sym or t_iso < min_trade_ts_by_sym[sym]:
+                    min_trade_ts_by_sym[sym] = t_iso
+                if sym not in max_trade_ts_by_sym or t_iso > max_trade_ts_by_sym[sym]:
+                    max_trade_ts_by_sym[sym] = t_iso
+                if signed_q > 0.0:
+                    has_buy_by_sym[sym] = True
+                elif signed_q < 0.0:
+                    has_sell_by_sym[sym] = True
                 if prev_q == 0.0 or (prev_q > 0.0) == (signed_q > 0.0):
-                    stock_basis_by_sym[sym] += trade_cost
+                    if fx is not None:
+                        stock_basis_by_sym[sym] += trade_cost
+                    native_basis_by_sym[sym] += trade_cost_native
                 elif abs(signed_q) <= abs(prev_q):
                     frac_remaining = 1.0 - (abs(signed_q) / abs(prev_q))
-                    stock_basis_by_sym[sym] *= frac_remaining
+                    if fx is not None:
+                        stock_basis_by_sym[sym] *= frac_remaining
+                    native_basis_by_sym[sym] *= frac_remaining
                 else:
                     rem = abs(signed_q) - abs(prev_q)
-                    stock_basis_by_sym[sym] = rem * (trade_cost / abs_q)
+                    if fx is not None:
+                        stock_basis_by_sym[sym] = rem * (trade_cost / abs_q)
+                    native_basis_by_sym[sym] = rem * (trade_cost_native / abs_q)
 
         elif ev_kind == "flow":
             assert isinstance(payload, NormalizedFlow)
@@ -298,6 +380,8 @@ def reconcile_position_rollforward(
                 qty_by_sym[sym] += dq
                 if payload.amount_base is not None and dq > 0.0:
                     stock_basis_by_sym[sym] += abs(float(payload.amount_base))
+                    if payload.fx_rate_to_base is not None and payload.fx_rate_to_base > 0.0:
+                        native_basis_by_sym[sym] += abs(float(payload.amount_base)) / float(payload.fx_rate_to_base)
 
         elif ev_kind == "corp":
             assert isinstance(payload, CorporateActionRecord)
@@ -323,6 +407,9 @@ def reconcile_position_rollforward(
             elif ctype in {CorporateActionType.SYMBOL_CHANGE, CorporateActionType.MERGER}:
                 old_q = qty_by_sym.pop(sym, 0.0)
                 old_basis = stock_basis_by_sym.pop(sym, 0.0)
+                old_native_basis = native_basis_by_sym.pop(sym, 0.0)
+                old_ccy = rolled_ccy_by_sym.pop(sym, None)
+                old_ac = rolled_ac_by_sym.pop(sym, None)
                 if payload.new_symbol:
                     new_sym = _canonical_symbol(payload.new_symbol)
                     if payload.ratio_numerator is not None and payload.ratio_denominator is not None:
@@ -336,6 +423,11 @@ def reconcile_position_rollforward(
                         delivered = old_q if payload.quantity_delta == 0.0 else float(payload.quantity_delta)
                     qty_by_sym[new_sym] += delivered
                     stock_basis_by_sym[new_sym] += old_basis + float(payload.cost_basis_adjustment_base)
+                    native_basis_by_sym[new_sym] += old_native_basis
+                    if old_ccy is not None:
+                        rolled_ccy_by_sym[new_sym] = old_ccy
+                    if old_ac is not None:
+                        rolled_ac_by_sym[new_sym] = old_ac
                 else:
                     qty_by_sym[sym] = max(0.0, old_q + float(payload.quantity_delta)) if old_q > 0 else (
                         old_q + float(payload.quantity_delta) if payload.quantity_delta != 0.0 else 0.0
@@ -411,7 +503,8 @@ def reconcile_position_rollforward(
                     or (tracker.multiplier if tracker else None)
                     or 100.0
                 )
-                fx = tracker.fx_rate_to_base if tracker else 1.0
+                fx = tracker.fx_rate_to_base if tracker else None
+                opt_unvalued = bool(tracker is None or tracker.has_unvalued_fx or fx is None)
                 und_sym = (
                     _canonical_symbol(payload.underlying_symbol)
                     if payload.underlying_symbol
@@ -447,24 +540,37 @@ def reconcile_position_rollforward(
                     if not already_booked:
                         qty_by_sym[und_sym] += delivered_shares
                         if strike is not None:
-                            strike_cash = -delivered_shares * strike * fx
-                            implied_option_cash_delta_base += strike_cash
-                            stock_basis_by_sym[und_sym] += (delivered_shares * strike * fx) + closed_opt_basis
+                            if not opt_unvalued and fx is not None:
+                                strike_cash = -delivered_shares * strike * fx
+                                implied_option_cash_delta_base += strike_cash
+                                stock_basis_by_sym[und_sym] += (delivered_shares * strike * fx) + closed_opt_basis
+                            else:
+                                unvalued_basis_syms.add(und_sym)
                             option_exercised_underlyings[und_sym] = payload.timestamp_utc
 
     # Compare rolled-forward quantities & OptionEAE cost-basis links against ending_positions.
     observed_qty_by_sym: dict[str, float] = defaultdict(float)
     observed_basis_by_sym: dict[str, float] = defaultdict(float)
+    observed_native_basis_by_sym: dict[str, float] = defaultdict(float)
+    observed_ccy_by_sym: dict[str, str] = {}
+    observed_ac_by_sym: dict[str, AssetClass] = {}
     for pos in ledger.ending_positions:
         if pos.asset_class == AssetClass.CASH:
             continue
         sym = _canonical_symbol(pos.symbol)
         observed_qty_by_sym[sym] += float(pos.quantity)
-        observed_basis_by_sym[sym] += float(pos.cost_basis) * float(pos.fx_rate_to_base)
+        if pos.fx_rate_to_base is not None:
+            observed_basis_by_sym[sym] += float(pos.cost_basis) * float(pos.fx_rate_to_base)
+        else:
+            unvalued_basis_syms.add(sym)
+        observed_native_basis_by_sym[sym] += float(pos.cost_basis)
+        observed_ccy_by_sym[sym] = pos.currency
+        observed_ac_by_sym[sym] = pos.asset_class
 
     all_syms = sorted(set(qty_by_sym.keys()) | set(observed_qty_by_sym.keys()))
     unexplained_position_jump = False
     omitted_open_pos = _ibkr_omitted_open_positions(ledger)
+    omitted_foreign_fx = _ledger_has_omitted_foreign_fx(ledger)
 
     if omitted_open_pos:
         nonzero_syms = [
@@ -496,6 +602,7 @@ def reconcile_position_rollforward(
             ledger.enabled_sections,
             has_options=has_options,
             omitted_open_positions=True,
+            omitted_conversion_rates=omitted_foreign_fx,
         )
         return PositionRollforwardResult(
             findings=findings,
@@ -504,10 +611,136 @@ def reconcile_position_rollforward(
             implied_option_cash_delta_base=implied_option_cash_delta_base,
         )
 
+    # Detect unique 1:1 corporate-action ticker renames / exchange reorganizations omitted from
+    # <CorporateActions> by requiring simultaneous conservation of share count, currency, asset
+    # class, chronological ordering, and historical native-currency tax cost basis (including
+    # post-rename add-on purchases or partial sales).
+    vanished_long_syms = [
+        sym
+        for sym in all_syms
+        if abs(observed_qty_by_sym.get(sym, 0.0)) <= 1e-9
+        and qty_by_sym.get(sym, 0.0) > 1e-9
+        and native_basis_by_sym.get(sym, 0.0) > 1e-6
+        and rolled_ac_by_sym.get(sym) in {AssetClass.EQUITY, AssetClass.ETF}
+    ]
+    surplus_long_syms = [
+        sym
+        for sym in all_syms
+        if observed_qty_by_sym.get(sym, 0.0) > 1e-9
+        and (observed_qty_by_sym.get(sym, 0.0) - qty_by_sym.get(sym, 0.0)) > 1e-9
+        and observed_native_basis_by_sym.get(sym, 0.0) > 1e-6
+        and observed_ac_by_sym.get(sym) in {AssetClass.EQUITY, AssetClass.ETF}
+    ]
+    matched_rename_old_to_new: dict[str, str] = {}
+    matched_rename_new_to_old: dict[str, str] = {}
+    if vanished_long_syms and surplus_long_syms:
+        cand_edges: list[tuple[str, str]] = []
+        for s_old in vanished_long_syms:
+            q_old = qty_by_sym[s_old]
+            b_old = native_basis_by_sym[s_old]
+            c_old = rolled_ccy_by_sym.get(s_old)
+            ac_old = rolled_ac_by_sym.get(s_old)
+            old_last_ts = max_trade_ts_by_sym.get(s_old)
+            for s_new in surplus_long_syms:
+                if observed_ccy_by_sym.get(s_new) != c_old or observed_ac_by_sym.get(s_new) != ac_old:
+                    continue
+                new_first_ts = min_trade_ts_by_sym.get(s_new)
+                if old_last_ts is not None and new_first_ts is not None and old_last_ts > new_first_ts:
+                    continue
+                q_new_rolled = qty_by_sym.get(s_new, 0.0)
+                q_new_obs = observed_qty_by_sym[s_new]
+                expected_q_new = q_old + q_new_rolled
+                if abs(expected_q_new - q_new_obs) > max(1e-6, 1e-6 * max(abs(expected_q_new), abs(q_new_obs))):
+                    continue
+                b_new_obs = observed_native_basis_by_sym[s_new]
+                expected_b_new: float | None = None
+                if q_new_rolled >= -1e-9 and not has_sell_by_sym.get(s_new, False):
+                    expected_b_new = b_old + native_basis_by_sym.get(s_new, 0.0)
+                elif q_new_rolled < -1e-9 and not has_buy_by_sym.get(s_new, False):
+                    expected_b_new = b_old * (q_new_obs / q_old)
+                if expected_b_new is not None and abs(expected_b_new - b_new_obs) <= max(
+                    0.05, 1e-3 * max(abs(expected_b_new), abs(b_new_obs))
+                ):
+                    cand_edges.append((s_old, s_new))
+        old_deg: dict[str, int] = defaultdict(int)
+        new_deg: dict[str, int] = defaultdict(int)
+        for s_old, s_new in cand_edges:
+            old_deg[s_old] += 1
+            new_deg[s_new] += 1
+        for s_old, s_new in cand_edges:
+            if old_deg[s_old] == 1 and new_deg[s_new] == 1:
+                matched_rename_old_to_new[s_old] = s_new
+                matched_rename_new_to_old[s_new] = s_old
+
+    present_norm_sections = {
+        _normalize_section_token(s) for s in ledger.enabled_sections if s and s.strip()
+    }
+    is_ibkr_broker = (ledger.broker_id or "").strip().lower() in _IBKR_FLEX_BROKER_IDS
+    non_cash_prior = [p for p in ledger.prior_positions if p.asset_class != AssetClass.CASH]
+    open_pos_base = float(ledger.nav_points[0].positions_base or 0.0) if ledger.nav_points else 0.0
+    inferred_prior_pos: NormalizedPosition | None = (
+        non_cash_prior[0]
+        if is_ibkr_broker
+        and "priorperiodpositions" not in present_norm_sections
+        and INFERRED_SINGLE_PRIOR_POSITION_WARNING in ledger.parser_warnings
+        and len(non_cash_prior) == 1
+        and abs(non_cash_prior[0].quantity) > 1e-9
+        and abs(float(non_cash_prior[0].cost_basis)) <= 1e-9
+        and non_cash_prior[0].market_value_base > 0.0
+        and open_pos_base > 1e-6
+        and abs(float(non_cash_prior[0].market_value_base) - open_pos_base)
+        <= max(1.0, 1e-4 * open_pos_base)
+        else None
+    )
+    inferred_prior_sym = (
+        _canonical_symbol(inferred_prior_pos.symbol) if inferred_prior_pos is not None else None
+    )
+    inferred_prior_has_fx_drift = bool(
+        inferred_prior_pos is not None
+        and inferred_prior_pos.currency != ledger.base_currency
+        and "conversionrates" not in present_norm_sections
+    )
+    inferred_qty_frac_cap = 0.15 if inferred_prior_has_fx_drift else 0.01
+    inferred_val_cap = (
+        max(5.0, 0.12 * float(inferred_prior_pos.market_value_base))
+        if inferred_prior_pos is not None and inferred_prior_has_fx_drift
+        else (
+            max(2.0, 0.005 * float(inferred_prior_pos.market_value_base))
+            if inferred_prior_pos is not None
+            else 0.0
+        )
+    )
+
     for sym in all_syms:
+        if sym in matched_rename_old_to_new:
+            continue
         exp_q = qty_by_sym.get(sym, 0.0)
         obs_q = observed_qty_by_sym.get(sym, 0.0)
         if abs(exp_q) <= 1e-9 and abs(obs_q) <= 1e-9:
+            continue
+
+        if sym in matched_rename_new_to_old:
+            old_sym = matched_rename_new_to_old[sym]
+            findings.append(
+                ReconciliationFinding(
+                    category="position_rollforward",
+                    outcome=CheckOutcome.EXPLAINED_CONVENTION,
+                    date_or_timestamp=ledger.period_end_utc,
+                    symbol=sym,
+                    expected_value=obs_q,
+                    observed_value=obs_q,
+                    residual_bps=0.0,
+                    residual_base_currency=0.0,
+                    math_identity="SymbolRenameConservation: RolledQty(Old) == EndingQty(New) and RolledCostBasis(Old) == EndingCostBasis(New)",
+                    technical_explanation=(
+                        f"1:1 ticker reorganization from {old_sym} to {sym} ({obs_q:g} units) "
+                        "conserves exact share count and tax cost basis."
+                    ),
+                    benign_causes_considered=[
+                        "Mandatory ticker rename, CUSIP/ISIN reorganization, or primary exchange migration omitted from CorporateActions export",
+                    ],
+                )
+            )
             continue
 
         tol = max(1e-6, 1e-6 * max(abs(exp_q), abs(obs_q)))
@@ -526,6 +759,40 @@ def reconcile_position_rollforward(
                     math_identity="PriorPositions + Trades + InKindFlows + CorporateActions == EndingPositions",
                     technical_explanation=f"Position roll-forward for {sym} reconciled exactly ({obs_q:g} units).",
                     benign_causes_considered=[],
+                )
+            )
+        elif (
+            inferred_prior_pos is not None
+            and inferred_prior_pos.fx_rate_to_base is not None
+            and sym == inferred_prior_sym
+            and abs(diff) <= inferred_qty_frac_cap * abs(inferred_prior_pos.quantity)
+            and (
+                abs(diff)
+                * (abs(inferred_prior_pos.market_value) / abs(inferred_prior_pos.quantity))
+                * float(inferred_prior_pos.fx_rate_to_base)
+            )
+            <= inferred_val_cap
+        ):
+            rel_bps = (abs(diff) / max(abs(exp_q), abs(obs_q), 1e-9)) * 10_000.0
+            findings.append(
+                ReconciliationFinding(
+                    category="position_rollforward",
+                    outcome=CheckOutcome.EXPLAINED_CONVENTION,
+                    date_or_timestamp=ledger.period_end_utc,
+                    symbol=sym,
+                    expected_value=exp_q,
+                    observed_value=obs_q,
+                    residual_bps=rel_bps,
+                    residual_base_currency=None,
+                    math_identity="OpeningPositionMTM ~= EquitySummaryInBase.Positions / (PriorPeriodPrice * OpeningFX)",
+                    technical_explanation=(
+                        f"Opening holding for {sym} was inferred from opening position valuation and MTM price "
+                        f"because PriorPeriodPositions omitted share quantity (delta={diff:+g} units within FX/cent rounding)."
+                    ),
+                    benign_causes_considered=[
+                        "IBKR Flex PriorPeriodPositions exported MTM price without position quantity attribute",
+                        "Opening foreign-exchange rate translation and 0.01 base-currency NAV rounding",
+                    ],
                 )
             )
         else:
@@ -559,6 +826,28 @@ def reconcile_position_rollforward(
         obs_q = observed_qty_by_sym.get(und_sym, 0.0)
         exp_q = qty_by_sym.get(und_sym, 0.0)
         if abs(obs_q) > 1e-6 and abs(obs_q - exp_q) <= 1e-5:
+            if und_sym in unvalued_basis_syms:
+                findings.append(
+                    ReconciliationFinding(
+                        category="option_eae_cost_basis_link",
+                        outcome=CheckOutcome.NOT_EVALUATED,
+                        date_or_timestamp=action_ts,
+                        symbol=und_sym,
+                        expected_value=None,
+                        observed_value=None,
+                        residual_bps=None,
+                        residual_base_currency=None,
+                        math_identity="UnderlyingCostBasis == StrikeNotional + OptionPremiumBasisAdjustment",
+                        technical_explanation=(
+                            f"Base-currency OptionEAE cost-basis link for {und_sym} was not evaluated "
+                            "because ConversionRates / fxRateToBase was omitted."
+                        ),
+                        benign_causes_considered=[
+                            "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
+                        ],
+                    )
+                )
+                continue
             exp_basis = stock_basis_by_sym.get(und_sym, 0.0)
             obs_basis = observed_basis_by_sym.get(und_sym, 0.0)
             basis_diff = obs_basis - exp_basis
@@ -590,12 +879,24 @@ def reconcile_position_rollforward(
     missing_sections: list[str] = []
     ledger_completeness_ok = True
     if unexplained_position_jump:
+        is_ibkr_with_unexplained_opening = (
+            (ledger.broker_id or "").strip().lower() in _IBKR_FLEX_BROKER_IDS
+            and not non_cash_prior
+            and bool(ledger.nav_points)
+            and float(ledger.nav_points[0].positions_base or 0.0) > 1e-6
+        )
         missing_sections = _find_missing_completeness_sections(
             ledger.enabled_sections,
             has_options=has_options,
+            omitted_prior_positions=is_ibkr_with_unexplained_opening,
+            omitted_conversion_rates=omitted_foreign_fx,
         )
         if missing_sections:
             ledger_completeness_ok = False
+    elif omitted_foreign_fx:
+        ledger_completeness_ok = False
+        if "ConversionRates" not in missing_sections:
+            missing_sections.append("ConversionRates")
 
     return PositionRollforwardResult(
         findings=findings,
@@ -810,6 +1111,33 @@ def reconcile_nav_identities(
                 )
                 continue
 
+        if (
+            (ledger.broker_id or "").strip().lower() in _IBKR_FLEX_BROKER_IDS
+            and pt.accruals_base is None
+            and abs(residual) <= max(5.0, 0.0050 * abs(pt.nav_base))
+        ):
+            findings.append(
+                ReconciliationFinding(
+                    category="nav_component_identity",
+                    outcome=CheckOutcome.EXPLAINED_CONVENTION,
+                    date_or_timestamp=pt.timestamp_utc,
+                    expected_value=expected,
+                    observed_value=float(pt.nav_base),
+                    residual_bps=res_bps,
+                    residual_base_currency=residual,
+                    math_identity="NAV == CashBase + PositionsBase + UnexportedAccrualsBase",
+                    technical_explanation=(
+                        "Snapshot omits explicit accrual columns; residual is within bounded "
+                        "dividend/interest accrual tolerance (<= 50 bps)."
+                    ),
+                    benign_causes_considered=[
+                        "Omitted dividendAccruals / interestAccruals columns in snapshot report",
+                        "Ex-date vs pay-date dividend or credit/debit interest accrual",
+                    ],
+                )
+            )
+            continue
+
         findings.append(
             ReconciliationFinding(
                 category="nav_component_identity",
@@ -835,6 +1163,9 @@ def reconcile_nav_identities(
     # 2. Ending positions sum vs final NAV positions_base (when reported)
     end_dt, end_pt = nav_sorted[-1]
     non_cash_ending = [p for p in ledger.ending_positions if p.asset_class != AssetClass.CASH]
+    ending_has_unvalued_fx = any(
+        p.currency != ledger.base_currency and p.fx_rate_to_base is None for p in non_cash_ending
+    )
     ending_mv_sum = math.fsum(p.market_value_base for p in non_cash_ending)
     if end_pt.positions_base is not None:
         if _ibkr_omitted_open_positions(ledger):
@@ -854,6 +1185,26 @@ def reconcile_nav_identities(
                     ),
                     benign_causes_considered=[
                         "Minimal IBKR Activity Flex Query omitting OpenPositions",
+                    ],
+                )
+            )
+        elif ending_has_unvalued_fx:
+            findings.append(
+                ReconciliationFinding(
+                    category="ending_positions_valuation_identity",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=end_pt.timestamp_utc,
+                    expected_value=None,
+                    observed_value=float(end_pt.positions_base),
+                    residual_bps=None,
+                    residual_base_currency=None,
+                    math_identity="NavPositionsBase == sum(EndingOpenPositions.market_value_base)",
+                    technical_explanation=(
+                        "ConversionRates / fxRateToBase was omitted for foreign ending positions; "
+                        "base-currency ending positions valuation identity was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
                     ],
                 )
             )
@@ -884,7 +1235,7 @@ def reconcile_nav_identities(
             )
 
     # 3. Full-window double-entry NAV conservation bridge (detects altered ending/intermediate NAV!)
-    if len(nav_sorted) >= 2 and ledger_completeness_ok:
+    if len(nav_sorted) >= 2 and ledger_completeness_ok and not _ledger_has_omitted_foreign_fx(ledger):
         start_dt, start_pt = nav_sorted[0]
         prior_non_cash = [p for p in ledger.prior_positions if p.asset_class != AssetClass.CASH]
         prior_mv_sum = math.fsum(p.market_value_base for p in prior_non_cash)

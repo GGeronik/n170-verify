@@ -174,7 +174,7 @@ class NormalizedTrade(ContractModelMixin):
     price: float
     timestamp_utc: str
     currency: str = "USD"
-    fx_rate_to_base: float = 1.0
+    fx_rate_to_base: float | None = 1.0
     multiplier: float | None = None
     commission: float = 0.0
     tax: float = 0.0
@@ -199,7 +199,7 @@ class NormalizedTrade(ContractModelMixin):
         object.__setattr__(
             self, "currency", _normalize_currency(self.currency, field_name="NormalizedTrade.currency")
         )
-        if self.fx_rate_to_base <= 0.0:
+        if self.fx_rate_to_base is not None and self.fx_rate_to_base <= 0.0:
             raise ValueError("NormalizedTrade.fx_rate_to_base must be > 0")
         if self.price < 0.0:
             raise ValueError("NormalizedTrade.price must be >= 0")
@@ -221,9 +221,15 @@ class NormalizedTrade(ContractModelMixin):
             object.__setattr__(self, "position_id", clean_pos_id or None)
 
     @property
-    def notional_base(self) -> float:
+    def notional_native(self) -> float:
         mult = self.multiplier if self.multiplier is not None else 1.0
-        return abs(self.quantity) * self.price * mult * self.fx_rate_to_base
+        return abs(self.quantity) * self.price * mult
+
+    @property
+    def notional_base(self) -> float:
+        if self.fx_rate_to_base is None:
+            return 0.0
+        return self.notional_native * self.fx_rate_to_base
 
 
 @dataclass(slots=True)
@@ -237,7 +243,7 @@ class NormalizedPosition(ContractModelMixin):
     cost_basis: float
     market_value: float
     currency: str = "USD"
-    fx_rate_to_base: float = 1.0
+    fx_rate_to_base: float | None = 1.0
     multiplier: float | None = None
     isin: str | None = None
     underlying_symbol: str | None = None
@@ -255,7 +261,7 @@ class NormalizedPosition(ContractModelMixin):
         object.__setattr__(
             self, "currency", _normalize_currency(self.currency, field_name="NormalizedPosition.currency")
         )
-        if self.fx_rate_to_base <= 0.0:
+        if self.fx_rate_to_base is not None and self.fx_rate_to_base <= 0.0:
             raise ValueError("NormalizedPosition.fx_rate_to_base must be > 0")
         if self.multiplier is None:
             default_mult = 100.0 if self.asset_class == AssetClass.OPTION else 1.0
@@ -265,6 +271,8 @@ class NormalizedPosition(ContractModelMixin):
 
     @property
     def market_value_base(self) -> float:
+        if self.fx_rate_to_base is None:
+            return 0.0
         return self.market_value * self.fx_rate_to_base
 
 
@@ -276,7 +284,7 @@ class NormalizedFlow(ContractModelMixin):
     kind: FlowKind
     amount: float
     currency: str = "USD"
-    fx_rate_to_base: float = 1.0
+    fx_rate_to_base: float | None = 1.0
     amount_base: float | None = None
     symbol: str | None = None
     quantity: float | None = None
@@ -289,9 +297,9 @@ class NormalizedFlow(ContractModelMixin):
         object.__setattr__(
             self, "currency", _normalize_currency(self.currency, field_name="NormalizedFlow.currency")
         )
-        if self.fx_rate_to_base <= 0.0:
+        if self.fx_rate_to_base is not None and self.fx_rate_to_base <= 0.0:
             raise ValueError("NormalizedFlow.fx_rate_to_base must be > 0")
-        if self.amount_base is None:
+        if self.amount_base is None and self.fx_rate_to_base is not None:
             computed = self.amount * self.fx_rate_to_base
             object.__setattr__(self, "amount_base", 0.0 if computed == 0.0 else computed)
         if self.kind in {FlowKind.TRANSFER_IN_KIND, FlowKind.TRANSFER_OUT_KIND}:

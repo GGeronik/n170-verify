@@ -75,6 +75,8 @@ def reconcile_fx_conversion_marks(
             candidate_pairs[parsed] = float(rate)
 
     for pos in ledger.ending_positions:
+        if pos.fx_rate_to_base is None:
+            continue
         _, norm_pos_ccy, pos_scale = normalize_uk_currency_and_scale(pos.currency)
         if norm_pos_ccy != ledger.base_currency:
             # Normalize GBX fx_rate_to_base (0.01x of GBP) onto canonical GBP->base scale.
@@ -436,6 +438,25 @@ def reconcile_dividend_flows(
         assert fl.symbol is not None
         sym_upper = fl.symbol.strip().upper()
         fl_date = fl.timestamp_utc[:10]
+        if fl.amount_base is None:
+            findings.append(
+                ReconciliationFinding(
+                    category="dividend_accrual_check",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=fl.timestamp_utc,
+                    symbol=sym_upper,
+                    observed_value=None,
+                    math_identity="DividendBase == HeldSharesOnExDate * unadjustedValue * DeclarationFX",
+                    technical_explanation=(
+                        "Dividend row omitted base-currency FX conversion rate in statement export; "
+                        "base-currency accrual check was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
+                    ],
+                )
+            )
+            continue
         fl_dt = date.fromisoformat(fl_date)
 
         ex_hint = normalize_eodhd_exchange(None, isin=fl.isin, currency=fl.currency)
@@ -589,8 +610,26 @@ def reconcile_financing_accruals(
     for fl in ledger.flows:
         if fl.kind != FlowKind.MARGIN_INTEREST:
             continue
-        amt = float(fl.amount_base or 0.0)
         ts = parse_utc_timestamp(fl.timestamp_utc)
+        if fl.amount_base is None:
+            findings.append(
+                ReconciliationFinding(
+                    category="margin_financing_check",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=fl.timestamp_utc,
+                    observed_value=None,
+                    math_identity="MarginDebitInterest <= 0",
+                    technical_explanation=(
+                        "Margin interest row omitted base-currency FX conversion rate in statement export; "
+                        "base-currency financing check was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
+                    ],
+                )
+            )
+            continue
+        amt = float(fl.amount_base)
         # Positive margin interest inflow > $10 and > 10 bps while account carries debit cash is anomalous.
         if amt > max(10.0, 0.0010 * nav_scale) and min_cash <= 0.0:
             findings.append(

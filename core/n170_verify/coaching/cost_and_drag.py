@@ -164,17 +164,21 @@ def compute_time_weighted_average_nav(ledger: CanonicalPortfolioLedger) -> float
     return 0.0
 
 
-def _flow_amount_base(flow: NormalizedFlow) -> float:
+def _flow_amount_base_optional(flow: NormalizedFlow) -> float | None:
     if flow.amount_base is not None:
         return float(flow.amount_base)
-    return float(flow.amount) * float(flow.fx_rate_to_base)
+    if flow.fx_rate_to_base is not None:
+        return float(flow.amount) * float(flow.fx_rate_to_base)
+    return None
 
 
 def _aggregate_strict_cost_flows(flows: list[NormalizedFlow]) -> float:
     """Aggregate strictly-cost flow categories, supporting both signed (<0) and magnitude (>0) conventions."""
     if not flows:
         return 0.0
-    amounts = [_flow_amount_base(f) for f in flows]
+    amounts = [a for f in flows if (a := _flow_amount_base_optional(f)) is not None]
+    if not amounts:
+        return 0.0
     if any(a < 0.0 for a in amounts):
         return max(0.0, -sum(amounts))
     return sum(abs(a) for a in amounts)
@@ -190,14 +194,19 @@ def _aggregate_funding_and_margin_flows(
     if not funding_flows:
         return margin_cost
 
-    funding_amounts = [_flow_amount_base(f) for f in funding_flows]
+    valued_funding = [
+        (f, a) for f in funding_flows if (a := _flow_amount_base_optional(f)) is not None
+    ]
+    if not valued_funding:
+        return margin_cost
+    funding_amounts = [a for _, a in valued_funding]
     if any(a < 0.0 for a in funding_amounts) or ledger_uses_signed_costs:
         # Signed ledger convention: negative cash flow = funding paid (+drag), positive = funding received (-drag).
         funding_net_cost = -sum(funding_amounts)
     else:
         # Unsigned magnitude fallback unless description marks a credit/rebate.
         funding_net_cost = 0.0
-        for flow, amt in zip(funding_flows, funding_amounts):
+        for flow, amt in valued_funding:
             desc = flow.description.lower()
             if any(tok in desc for tok in ("credit", "received", "rebate", "income")):
                 funding_net_cost -= amt
@@ -207,6 +216,29 @@ def _aggregate_funding_and_margin_flows(
     return margin_cost + funding_net_cost
 
 
+def _extract_forex_benchmark_rates(
+    conversion_rates: Mapping[str, float] | None,
+) -> dict[str, float]:
+    """Filter undated ``conversion_rates`` to explicit ``.FOREX`` benchmark rates.
+
+    Connector-populated ``ledger.conversion_rates`` entries (e.g. ``"USD/EUR"``) hold
+    period-ending translation marks rather than historical per-day FX midpoints; comparing
+    multi-year trades or cash flows against an undated period-end closing rate would treat
+    macro exchange-rate drift as execution spread drag.
+    """
+    if not conversion_rates:
+        return {}
+    return {
+        k: float(v)
+        for k, v in conversion_rates.items()
+        if isinstance(k, str)
+        and k.strip().upper().endswith(".FOREX")
+        and isinstance(v, (int, float))
+        and not isinstance(v, bool)
+        and v > 0.0
+    }
+
+
 def _compute_trade_fx_spread_cost_base(
     trade: NormalizedTrade,
     *,
@@ -214,11 +246,14 @@ def _compute_trade_fx_spread_cost_base(
     conversion_rates: Mapping[str, float],
     forex_midpoints: Mapping[str, object] | None,
 ) -> float:
+    if trade.fx_rate_to_base is None:
+        return 0.0
     date_str = parse_utc_timestamp(trade.timestamp_utc).strftime("%Y-%m-%d")
     mult = trade.multiplier if trade.multiplier is not None else 1.0
     qty = abs(trade.quantity)
     if qty <= 0.0:
         return 0.0
+    benchmark_rates = _extract_forex_benchmark_rates(conversion_rates)
 
     if trade.asset_class in {AssetClass.FX, AssetClass.CASH}:
         parsed_pair = normalize_fx_pair(trade.symbol)
@@ -232,7 +267,7 @@ def _compute_trade_fx_spread_cost_base(
             fx_quote,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         if mid is None or mid <= 0.0:
@@ -249,7 +284,7 @@ def _compute_trade_fx_spread_cost_base(
             base_currency,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         return shortfall_quote * (quote_to_base if quote_to_base is not None else trade.fx_rate_to_base)
@@ -261,7 +296,7 @@ def _compute_trade_fx_spread_cost_base(
             base_currency,
             base_currency=base_currency,
             date_str=date_str,
-            conversion_rates=conversion_rates,
+            conversion_rates=benchmark_rates,
             forex_midpoints=forex_midpoints,
         )
         if mid_to_base is not None and mid_to_base > 0.0:
@@ -282,24 +317,24 @@ def _compute_flow_fx_spread_cost_base(
 ) -> float:
     if flow.kind == FlowKind.FX_TRANSLATION or flow.currency == base_currency or flow.amount == 0.0:
         return 0.0
+    flow_base = _flow_amount_base_optional(flow)
+    if flow_base is None:
+        return 0.0
 
     date_str = parse_utc_timestamp(flow.timestamp_utc).strftime("%Y-%m-%d")
+    benchmark_rates = _extract_forex_benchmark_rates(conversion_rates)
     mid_to_base = resolve_forex_midpoint(
         flow.currency,
         base_currency,
         base_currency=base_currency,
         date_str=date_str,
-        conversion_rates=conversion_rates,
+        conversion_rates=benchmark_rates,
         forex_midpoints=forex_midpoints,
     )
     if mid_to_base is None or mid_to_base <= 0.0:
         return 0.0
 
-    effective_rate = (
-        abs(_flow_amount_base(flow)) / abs(flow.amount)
-        if flow.amount_base is not None
-        else flow.fx_rate_to_base
-    )
+    effective_rate = abs(flow_base) / abs(flow.amount)
     if flow.amount > 0.0:
         # Foreign inflow converted below midpoint yields less base currency.
         return abs(flow.amount) * max(0.0, mid_to_base - effective_rate)
@@ -341,12 +376,16 @@ def compute_cost_and_drag_breakdown(
         FlowKind.WITHDRAWAL,
     }
     ledger_uses_signed_costs = any(
-        _flow_amount_base(f) < 0.0 for f in ledger.flows if f.kind in strict_cost_kinds
+        (a := _flow_amount_base_optional(f)) is not None and a < 0.0
+        for f in ledger.flows
+        if f.kind in strict_cost_kinds
     )
 
     # (a) Commissions, transaction taxes, and standalone fee flows.
     trade_comm_and_tax_base = sum(
-        (abs(t.commission) + abs(t.tax)) * t.fx_rate_to_base for t in ledger.trades
+        (abs(t.commission) + abs(t.tax)) * t.fx_rate_to_base
+        for t in ledger.trades
+        if t.fx_rate_to_base is not None
     )
     comm_flows = [f for f in ledger.flows if f.kind == FlowKind.COMMISSION_FEE]
     commission_and_fee_cost_base = trade_comm_and_tax_base + _aggregate_strict_cost_flows(comm_flows)
@@ -381,8 +420,12 @@ def compute_cost_and_drag_breakdown(
     )
     fx_translation_flows = [f for f in ledger.flows if f.kind == FlowKind.FX_TRANSLATION]
     if fx_translation_flows:
-        fx_trans_amounts = [_flow_amount_base(f) for f in fx_translation_flows]
-        if any(a < 0.0 for a in fx_trans_amounts) or ledger_uses_signed_costs:
+        fx_trans_amounts = [
+            a for f in fx_translation_flows if (a := _flow_amount_base_optional(f)) is not None
+        ]
+        if not fx_trans_amounts:
+            fx_translation_cost_base = 0.0
+        elif any(a < 0.0 for a in fx_trans_amounts) or ledger_uses_signed_costs:
             fx_translation_cost_base = max(0.0, -sum(fx_trans_amounts))
         else:
             fx_translation_cost_base = sum(abs(a) for a in fx_trans_amounts)

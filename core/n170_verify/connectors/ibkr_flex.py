@@ -19,6 +19,7 @@ Implements two assurance tiers for Interactive Brokers Flex statements:
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -69,6 +70,10 @@ DEFAULT_IBKR_FLEX_USER_AGENT = "N170-Verify/0.3 (ReadOnlyFlexClient)"
 DEFAULT_MAX_FLEX_BYTES = 100 * 1024 * 1024
 DEFAULT_MAX_FLEX_ELEMENTS = 1_000_000
 DEFAULT_MAX_SECTION_ROWS = 250_000
+INFERRED_SINGLE_PRIOR_POSITION_WARNING = (
+    "Inferred single opening prior position quantity from EquitySummaryInBase and "
+    "PriorPeriodPosition price (position attribute omitted in Flex query)."
+)
 
 _PAPER_IBKR_ACCOUNT_RE = re.compile(r"^D[UF][0-9]{4,}$", re.IGNORECASE)
 _SPLIT_RATIO_RE = re.compile(
@@ -117,6 +122,26 @@ def _current_ny_date(now_utc: datetime | None = None) -> date:
         return ts.astimezone(ZoneInfo("America/New_York")).date()
     except Exception:
         return (ts - timedelta(hours=5)).date()
+
+
+def _default_auto_end_ny_date(now_utc: datetime | None = None) -> date:
+    """Return latest settleable Activity Flex end date in ``America/New_York``.
+
+    IBKR Activity Flex statements are end-of-day batch reports and are never available for the
+    current New York calendar date before the US session closes; probing ``td=today`` during
+    pre-close hours triggers ``code=1003`` and increments IBKR's ``code=1025`` failed-attempt
+    throttle counter.
+    """
+    ts = (now_utc or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+
+        ny_dt = ts.astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        ny_dt = ts - timedelta(hours=5)
+    if ny_dt.hour < 18:
+        return ny_dt.date() - timedelta(days=1)
+    return ny_dt.date()
 
 
 def _is_settlement_not_ready_error(exc: IbkrFlexServiceError) -> bool:
@@ -422,6 +447,139 @@ def _classify_corporate_action(attrs: dict[str, str]) -> tuple[CorporateActionTy
     return CorporateActionType.MERGER, num, den
 
 
+_IBKR_BASE_RATIO_ATTR_PAIRS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("positionAmountInBase", ("positionAmount", "cashTransfer", "amount")),
+    ("amountInBase", ("amount", "netAmount")),
+    ("positionValueInBase", ("positionValue", "marketValue", "value")),
+    ("markToMarketInBase", ("markToMarket", "mtm")),
+    ("valueInBase", ("value", "positionValue", "marketValue", "amount")),
+    ("costBasisInBase", ("costBasisMoney", "costBasis", "cost")),
+    ("proceedsInBase", ("proceeds", "tradeMoney")),
+    ("netCashInBase", ("netCash",)),
+)
+
+
+def _extract_row_implied_fx(attrs: Mapping[str, str]) -> float | None:
+    """Extract explicit ``fxRateToBase``/``fxRate`` or a base-to-native attribute ratio."""
+    explicit = _parse_flex_float(_first_attr(attrs, ("fxRateToBase", "fxRate")))
+    if explicit is not None and explicit > 0.0 and math.isfinite(explicit):
+        return explicit
+    for b_attr, raw_attrs in _IBKR_BASE_RATIO_ATTR_PAIRS:
+        v_base = _parse_flex_float(_first_attr(attrs, (b_attr,)))
+        v_raw = _parse_flex_float(_first_attr(attrs, raw_attrs))
+        if (
+            v_base is not None
+            and v_raw is not None
+            and math.isfinite(v_base)
+            and math.isfinite(v_raw)
+            and abs(v_raw) > 1e-12
+            and abs(v_base) > 0.0
+            and (v_base > 0.0) == (v_raw > 0.0)
+        ):
+            ratio = abs(v_base / v_raw)
+            if ratio > 0.0 and math.isfinite(ratio):
+                return ratio
+    return None
+
+
+class _DatedFxIndex:
+    """Sorted-date FX rate index per ``(from_ccy, to_ccy)`` with ``bisect`` nearest-date lookup."""
+
+    def __init__(self, initial: Mapping[tuple[str, str, str], float] | None = None) -> None:
+        self._by_pair: dict[tuple[str, str], dict[date, tuple[str, float]]] = {}
+        self._sorted_dates: dict[tuple[str, str], list[date]] = {}
+        self._raw: dict[tuple[str, str, str], float] = {}
+        if initial:
+            for (d_str, from_c, to_c), rate in initial.items():
+                self.add(d_str, from_c, to_c, rate, overwrite=True)
+
+    def add(self, d_str: str, from_c: str, to_c: str, rate: float, *, overwrite: bool = True) -> None:
+        if (
+            not d_str
+            or not from_c
+            or not to_c
+            or from_c == to_c
+            or rate <= 0.0
+            or not math.isfinite(rate)
+        ):
+            return
+        try:
+            d_obj = date.fromisoformat(d_str[:10])
+        except ValueError:
+            return
+        ymd = d_obj.isoformat()
+        key = (ymd, from_c, to_c)
+        if not overwrite and key in self._raw:
+            return
+        self._raw[key] = float(rate)
+        pair = (from_c, to_c)
+        pair_map = self._by_pair.setdefault(pair, {})
+        is_new = d_obj not in pair_map
+        pair_map[d_obj] = (ymd, float(rate))
+        if is_new:
+            dates_list = self._sorted_dates.setdefault(pair, [])
+            bisect.insort(dates_list, d_obj)
+
+    def raw_items(self) -> dict[tuple[str, str, str], float]:
+        return dict(self._raw)
+
+    def lookup(self, query_ymd: str | None, from_c: str, to_c: str) -> float | None:
+        if from_c == to_c:
+            return 1.0
+        q_date: date | None = None
+        if query_ymd:
+            try:
+                q_date = date.fromisoformat(query_ymd[:10])
+            except ValueError:
+                q_date = None
+
+        if q_date is not None:
+            direct_map = self._by_pair.get((from_c, to_c))
+            if direct_map and q_date in direct_map:
+                return direct_map[q_date][1]
+            inv_map = self._by_pair.get((to_c, from_c))
+            if inv_map and q_date in inv_map:
+                return 1.0 / inv_map[q_date][1]
+
+            best_rank: tuple[int, int, int, str] | None = None
+            best_val: float | None = None
+            for pair, is_inv in (((from_c, to_c), 0), ((to_c, from_c), 1)):
+                dates_list = self._sorted_dates.get(pair)
+                pair_map = self._by_pair.get(pair)
+                if not dates_list or not pair_map:
+                    continue
+                pos = bisect.bisect_left(dates_list, q_date)
+                for idx in (pos - 1, pos):
+                    if 0 <= idx < len(dates_list):
+                        c_date = dates_list[idx]
+                        c_ymd, raw_r = pair_map[c_date]
+                        cand_r = (1.0 / raw_r) if is_inv else raw_r
+                        dist = abs((c_date - q_date).days)
+                        future_pen = 0 if c_date <= q_date else 1
+                        rank = (dist, future_pen, is_inv, c_ymd)
+                        if best_rank is None or rank < best_rank:
+                            best_rank = rank
+                            best_val = cand_r
+            return best_val
+
+        # No query date: prefer latest chronological dated rate (direct over inverse on tie).
+        best_latest: tuple[date, int] | None = None
+        best_val = None
+        for pair, is_inv in (((from_c, to_c), 0), ((to_c, from_c), 1)):
+            dates_list = self._sorted_dates.get(pair)
+            pair_map = self._by_pair.get(pair)
+            if not dates_list or not pair_map:
+                continue
+            c_date = dates_list[-1]
+            _, raw_r = pair_map[c_date]
+            cand_r = (1.0 / raw_r) if is_inv else raw_r
+            key = (c_date, -is_inv)
+            if best_latest is None or key > best_latest:
+                best_latest = key
+                best_val = cand_r
+        return best_val
+
+
 def parse_ibkr_flex_xml(
     source: bytes | str | Path,
     *,
@@ -434,6 +592,8 @@ def parse_ibkr_flex_xml(
     max_bytes: int = DEFAULT_MAX_FLEX_BYTES,
     max_elements: int = DEFAULT_MAX_FLEX_ELEMENTS,
     max_section_rows: int = DEFAULT_MAX_SECTION_ROWS,
+    fallback_conversion_rates: Mapping[str, float] | None = None,
+    fallback_dated_conversion_rates: Mapping[tuple[str, str, str], float] | None = None,
 ) -> CanonicalPortfolioLedger:
     """Stream-parse an IBKR Flex XML payload (UTF-8 or UTF-16) into a ``CanonicalPortfolioLedger``."""
     if isinstance(source, bytes):
@@ -482,12 +642,15 @@ def parse_ibkr_flex_xml(
     corp_action_rows: list[dict[str, str]] = []
     option_eae_rows: list[dict[str, str]] = []
     conv_rate_rows: list[dict[str, str]] = []
+    aux_fx_rows: list[dict[str, str]] = []
 
     element_count = 0
     in_statement = False
     current_stmt_idx = -1
     statement_depth: int | None = None
     stack: list[ET.Element] = []
+    has_prior_pos_section_tag = False
+    has_prior_pos_qty_attr = False
 
     def _mark_section(sec_name: str) -> None:
         if sec_name not in seen_sections:
@@ -530,6 +693,27 @@ def parse_ibkr_flex_xml(
                 if not in_statement:
                     continue
 
+                if (
+                    len(aux_fx_rows) < max_section_rows
+                    and _first_attr(
+                        elem.attrib,
+                        (
+                            "fxRateToBase",
+                            "fxRate",
+                            "positionAmountInBase",
+                            "amountInBase",
+                            "positionValueInBase",
+                            "markToMarketInBase",
+                            "valueInBase",
+                            "costBasisInBase",
+                            "proceedsInBase",
+                            "netCashInBase",
+                        ),
+                    )
+                    is not None
+                ):
+                    aux_fx_rows.append(dict(elem.attrib))
+
                 if ltag in {"accountinformation", "acctinfo"}:
                     _mark_section("AccountInformation")
                     acct_ccy = _first_attr(elem.attrib, ("currency", "baseCurrency"))
@@ -553,9 +737,11 @@ def parse_ibkr_flex_xml(
                     if _first_attr(elem.attrib, ("twr", "startingValue", "endingValue")):
                         _append_bounded(change_nav_rows, elem.attrib, "ChangeInNAV")
                 elif ltag == "priorperiodpositions":
-                    _mark_section("PriorPeriodPositions")
+                    has_prior_pos_section_tag = True
                 elif ltag == "priorperiodposition":
-                    _mark_section("PriorPeriodPositions")
+                    has_prior_pos_section_tag = True
+                    if _first_attr(elem.attrib, ("position", "quantity")) is not None:
+                        has_prior_pos_qty_attr = True
                     lod = (_first_attr(elem.attrib, ("levelOfDetail",)) or "").upper()
                     if lod not in {"BASE_SUMMARY", "CURRENCY", "ASSET_SUMMARY", "SYMBOL_SUMMARY"}:
                         _append_bounded_indexed(
@@ -675,6 +861,8 @@ def parse_ibkr_flex_xml(
     earliest_cash_report_rows = [
         attrs for s_idx, attrs in cash_report_by_stmt if s_idx == earliest_stmt_idx
     ]
+    if has_prior_pos_section_tag and (not prior_pos_by_stmt or has_prior_pos_qty_attr):
+        _mark_section("PriorPeriodPositions")
 
     raw_acct_ids: list[str] = []
     for st in statement_attrs_list:
@@ -720,158 +908,22 @@ def parse_ibkr_flex_xml(
             return "GBX"
         return cleaned.upper()
 
-    # 1. ConversionRates (date-indexed + pair-level summary using latest chronological date)
-    conversion_rates: dict[str, float] = {}
-    latest_conv_meta_by_canon: dict[tuple[str, str], tuple[str, int]] = {}
-    dated_conversion_rates: dict[tuple[str, str, str], float] = {}
-
-    def _record_pair_rate(
-        from_c: str,
-        to_c: str,
-        rate_val: float,
-        *,
-        date_str: str = "",
-        source_prio: int = 0,
-    ) -> None:
-        if not from_c or not to_c or from_c == to_c or rate_val <= 0.0:
-            return
-        canon = (from_c, to_c) if from_c < to_c else (to_c, from_c)
-        prev_meta = latest_conv_meta_by_canon.get(canon)
-        cand_meta = (date_str, source_prio)
-        if prev_meta is None or cand_meta >= prev_meta:
-            latest_conv_meta_by_canon[canon] = cand_meta
-            conversion_rates.pop(f"{to_c}/{from_c}", None)
-            conversion_rates[f"{from_c}/{to_c}"] = rate_val
-
-    for row in conv_rate_rows:
-        from_ccy = _normalize_flex_currency(_first_attr(row, ("fromCurrency",)), "")
-        to_ccy = _normalize_flex_currency(_first_attr(row, ("toCurrency",)), "")
-        rate = _parse_flex_float(_first_attr(row, ("rate",)))
-        raw_cr_date = _first_attr(row, ("reportDate", "date", "asOfDate"))
-        cr_ts = _parse_flex_timestamp_utc(raw_cr_date)
-        if from_ccy and to_ccy and rate is not None and rate > 0.0:
-            d_str = cr_ts[:10] if cr_ts is not None else ""
-            if d_str:
-                dated_conversion_rates[(d_str, from_ccy, to_ccy)] = rate
-            _record_pair_rate(from_ccy, to_ccy, rate, date_str=d_str, source_prio=1)
-
-    # Pre-index explicit row-level fxRateToBase across all sections so minimal Flex queries
-    # omitting <ConversionRates> still resolve exact statement FX rates without order sensitivity.
-    for section_rows in (
-        [attrs for _, attrs in prior_pos_by_stmt],
-        [attrs for _, attrs in open_pos_by_stmt],
-        [attrs for _, attrs in cash_report_by_stmt],
-        trade_rows,
-        cash_tx_rows,
-        transfer_rows,
-        corp_action_rows,
-        option_eae_rows,
-    ):
-        for s_row in section_rows:
-            s_fx = _parse_flex_float(_first_attr(s_row, ("fxRateToBase", "fxRate")))
-            if s_fx is None or s_fx <= 0.0:
-                continue
-            s_ccy = _normalize_flex_currency(
-                _first_attr(s_row, ("currency", "currencyPrimary")), base_ccy
-            )
-            if not s_ccy or s_ccy == base_ccy:
-                continue
-            s_ts = _parse_flex_timestamp_utc(
-                _first_attr(
-                    s_row,
-                    (
-                        "dateTime",
-                        "reportDate",
-                        "tradeDate",
-                        "settleDate",
-                        "fromDate",
-                        "asOfDate",
-                        "date",
-                    ),
-                )
-            )
-            s_date = s_ts[:10] if s_ts is not None else ""
-            if s_date:
-                dated_conversion_rates.setdefault((s_date, s_ccy, base_ccy), s_fx)
-            _record_pair_rate(s_ccy, base_ccy, s_fx, date_str=s_date, source_prio=0)
-
-    def _resolve_fx(attrs: dict[str, str], ccy: str, *, row_ts: str | None = None) -> float:
-        ccy_upper = _normalize_flex_currency(ccy, base_ccy)
-        date_key = row_ts[:10] if row_ts else None
-        explicit = _parse_flex_float(_first_attr(attrs, ("fxRateToBase", "fxRate")))
-        if explicit is not None and explicit > 0.0:
-            if ccy_upper != base_ccy:
-                if date_key is not None:
-                    dated_conversion_rates.setdefault((date_key, ccy_upper, base_ccy), explicit)
-                _record_pair_rate(
-                    ccy_upper,
-                    base_ccy,
-                    explicit,
-                    date_str=date_key or "",
-                    source_prio=0,
-                )
-            return explicit
-        if ccy_upper == base_ccy:
-            return 1.0
-        if date_key is not None:
-            d_direct = dated_conversion_rates.get((date_key, ccy_upper, base_ccy))
-            if d_direct is not None and d_direct > 0.0:
-                return d_direct
-            d_inv = dated_conversion_rates.get((date_key, base_ccy, ccy_upper))
-            if d_inv is not None and d_inv > 0.0:
-                return 1.0 / d_inv
-        direct = conversion_rates.get(f"{ccy_upper}/{base_ccy}")
-        if direct is not None and direct > 0.0:
-            return direct
-        inverse = conversion_rates.get(f"{base_ccy}/{ccy_upper}")
-        if inverse is not None and inverse > 0.0:
-            return 1.0 / inverse
-        if ccy_upper == "GBX":
-            if base_ccy == "GBP":
-                return 0.01
-            if date_key is not None:
-                d_gbp = dated_conversion_rates.get((date_key, "GBP", base_ccy))
-                if d_gbp is not None and d_gbp > 0.0:
-                    return 0.01 * d_gbp
-                d_gbp_inv = dated_conversion_rates.get((date_key, base_ccy, "GBP"))
-                if d_gbp_inv is not None and d_gbp_inv > 0.0:
-                    return 0.01 / d_gbp_inv
-            gbp_direct = conversion_rates.get(f"GBP/{base_ccy}")
-            if gbp_direct is not None and gbp_direct > 0.0:
-                return 0.01 * gbp_direct
-            gbp_inv = conversion_rates.get(f"{base_ccy}/GBP")
-            if gbp_inv is not None and gbp_inv > 0.0:
-                return 0.01 / gbp_inv
-        pos_amt_base = _parse_flex_float(_first_attr(attrs, ("positionAmountInBase",)))
-        pos_amt_raw = _parse_flex_float(_first_attr(attrs, ("positionAmount", "cashTransfer", "amount")))
-        if (
-            pos_amt_base is not None
-            and pos_amt_raw is not None
-            and abs(pos_amt_raw) > 1e-12
-            and abs(pos_amt_base) > 0.0
-        ):
-            implied = abs(pos_amt_base / pos_amt_raw)
-            if ccy_upper != base_ccy:
-                if date_key is not None:
-                    dated_conversion_rates.setdefault((date_key, ccy_upper, base_ccy), implied)
-                _record_pair_rate(
-                    ccy_upper,
-                    base_ccy,
-                    implied,
-                    date_str=date_key or "",
-                    source_prio=0,
-                )
-            return implied
-        raise IbkrFlexParseError(
-            f"Missing FX conversion rate for {ccy_upper}->{base_ccy} in IBKR Flex XML; "
-            "enable ConversionRates or fxRateToBase in the Activity Flex Query."
-        )
-
-    # 2. EquitySummaryInBase -> NormalizedNavPoint
+    # 1. EquitySummaryInBase -> NormalizedNavPoint (parsed ahead of FX discovery so closing
+    # base-currency stock/position totals can anchor OpenPositions FX when ConversionRates is omitted).
     nav_by_ts: dict[str, NormalizedNavPoint] = {}
     warnings: list[str] = []
     has_base_summary_nav = any(
         (_first_attr(r, ("currency",)) or "").upper() == "BASE_SUMMARY" for r in nav_rows
+    )
+    _POS_COMPONENT_KEYS = (
+        "stock",
+        "options",
+        "commodities",
+        "bonds",
+        "notes",
+        "funds",
+        "warrants",
+        "cfd",
     )
     for row in nav_rows:
         row_nav_ccy = (_first_attr(row, ("currency",)) or "").upper()
@@ -895,14 +947,54 @@ def parse_ibkr_flex_xml(
                 "This Flex file reports two different account values for the same date; "
                 "upload a single statement that covers the period once."
             )
-        cash_b = _parse_flex_float(_first_attr(row, ("cash", "cashLong")))
-        stock_b = _parse_flex_float(_first_attr(row, ("stock",)), default=0.0) or 0.0
-        opt_b = _parse_flex_float(_first_attr(row, ("options",)), default=0.0) or 0.0
-        comm_b = _parse_flex_float(_first_attr(row, ("commodities", "bonds")), default=0.0) or 0.0
-        pos_b = (stock_b + opt_b + comm_b) if any(k.lower() in {x.lower() for x in row} for k in ("stock", "options", "commodities", "bonds")) else None
-        div_acc = _parse_flex_float(_first_attr(row, ("dividendAccruals",)), default=0.0) or 0.0
-        int_acc = _parse_flex_float(_first_attr(row, ("interestAccruals",)), default=0.0) or 0.0
-        acc_b = (div_acc + int_acc) if any(k.lower() in {x.lower() for x in row} for k in ("dividendAccruals", "interestAccruals")) else None
+        row_lower_keys = {x.lower() for x in row}
+        if "cash" in row_lower_keys:
+            cash_raw = _parse_flex_float(_first_attr(row, ("cash",)))
+        elif "cashlong" in row_lower_keys or "cashshort" in row_lower_keys:
+            cash_raw = (
+                (_parse_flex_float(_first_attr(row, ("cashLong",)), default=0.0) or 0.0)
+                + (_parse_flex_float(_first_attr(row, ("cashShort",)), default=0.0) or 0.0)
+            )
+        else:
+            cash_raw = None
+        slb_cash = _parse_flex_float(_first_attr(row, ("slbCashCollateral",)), default=0.0) or 0.0
+        cash_b = (cash_raw + slb_cash) if cash_raw is not None else None
+        if any(k in row_lower_keys for k in _POS_COMPONENT_KEYS):
+            pos_b = math.fsum(
+                _parse_flex_float(_first_attr(row, (k,)), default=0.0) or 0.0
+                for k in _POS_COMPONENT_KEYS
+            )
+        else:
+            pos_b = None
+        if "dividendaccruals" in row_lower_keys:
+            div_acc = _parse_flex_float(_first_attr(row, ("dividendAccruals",)), default=0.0) or 0.0
+        else:
+            div_acc = (
+                (_parse_flex_float(_first_attr(row, ("dividendAccrualsLong",)), default=0.0) or 0.0)
+                + (_parse_flex_float(_first_attr(row, ("dividendAccrualsShort",)), default=0.0) or 0.0)
+            )
+        if "interestaccruals" in row_lower_keys:
+            int_acc = _parse_flex_float(_first_attr(row, ("interestAccruals",)), default=0.0) or 0.0
+        else:
+            int_acc = (
+                (_parse_flex_float(_first_attr(row, ("interestAccrualsLong",)), default=0.0) or 0.0)
+                + (_parse_flex_float(_first_attr(row, ("interestAccrualsShort",)), default=0.0) or 0.0)
+            )
+        acc_b = (
+            (div_acc + int_acc)
+            if any(
+                k in row_lower_keys
+                for k in (
+                    "dividendaccruals",
+                    "dividendaccrualslong",
+                    "dividendaccrualsshort",
+                    "interestaccruals",
+                    "interestaccrualslong",
+                    "interestaccrualsshort",
+                )
+            )
+            else None
+        )
         nav_by_ts[ts] = NormalizedNavPoint(
             timestamp_utc=ts,
             nav_base=total,
@@ -912,7 +1004,157 @@ def parse_ibkr_flex_xml(
         )
     nav_points = _trim_valuation_series([nav_by_ts[k] for k in sorted(nav_by_ts)])
 
-    # 3. PriorPeriodPositions & OpenPositions
+    # 2. ConversionRates + statement-attested FX discovery (explicit fxRateToBase, *InBase ratios,
+    # and spot FX trade executions).
+    conversion_rates: dict[str, float] = {}
+    latest_conv_meta_by_canon: dict[tuple[str, str], tuple[str, int]] = {}
+    dated_fx_index = _DatedFxIndex(fallback_dated_conversion_rates)
+    end_ref_ymd = nav_points[-1].timestamp_utc[:10] if nav_points else ""
+    start_ref_ymd = nav_points[0].timestamp_utc[:10] if nav_points else ""
+
+    def _record_pair_rate(
+        from_c: str,
+        to_c: str,
+        rate_val: float,
+        *,
+        date_str: str = "",
+        source_prio: int = 0,
+    ) -> None:
+        if not from_c or not to_c or from_c == to_c or rate_val <= 0.0:
+            return
+        canon = (from_c, to_c) if from_c < to_c else (to_c, from_c)
+        prev_meta = latest_conv_meta_by_canon.get(canon)
+        cand_meta = (date_str, source_prio)
+        if prev_meta is None or cand_meta >= prev_meta:
+            latest_conv_meta_by_canon[canon] = cand_meta
+            conversion_rates.pop(f"{to_c}/{from_c}", None)
+            conversion_rates[f"{from_c}/{to_c}"] = rate_val
+
+    def _lookup_dated_fx(query_ymd: str | None, from_c: str, to_c: str) -> float | None:
+        return dated_fx_index.lookup(query_ymd, from_c, to_c)
+
+    for row in conv_rate_rows:
+        from_ccy = _normalize_flex_currency(_first_attr(row, ("fromCurrency",)), "")
+        to_ccy = _normalize_flex_currency(_first_attr(row, ("toCurrency",)), "")
+        rate = _parse_flex_float(_first_attr(row, ("rate",)))
+        raw_cr_date = _first_attr(row, ("reportDate", "date", "asOfDate"))
+        cr_ts = _parse_flex_timestamp_utc(raw_cr_date)
+        if from_ccy and to_ccy and rate is not None and rate > 0.0:
+            d_str = cr_ts[:10] if cr_ts is not None else ""
+            if d_str:
+                dated_fx_index.add(d_str, from_ccy, to_ccy, rate, overwrite=True)
+            _record_pair_rate(from_ccy, to_ccy, rate, date_str=d_str, source_prio=3)
+
+    def _stmt_boundary_ymd(stmt_idx: int, attr_names: tuple[str, ...], fallback_ymd: str) -> str:
+        if 0 <= stmt_idx < len(statement_attrs_list):
+            b_ts = _parse_flex_timestamp_utc(_first_attr(statement_attrs_list[stmt_idx], attr_names))
+            if b_ts is not None:
+                return b_ts[:10]
+        return fallback_ymd
+
+    # Pre-index explicit row-level fxRateToBase and *InBase ratios across all statement elements
+    # (including rollup rows and auxiliary sections) so queries omitting <ConversionRates> resolve FX.
+    prescan_row_sources: list[tuple[dict[str, str], str]] = []
+    for s_row in aux_fx_rows:
+        prescan_row_sources.append((s_row, ""))
+    for s_idx, s_row in prior_pos_by_stmt:
+        prescan_row_sources.append(
+            (s_row, _stmt_boundary_ymd(s_idx, ("fromDate", "startDate"), start_ref_ymd))
+        )
+    for s_idx, s_row in open_pos_by_stmt:
+        prescan_row_sources.append(
+            (s_row, _stmt_boundary_ymd(s_idx, ("toDate", "endDate"), end_ref_ymd))
+        )
+    for s_idx, s_row in cash_report_by_stmt:
+        prescan_row_sources.append(
+            (s_row, _stmt_boundary_ymd(s_idx, ("toDate", "endDate"), end_ref_ymd))
+        )
+    for section_rows in (
+        trade_rows,
+        cash_tx_rows,
+        transfer_rows,
+        corp_action_rows,
+        option_eae_rows,
+    ):
+        for s_row in section_rows:
+            prescan_row_sources.append((s_row, ""))
+
+    for s_row, boundary_ymd in prescan_row_sources:
+        s_ccy = _normalize_flex_currency(
+            _first_attr(s_row, ("currency", "currencyPrimary")), base_ccy
+        )
+        if not s_ccy or s_ccy == base_ccy:
+            continue
+        s_fx = _extract_row_implied_fx(s_row)
+        if s_fx is None or s_fx <= 0.0:
+            continue
+        s_ts = _parse_flex_timestamp_utc(
+            _first_attr(
+                s_row,
+                (
+                    "dateTime",
+                    "reportDate",
+                    "tradeDate",
+                    "settleDate",
+                    "fromDate",
+                    "toDate",
+                    "asOfDate",
+                    "date",
+                ),
+            )
+        )
+        s_date = s_ts[:10] if s_ts is not None else boundary_ymd
+        if s_date:
+            dated_fx_index.add(s_date, s_ccy, base_ccy, s_fx, overwrite=False)
+        _record_pair_rate(s_ccy, base_ccy, s_fx, date_str=s_date, source_prio=2)
+
+    # Extract dated FX execution rates from spot FX <Trade assetCategory="CASH"> pairs (e.g. EUR.USD,
+    # EUR.GBP, EUR.CHF, and 2-hop cross pairs like USD.CHF when neither leg is baseCurrency).
+    spot_fx_cross_obs: list[tuple[str, str, str, float]] = []
+    for tr_row in trade_rows:
+        tr_cat = (_first_attr(tr_row, ("assetCategory", "assetClass")) or "").strip().upper()
+        if tr_cat != "CASH":
+            continue
+        pair = _parse_fx_pair_symbol(_first_text_attr(tr_row, ("symbol", "underlyingSymbol")))
+        tr_px = _parse_flex_float(_first_attr(tr_row, ("tradePrice", "price")))
+        if pair is None or tr_px is None or tr_px <= 0.0:
+            continue
+        fx_b, fx_q = pair
+        tr_ts = _parse_flex_timestamp_utc(
+            _first_attr(tr_row, ("dateTime", "tradeDate", "reportDate", "date"))
+        )
+        t_ymd = tr_ts[:10] if tr_ts is not None else ""
+        if fx_b == base_ccy and fx_q != base_ccy:
+            implied_q_to_base = 1.0 / tr_px
+            if t_ymd:
+                dated_fx_index.add(t_ymd, fx_q, base_ccy, implied_q_to_base, overwrite=False)
+            if fx_q == "USD" or not end_ref_ymd or (
+                t_ymd and abs((date.fromisoformat(end_ref_ymd) - date.fromisoformat(t_ymd)).days) <= 7
+            ):
+                _record_pair_rate(fx_q, base_ccy, implied_q_to_base, date_str=t_ymd, source_prio=1)
+        elif fx_q == base_ccy and fx_b != base_ccy:
+            implied_b_to_base = tr_px
+            if t_ymd:
+                dated_fx_index.add(t_ymd, fx_b, base_ccy, implied_b_to_base, overwrite=False)
+            if fx_b == "USD" or not end_ref_ymd or (
+                t_ymd and abs((date.fromisoformat(end_ref_ymd) - date.fromisoformat(t_ymd)).days) <= 7
+            ):
+                _record_pair_rate(fx_b, base_ccy, implied_b_to_base, date_str=t_ymd, source_prio=1)
+        elif fx_b != fx_q:
+            spot_fx_cross_obs.append((t_ymd, fx_b, fx_q, tr_px))
+
+    for t_ymd, fx_b, fx_q, tr_px in spot_fx_cross_obs:
+        r_b = _lookup_dated_fx(t_ymd or None, fx_b, base_ccy)
+        r_q = _lookup_dated_fx(t_ymd or None, fx_q, base_ccy)
+        if r_b is not None and r_b > 0.0 and r_q is None:
+            implied_q = r_b / tr_px
+            if t_ymd:
+                dated_fx_index.add(t_ymd, fx_q, base_ccy, implied_q, overwrite=False)
+        elif r_q is not None and r_q > 0.0 and r_b is None:
+            implied_b = tr_px * r_q
+            if t_ymd:
+                dated_fx_index.add(t_ymd, fx_b, base_ccy, implied_b, overwrite=False)
+
     _SUMMARY_ROLLUP_LODS = {
         "BASE_SUMMARY",
         "CURRENCY",
@@ -920,7 +1162,9 @@ def parse_ibkr_flex_xml(
         "SYMBOL_SUMMARY",
     }
 
-    def _parse_positions(rows: list[dict[str, str]], boundary: str) -> list[NormalizedPosition]:
+    def _scope_position_rows(
+        rows: list[dict[str, str]], boundary: str
+    ) -> list[tuple[dict[str, str], str | None]]:
         non_rollup: list[tuple[dict[str, str], str | None]] = []
         dated_ymds: list[str] = []
         for r in rows:
@@ -934,6 +1178,10 @@ def parse_ibkr_flex_xml(
         target_ymd: str | None = None
         if dated_ymds:
             target_ymd = min(dated_ymds) if boundary == "prior" else max(dated_ymds)
+        if boundary == "prior" and target_ymd is not None and nav_points:
+            first_nav_ymd = nav_points[0].timestamp_utc[:10]
+            if (date.fromisoformat(target_ymd) - date.fromisoformat(first_nav_ymd)).days > 5:
+                return []
         stale_dated_ending = False
         if boundary == "ending" and target_ymd is not None and nav_points:
             last_pt = nav_points[-1]
@@ -943,7 +1191,7 @@ def parse_ibkr_flex_xml(
                 or (date.fromisoformat(last_nav_ymd) - date.fromisoformat(target_ymd)).days > 4
             ):
                 stale_dated_ending = True
-        scoped_rows = [
+        scoped = [
             (r, pos_ts)
             for r, pos_ts in non_rollup
             if (
@@ -954,12 +1202,109 @@ def parse_ibkr_flex_xml(
         ]
         has_summary = any(
             (_first_attr(r, ("levelOfDetail",)) or "").upper() == "SUMMARY"
-            for r, _ in scoped_rows
+            for r, _ in scoped
         )
+        return [
+            (r, pos_ts)
+            for r, pos_ts in scoped
+            if not (
+                has_summary
+                and (_first_attr(r, ("levelOfDetail",)) or "").upper() not in {"", "SUMMARY"}
+            )
+        ]
+
+    if base_ccy != "USD" and f"USD/{base_ccy}" not in conversion_rates and f"{base_ccy}/USD" not in conversion_rates:
+        usd_latest = _lookup_dated_fx(end_ref_ymd or None, "USD", base_ccy)
+        if usd_latest is not None and usd_latest > 0.0:
+            _record_pair_rate("USD", base_ccy, usd_latest, date_str=end_ref_ymd, source_prio=0)
+
+    def _lookup_fallback_pair(from_c: str, to_c: str) -> float | None:
+        if not fallback_conversion_rates:
+            return None
+        d_val = fallback_conversion_rates.get(f"{from_c}/{to_c}")
+        if d_val is not None and d_val > 0.0:
+            return float(d_val)
+        i_val = fallback_conversion_rates.get(f"{to_c}/{from_c}")
+        if i_val is not None and i_val > 0.0:
+            return 1.0 / float(i_val)
+        return None
+
+    omitted_fx_currencies: list[str] = []
+
+    def _resolve_fx_optional(
+        attrs: dict[str, str],
+        ccy: str,
+        *,
+        row_ts: str | None = None,
+        track_omitted: bool = True,
+    ) -> float | None:
+        ccy_upper = _normalize_flex_currency(ccy, base_ccy)
+        date_key = row_ts[:10] if row_ts else None
+        explicit = _parse_flex_float(_first_attr(attrs, ("fxRateToBase", "fxRate")))
+        if explicit is not None and explicit > 0.0:
+            if ccy_upper != base_ccy:
+                if date_key is not None:
+                    dated_fx_index.add(date_key, ccy_upper, base_ccy, explicit, overwrite=False)
+                _record_pair_rate(
+                    ccy_upper,
+                    base_ccy,
+                    explicit,
+                    date_str=date_key or "",
+                    source_prio=2,
+                )
+            return explicit
+        if ccy_upper == base_ccy:
+            return 1.0
+        nearest = _lookup_dated_fx(date_key, ccy_upper, base_ccy)
+        if nearest is not None and nearest > 0.0:
+            return nearest
+        direct = conversion_rates.get(f"{ccy_upper}/{base_ccy}")
+        if direct is not None and direct > 0.0:
+            return direct
+        inverse = conversion_rates.get(f"{base_ccy}/{ccy_upper}")
+        if inverse is not None and inverse > 0.0:
+            return 1.0 / inverse
+        fb_direct = _lookup_fallback_pair(ccy_upper, base_ccy)
+        if fb_direct is not None and fb_direct > 0.0:
+            return fb_direct
+        if ccy_upper == "GBX":
+            if base_ccy == "GBP":
+                return 0.01
+            gbp_dated = _lookup_dated_fx(date_key, "GBP", base_ccy)
+            if gbp_dated is not None and gbp_dated > 0.0:
+                return 0.01 * gbp_dated
+            gbp_direct = conversion_rates.get(f"GBP/{base_ccy}")
+            if gbp_direct is not None and gbp_direct > 0.0:
+                return 0.01 * gbp_direct
+            gbp_inv = conversion_rates.get(f"{base_ccy}/GBP")
+            if gbp_inv is not None and gbp_inv > 0.0:
+                return 0.01 / gbp_inv
+            fb_gbp = _lookup_fallback_pair("GBP", base_ccy)
+            if fb_gbp is not None and fb_gbp > 0.0:
+                return 0.01 * fb_gbp
+        implied = _extract_row_implied_fx(attrs)
+        if implied is not None and implied > 0.0:
+            if ccy_upper != base_ccy:
+                if date_key is not None:
+                    dated_fx_index.add(date_key, ccy_upper, base_ccy, implied, overwrite=False)
+                _record_pair_rate(
+                    ccy_upper,
+                    base_ccy,
+                    implied,
+                    date_str=date_key or "",
+                    source_prio=2,
+                )
+            return implied
+        if track_omitted and ccy_upper not in omitted_fx_currencies:
+            omitted_fx_currencies.append(ccy_upper)
+        return None
+
+    # 3. PriorPeriodPositions & OpenPositions
+    def _parse_positions(rows: list[dict[str, str]], boundary: str) -> list[NormalizedPosition]:
+        scoped_rows = _scope_position_rows(rows, boundary)
         out: list[NormalizedPosition] = []
         for r, pos_ts in scoped_rows:
-            lod = (_first_attr(r, ("levelOfDetail",)) or "").upper()
-            if has_summary and lod and lod != "SUMMARY":
+            if _first_attr(r, ("position", "quantity")) is None:
                 continue
             sym = _first_text_attr(r, ("symbol", "underlyingSymbol", "description"))
             if not sym:
@@ -975,7 +1320,8 @@ def parse_ibkr_flex_xml(
                 mark_px = _parse_flex_float(_first_attr(r, ("markPrice", "closePrice")), default=None)
                 mv = (qty * mark_px * eff_mult) if mark_px is not None else 0.0
             ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-            fx = _resolve_fx(r, ccy, row_ts=pos_ts)
+            eff_pos_ts = pos_ts or (nav_points[-1].timestamp_utc if boundary == "ending" and nav_points else None)
+            fx = _resolve_fx_optional(r, ccy, row_ts=eff_pos_ts)
             ac = _map_ibkr_asset_class(
                 _first_attr(r, ("assetCategory", "assetClass")),
                 sub_cat=_first_attr(r, ("subCategory",)),
@@ -1004,6 +1350,69 @@ def parse_ibkr_flex_xml(
         return out
 
     prior_positions = _parse_positions(prior_pos_rows, "prior")
+    if (
+        not prior_positions
+        and not has_prior_pos_qty_attr
+        and prior_pos_rows
+        and nav_points
+        and (nav_points[0].positions_base or 0.0) > 1e-6
+    ):
+        scoped_prior_price_only = _scope_position_rows(prior_pos_rows, "prior")
+        price_candidates: list[tuple[dict[str, str], str, float]] = []
+        seen_opening_syms: set[str] = set()
+        for r_pp, _ in scoped_prior_price_only:
+            sym_pp = _first_text_attr(r_pp, ("symbol", "underlyingSymbol"))
+            px_pp = _parse_flex_float(_first_attr(r_pp, ("price", "markPrice", "closePrice")))
+            if sym_pp and px_pp is not None and px_pp > 0.0 and sym_pp.upper() not in seen_opening_syms:
+                seen_opening_syms.add(sym_pp.upper())
+                price_candidates.append((r_pp, sym_pp, px_pp))
+        if len(price_candidates) == 1:
+            r_pp0, sym_pp0, px_pp0 = price_candidates[0]
+            open_nav_ts = nav_points[0].timestamp_utc
+            traded_on_or_before_open = any(
+                (_first_text_attr(tr_r, ("symbol", "underlyingSymbol")) or "").upper() == sym_pp0.upper()
+                and (
+                    (
+                        t_parsed := _parse_flex_timestamp_utc(
+                            _first_attr(tr_r, ("dateTime", "tradeDate", "reportDate", "date"))
+                        )
+                    )
+                    is not None
+                    and t_parsed <= open_nav_ts
+                )
+                for tr_r in trade_rows
+            )
+            if not traded_on_or_before_open:
+                ccy_pp0 = _normalize_flex_currency(
+                    _first_attr(r_pp0, ("currency", "currencyPrimary")), base_ccy
+                )
+                fx_pp0 = _resolve_fx_optional(r_pp0, ccy_pp0, row_ts=open_nav_ts)
+                if fx_pp0 is not None and fx_pp0 > 0.0:
+                    mult_pp0 = _parse_flex_float(_first_attr(r_pp0, ("multiplier",)))
+                    eff_mult_pp0 = mult_pp0 if mult_pp0 and mult_pp0 > 0 else 1.0
+                    mv_native_pp0 = float(nav_points[0].positions_base or 0.0) / fx_pp0
+                    qty_est_pp0 = mv_native_pp0 / (px_pp0 * eff_mult_pp0)
+                    ac_pp0 = _map_ibkr_asset_class(
+                        _first_attr(r_pp0, ("assetCategory", "assetClass")),
+                        sub_cat=_first_attr(r_pp0, ("subCategory",)),
+                        symbol=sym_pp0,
+                    )
+                    prior_positions.append(
+                        NormalizedPosition(
+                            prior_period_or_ending="prior",
+                            symbol=sym_pp0,
+                            asset_class=ac_pp0,
+                            quantity=qty_est_pp0,
+                            cost_basis=0.0,
+                            market_value=mv_native_pp0,
+                            currency=ccy_pp0,
+                            fx_rate_to_base=fx_pp0,
+                            multiplier=mult_pp0 if mult_pp0 and mult_pp0 > 0 else None,
+                            isin=_first_text_attr(r_pp0, ("isin",)),
+                        )
+                    )
+                    warnings.append(INFERRED_SINGLE_PRIOR_POSITION_WARNING)
+
     existing_prior_cash_ccys = {
         pos.currency for pos in prior_positions if pos.asset_class == AssetClass.CASH
     }
@@ -1024,7 +1433,7 @@ def parse_ibkr_flex_xml(
         cr_from_ts = _parse_flex_timestamp_utc(
             _first_attr(cr_row, ("fromDate", "reportDate", "date"))
         )
-        cr_fx = _resolve_fx(cr_row, cr_ccy, row_ts=cr_from_ts)
+        cr_fx = _resolve_fx_optional(cr_row, cr_ccy, row_ts=cr_from_ts)
         prior_positions.append(
             NormalizedPosition(
                 prior_period_or_ending="prior",
@@ -1075,7 +1484,7 @@ def parse_ibkr_flex_xml(
         side_token = side_raw.split()[0]
         price = abs(_parse_flex_float(_first_attr(r, ("tradePrice", "price")), default=0.0) or 0.0)
         ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-        fx = _resolve_fx(r, ccy, row_ts=ts)
+        fx = _resolve_fx_optional(r, ccy, row_ts=ts)
         raw_cat_str = (_first_attr(r, ("assetCategory", "assetClass")) or "STK").strip().upper()
         exchange_text = _first_text_attr(r, ("exchange", "listingExchange"))
         if raw_cat_str == "CASH":
@@ -1094,24 +1503,48 @@ def parse_ibkr_flex_xml(
         mult = _parse_flex_float(_first_attr(r, ("multiplier",)))
         comm_raw = abs(_parse_flex_float(_first_attr(r, ("ibCommission", "commission")), default=0.0) or 0.0)
         comm_ccy_attr = _first_attr(r, ("ibCommissionCurrency", "commissionCurrency"))
-        if comm_raw > 0.0 and comm_ccy_attr:
-            comm_ccy = _normalize_flex_currency(comm_ccy_attr, ccy)
-            if comm_ccy != ccy and fx > 0.0:
-                comm_fx = _resolve_fx({}, comm_ccy, row_ts=ts)
-                comm = comm_raw * (comm_fx / fx)
+        effective_comm_ccy_attr = comm_ccy_attr or (base_ccy if raw_cat_str == "CASH" else None)
+        if comm_raw > 0.0 and effective_comm_ccy_attr:
+            comm_ccy = _normalize_flex_currency(effective_comm_ccy_attr, ccy)
+            if comm_ccy != ccy:
+                comm_fx = _resolve_fx_optional({}, comm_ccy, row_ts=ts, track_omitted=False)
+                if fx is not None and fx > 0.0 and comm_fx is not None and comm_fx > 0.0:
+                    comm = comm_raw * (comm_fx / fx)
+                else:
+                    comm = 0.0
             else:
                 comm = comm_raw
         else:
             comm = comm_raw
-        tax_raw = abs(_parse_flex_float(_first_attr(r, ("taxes", "tax")), default=0.0) or 0.0)
+        raw_tax_attr = _first_attr(r, ("taxes", "tax"))
+        tax_raw = abs(_parse_flex_float(raw_tax_attr, default=0.0) or 0.0)
         tax_ccy_attr = _first_attr(r, ("taxCurrency",))
         if tax_raw > 0.0 and tax_ccy_attr:
             tax_ccy = _normalize_flex_currency(tax_ccy_attr, ccy)
-            if tax_ccy != ccy and fx > 0.0:
-                tax_fx = _resolve_fx({}, tax_ccy, row_ts=ts)
-                tax = tax_raw * (tax_fx / fx)
+            if tax_ccy != ccy:
+                tax_fx = _resolve_fx_optional({}, tax_ccy, row_ts=ts, track_omitted=False)
+                if fx is not None and fx > 0.0 and tax_fx is not None and tax_fx > 0.0:
+                    tax = tax_raw * (tax_fx / fx)
+                else:
+                    tax = 0.0
             else:
                 tax = tax_raw
+        elif (
+            raw_tax_attr is None
+            and ac in {AssetClass.EQUITY, AssetClass.ETF}
+            and abs(_parse_flex_float(_first_attr(r, ("accruedInt",)), default=0.0) or 0.0) <= 1e-9
+            and (not comm_ccy_attr or _normalize_flex_currency(comm_ccy_attr, ccy) == ccy)
+        ):
+            proc_signed = _parse_flex_float(_first_attr(r, ("proceeds",)))
+            nc_signed = _parse_flex_float(_first_attr(r, ("netCash",)))
+            if proc_signed is not None and nc_signed is not None and abs(proc_signed) > 0.0:
+                implied_tax = (proc_signed - comm_raw) - nc_signed
+                if 1e-4 < implied_tax <= 0.05 * abs(proc_signed):
+                    tax = implied_tax
+                else:
+                    tax = 0.0
+            else:
+                tax = 0.0
         else:
             tax = tax_raw
         entry_id = (
@@ -1156,7 +1589,7 @@ def parse_ibkr_flex_xml(
         if ts is None or amt is None:
             continue
         ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-        fx = _resolve_fx(r, ccy, row_ts=ts)
+        fx = _resolve_fx_optional(r, ccy, row_ts=ts)
         kind = _classify_cash_transaction_kind(r, amt)
         flows.append(
             NormalizedFlow(
@@ -1180,7 +1613,7 @@ def parse_ibkr_flex_xml(
         sym = _first_text_attr(r, ("symbol",))
         qty = _parse_flex_float(_first_attr(r, ("quantity",)))
         ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-        fx = _resolve_fx(r, ccy, row_ts=ts)
+        fx = _resolve_fx_optional(r, ccy, row_ts=ts)
         pos_amt_base = _parse_flex_float(_first_attr(r, ("positionAmountInBase",)))
         pos_amt = _parse_flex_float(_first_attr(r, ("positionAmount", "cashTransfer", "amount")), default=0.0) or 0.0
 
@@ -1230,9 +1663,10 @@ def parse_ibkr_flex_xml(
             continue
         act_type, num, den = _classify_corporate_action(r)
         ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-        fx = _resolve_fx(r, ccy, row_ts=ts)
+        fx = _resolve_fx_optional(r, ccy, row_ts=ts)
         qty_delta = _parse_flex_float(_first_attr(r, ("quantity",)), default=0.0) or 0.0
-        cash_lieu = (_parse_flex_float(_first_attr(r, ("proceeds", "amount")), default=0.0) or 0.0) * fx
+        raw_lieu = _parse_flex_float(_first_attr(r, ("proceeds", "amount")), default=0.0) or 0.0
+        cash_lieu = (raw_lieu * fx) if fx is not None else 0.0
         corporate_actions.append(
             CorporateActionRecord(
                 action_type=act_type,
@@ -1262,10 +1696,11 @@ def parse_ibkr_flex_xml(
         else:
             eae_action = CorporateActionType.OPTION_EXPIRATION
         ccy = _normalize_flex_currency(_first_attr(r, ("currency", "currencyPrimary")), base_ccy)
-        fx = _resolve_fx(r, ccy, row_ts=ts)
+        fx = _resolve_fx_optional(r, ccy, row_ts=ts)
         qty_delta = _parse_flex_float(_first_attr(r, ("quantity",)), default=0.0) or 0.0
         mult = _parse_flex_float(_first_attr(r, ("multiplier",)), default=100.0)
-        basis_adj = (_parse_flex_float(_first_attr(r, ("costBasisMoney", "proceeds")), default=0.0) or 0.0) * fx
+        raw_basis = _parse_flex_float(_first_attr(r, ("costBasisMoney", "proceeds")), default=0.0) or 0.0
+        basis_adj = (raw_basis * fx) if fx is not None else 0.0
         corporate_actions.append(
             CorporateActionRecord(
                 action_type=eae_action,
@@ -1279,6 +1714,13 @@ def parse_ibkr_flex_xml(
                 strike=_parse_flex_float(_first_attr(r, ("strike",))),
                 description=_first_text_attr(r, ("transactionType", "description")) or eae_action.value,
             )
+        )
+
+    if omitted_fx_currencies:
+        pairs_label = ", ".join(f"{c}->{base_ccy}" for c in omitted_fx_currencies)
+        warnings.append(
+            f"ConversionRates and row-level fxRateToBase were omitted in the IBKR Flex query "
+            f"for {pairs_label}; base-currency custody reconciliation completeness was omitted."
         )
 
     # 9. Single-interval <ChangeInNAV twr=...> (populated ONLY for broker-retrieved origins).
@@ -1548,8 +1990,15 @@ def merge_ibkr_flex_ledgers(
     merged_broker_returns: dict[str, float] = {}
     enabled_sections: list[str] = []
     warnings: list[str] = []
-    for item in ordered:
+    any_conv_rates_section = any("ConversionRates" in x.enabled_sections for x in ordered)
+    ending_ccys = {pos.currency for pos in last.ending_positions}
+    for item_idx, item in enumerate(ordered):
         for rk, rv in item.conversion_rates.items():
+            if not any_conv_rates_section and item is not last and last.conversion_rates:
+                pair_ccys = set(rk.split("/", 1)) if "/" in rk else {rk}
+                foreign_leg = next((c for c in pair_ccys if c != first.base_currency), "")
+                if foreign_leg and foreign_leg != "USD" and foreign_leg not in ending_ccys:
+                    continue
             if "/" in rk:
                 ra, rb = rk.split("/", 1)
                 merged_rates.pop(f"{rb}/{ra}", None)
@@ -1569,9 +2018,13 @@ def merge_ibkr_flex_ledgers(
             ):
                 merged_broker_returns[b_ts] = b_ret
         for sec in item.enabled_sections:
+            if sec == "PriorPeriodPositions" and item is not first:
+                continue
             if sec not in enabled_sections:
                 enabled_sections.append(sec)
         for w in item.parser_warnings:
+            if w == INFERRED_SINGLE_PRIOR_POSITION_WARNING and item_idx > 0:
+                continue
             if w not in warnings:
                 warnings.append(w)
 
@@ -1721,10 +2174,10 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
         sleep_fn: Callable[[float], None] = time.sleep,
         now_utc_fn: Callable[[], datetime] | None = None,
         max_poll_attempts: int = 12,
-        poll_interval_seconds: float = 2.0,
+        poll_interval_seconds: float = 3.5,
         max_rate_limit_retries: int = 20,
-        rate_limit_backoff_seconds: float = 3.5,
-        chunk_pacing_seconds: float = 1.1,
+        rate_limit_backoff_seconds: float = 6.0,
+        chunk_pacing_seconds: float = 3.0,
     ) -> None:
         super().__init__()
         cleaned_ua = (user_agent or "").strip()
@@ -1952,6 +2405,140 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
             rows, prev_pt=prev_pt, curr_pt=curr_pt
         )
 
+    @staticmethod
+    def _prescan_single_account_fx_and_cin(
+        raw_chunks: Sequence[bytes],
+    ) -> tuple[dict[tuple[str, str, str], float], bool]:
+        """Collect dated FX rates across single-account chunks and detect twr-less <ChangeInNAV>."""
+        dated_fx_index = _DatedFxIndex()
+        cross_obs: list[tuple[str, str, str, float]] = []
+        raw_elem_fx_obs: list[tuple[str, str, float]] = []
+        seen_accts: set[str] = set()
+        seen_bases: set[str] = set()
+        saw_any_cin = False
+        saw_cin_with_twr = False
+
+        for raw in raw_chunks:
+            try:
+                utf8_xml = _decode_and_guard_xml_bytes(raw, max_bytes=DEFAULT_MAX_FLEX_BYTES)
+                stack: list[ET.Element] = []
+                elem_count = 0
+                stmt_from_ymd = ""
+                stmt_to_ymd = ""
+                for ev, elem in ET.iterparse(BytesIO(utf8_xml), events=("start", "end")):
+                    if ev == "start":
+                        elem_count += 1
+                        if elem_count > DEFAULT_MAX_FLEX_ELEMENTS:
+                            return {}, False
+                        stack.append(elem)
+                        ltag = _local_tag(elem.tag)
+                        if ltag == "flexstatement":
+                            from_ts = _parse_flex_timestamp_utc(
+                                _first_attr(elem.attrib, ("fromDate", "startDate"))
+                            )
+                            to_ts = _parse_flex_timestamp_utc(
+                                _first_attr(elem.attrib, ("toDate", "endDate"))
+                            )
+                            stmt_from_ymd = from_ts[:10] if from_ts is not None else ""
+                            stmt_to_ymd = to_ts[:10] if to_ts is not None else ""
+                        if ltag in {"flexstatement", "accountinformation", "acctinfo"}:
+                            aid = _first_attr(elem.attrib, ("accountId", "acctCode"))
+                            if aid:
+                                seen_accts.add(aid)
+                            ccy_a = _first_attr(elem.attrib, ("baseCurrency", "currency"))
+                            if ccy_a and len(ccy_a.strip()) == 3 and ccy_a.strip().isalpha():
+                                seen_bases.add(ccy_a.strip().upper())
+                        elif ltag in {"changeinnav", "navstatement"}:
+                            if _first_attr(elem.attrib, ("twr", "startingValue", "endingValue")):
+                                saw_any_cin = True
+                                if _parse_flex_float(_first_attr(elem.attrib, ("twr",))) is not None:
+                                    saw_cin_with_twr = True
+                        elif ltag == "conversionrate":
+                            fc = (_first_attr(elem.attrib, ("fromCurrency",)) or "").strip().upper()
+                            tc = (_first_attr(elem.attrib, ("toCurrency",)) or "").strip().upper()
+                            rt = _parse_flex_float(_first_attr(elem.attrib, ("rate",)))
+                            ts = _parse_flex_timestamp_utc(
+                                _first_attr(elem.attrib, ("reportDate", "date", "asOfDate"))
+                            )
+                            if fc and tc and fc != tc and rt is not None and rt > 0.0 and ts:
+                                dated_fx_index.add(ts[:10], fc, tc, rt, overwrite=True)
+                        elif ltag == "trade":
+                            cat = (_first_attr(elem.attrib, ("assetCategory", "assetClass")) or "").strip().upper()
+                            if cat == "CASH":
+                                pair = _parse_fx_pair_symbol(
+                                    _first_text_attr(elem.attrib, ("symbol", "underlyingSymbol"))
+                                )
+                                px = _parse_flex_float(_first_attr(elem.attrib, ("tradePrice", "price")))
+                                ts = _parse_flex_timestamp_utc(
+                                    _first_attr(elem.attrib, ("dateTime", "tradeDate", "reportDate", "date"))
+                                )
+                                if pair and px is not None and px > 0.0 and ts:
+                                    cross_obs.append((ts[:10], pair[0], pair[1], px))
+                        fx_exp = _extract_row_implied_fx(elem.attrib)
+                        if fx_exp is not None and fx_exp > 0.0:
+                            rc_raw = _first_attr(elem.attrib, ("currency", "currencyPrimary")) or ""
+                            rc = "GBX" if rc_raw.strip() == "GBp" else rc_raw.strip().upper()
+                            ts = _parse_flex_timestamp_utc(
+                                _first_attr(
+                                    elem.attrib,
+                                    (
+                                        "dateTime",
+                                        "reportDate",
+                                        "tradeDate",
+                                        "settleDate",
+                                        "fromDate",
+                                        "toDate",
+                                        "asOfDate",
+                                        "date",
+                                    ),
+                                )
+                            )
+                            obs_ymd = (
+                                ts[:10]
+                                if ts is not None
+                                else (stmt_from_ymd if ltag == "priorperiodposition" else stmt_to_ymd)
+                            )
+                            if rc and rc != "BASE_SUMMARY" and obs_ymd:
+                                raw_elem_fx_obs.append((obs_ymd, rc, fx_exp))
+                    else:
+                        if ltag == "flexstatement":
+                            stmt_from_ymd = ""
+                            stmt_to_ymd = ""
+                        if len(stack) > 1:
+                            stack[-2].remove(elem)
+                        elem.clear()
+                        stack.pop()
+            except (ET.ParseError, IbkrFlexParseError, ValueError):
+                return {}, False
+
+        if len(seen_accts) > 1 or len(seen_bases) > 1:
+            return {}, False
+
+        base_ccy = next(iter(seen_bases), "USD")
+        for d_s, rc, fx_exp in raw_elem_fx_obs:
+            if rc != base_ccy:
+                dated_fx_index.add(d_s, rc, base_ccy, fx_exp, overwrite=False)
+
+        remaining_cross: list[tuple[str, str, str, float]] = []
+        for d_s, fb, fq, px in cross_obs:
+            if fb == base_ccy and fq != base_ccy:
+                dated_fx_index.add(d_s, fq, base_ccy, 1.0 / px, overwrite=False)
+            elif fq == base_ccy and fb != base_ccy:
+                dated_fx_index.add(d_s, fb, base_ccy, px, overwrite=False)
+            elif fb != fq:
+                remaining_cross.append((d_s, fb, fq, px))
+
+        if remaining_cross:
+            for d_s, fb, fq, px in remaining_cross:
+                r_b = dated_fx_index.lookup(d_s, fb, base_ccy)
+                r_q = dated_fx_index.lookup(d_s, fq, base_ccy)
+                if r_b is not None and r_b > 0.0 and r_q is None:
+                    dated_fx_index.add(d_s, fq, base_ccy, r_b / px, overwrite=False)
+                elif r_q is not None and r_q > 0.0 and r_b is None:
+                    dated_fx_index.add(d_s, fb, base_ccy, px * r_q, overwrite=False)
+
+        return dated_fx_index.raw_items(), (saw_any_cin and not saw_cin_with_twr)
+
     def _enrich_large_flow_days_with_broker_twr(
         self,
         ledger: CanonicalPortfolioLedger,
@@ -1964,9 +2551,11 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
         max_revaluation_days: int = 24,
         preloaded_xml_chunks: Mapping[str, bytes] | None = None,
         fetched_xml_chunks_out: dict[str, bytes] | None = None,
+        shared_dated_fx: Mapping[tuple[str, str, str], float] | None = None,
+        query_omits_cin_twr: bool = False,
     ) -> CanonicalPortfolioLedger:
         """Fetch targeted IBKR ``<ChangeInNAV>`` TWR for in-period >10% flow intervals when missing."""
-        if len(ledger.nav_points) < 2:
+        if len(ledger.nav_points) < 2 or query_omits_cin_twr:
             return ledger
         capital_kinds = {
             FlowKind.DEPOSIT,
@@ -2065,6 +2654,8 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
                         provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
                         account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
                         require_live=require_live,
+                        fallback_conversion_rates=ledger.conversion_rates,
+                        fallback_dated_conversion_rates=shared_dated_fx,
                     )
                 except (IbkrFlexServiceError, IbkrFlexParseError, ValueError) as exc:
                     warn_msg = (
@@ -2089,7 +2680,8 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
                     raw_chunks.append(day_xml)
                     changed = True
                     break
-                if (
+                _, day_omits_twr = self._prescan_single_account_fx_and_cin((day_xml,))
+                if day_omits_twr or (
                     "ChangeInNAV" not in ledger.enabled_sections
                     and "ChangeInNAV" not in day_ledger.enabled_sections
                 ):
@@ -2140,7 +2732,8 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
         norm_end_d = _parse_ibkr_date_only(end_date, field_name="end_date")
         auto_end = norm_start_d is not None and norm_end_d is None
         if auto_end:
-            norm_end_d = _current_ny_date(self._now_utc_fn())
+            assert norm_start_d is not None
+            norm_end_d = max(norm_start_d, _default_auto_end_ny_date(self._now_utc_fn()))
         elif norm_end_d is not None and norm_start_d is None:
             raise ValueError("start_date is required when end_date is specified for IBKR Flex")
 
@@ -2181,7 +2774,7 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
                         for step_back in (1, 2, 3):
                             stepped_td_d = orig_td_d - timedelta(days=step_back)
                             if stepped_td_d < fd_d:
-                                if parsed_ledgers:
+                                if raw_chunks:
                                     skip_trailing_chunk = True
                                     break
                                 raise last_exc
@@ -2220,32 +2813,26 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
                     if fetched_xml_chunks_out is not None:
                         fetched_xml_chunks_out[chunk_key] = chunk_bytes
                 raw_chunks.append(chunk_bytes)
-                parsed_ledgers.append(
-                    parse_ibkr_flex_xml(
-                        chunk_bytes,
-                        blinding_salt_hex=blinding_salt_hex,
-                        claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-                        provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
-                        account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
-                        require_live=require_live,
-                    )
-                )
         else:
             for idx, qid in enumerate(resolved_qids):
                 if idx > 0:
                     self._sleep_fn(self._chunk_pacing_seconds)
                 chunk_bytes = self.fetch_statement_bytes(flex_token=flex_token, query_id=qid)
                 raw_chunks.append(chunk_bytes)
-                parsed_ledgers.append(
-                    parse_ibkr_flex_xml(
-                        chunk_bytes,
-                        blinding_salt_hex=blinding_salt_hex,
-                        claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
-                        provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
-                        account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
-                        require_live=require_live,
-                    )
+
+        shared_dated_fx, query_omits_cin_twr = self._prescan_single_account_fx_and_cin(raw_chunks)
+        for chunk_bytes in raw_chunks:
+            parsed_ledgers.append(
+                parse_ibkr_flex_xml(
+                    chunk_bytes,
+                    blinding_salt_hex=blinding_salt_hex,
+                    claimed_origin_assurance=OriginAssurance.OPERATOR_RETRIEVED,
+                    provider_approval_state=ProviderApprovalState.USER_KEY_SELF_ATTESTED,
+                    account_scope=AccountScope.SUBACCOUNT_COMPLETENESS_UNSUPPORTED,
+                    require_live=require_live,
+                    fallback_dated_conversion_rates=shared_dated_fx,
                 )
+            )
 
         merged = merge_ibkr_flex_ledgers(parsed_ledgers, raw_chunks=raw_chunks)
         if norm_start_d is None and "ChangeInNAV" not in merged.enabled_sections:
@@ -2259,6 +2846,8 @@ class IbkrFlexWebServiceAdapter(ReadOnlyBrokerAdapter):
             require_live=require_live,
             preloaded_xml_chunks=preloaded_xml_chunks,
             fetched_xml_chunks_out=fetched_xml_chunks_out,
+            shared_dated_fx=shared_dated_fx,
+            query_omits_cin_twr=query_omits_cin_twr,
         )
 
 
@@ -2295,6 +2884,7 @@ __all__ = [
     "DEFAULT_IBKR_FLEX_USER_AGENT",
     "IBKR_FLEX_GET_STATEMENT_URL",
     "IBKR_FLEX_SEND_REQUEST_URL",
+    "INFERRED_SINGLE_PRIOR_POSITION_WARNING",
     "IbkrFlexOfflineAdapter",
     "IbkrFlexParseError",
     "IbkrFlexServiceError",

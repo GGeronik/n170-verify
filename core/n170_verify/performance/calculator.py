@@ -108,7 +108,7 @@ def _has_valid_base_valuation(flow: NormalizedFlow, ledger: CanonicalPortfolioLe
     if (
         flow.currency != ledger.base_currency
         and abs(flow.amount) > 0.0
-        and abs(flow.fx_rate_to_base - 1.0) < 1e-12
+        and (flow.fx_rate_to_base is None or abs(flow.fx_rate_to_base - 1.0) < 1e-12)
         and abs(flow.amount_base - flow.amount) < 1e-12
     ):
         ccy = flow.currency

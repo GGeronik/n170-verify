@@ -41,9 +41,9 @@ MINIMAL_IBKR_FLEX_SECTIONS: tuple[str, ...] = (
 )
 
 IBKR_FLEX_AI_BUILDER_PROMPT: str = (
-    "XML, yyyy-MM-dd, 365 Days, all fields: Account Information, NAV in Base, "
-    "Change in NAV, Prior Period & Open Positions (Summary), Trades (Executions), "
-    "Cash Transactions, Transfers, Corporate Actions."
+    "XML, yyyy-MM-dd, 365d, all fields: Account Info, NAV in Base, "
+    "Change in NAV, Prior & Open Positions (Summary), Trades (Executions), "
+    "Cash Transactions, Transfers, Corporate Actions, Conversion Rates."
 )
 
 
