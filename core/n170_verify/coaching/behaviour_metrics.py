@@ -436,8 +436,9 @@ def _run_fifo_ledger_simulation(
                 )
             )
             sym_side_key = (lot.symbol, lot.side)
-            day_pnl_val = net_pnl_base if net_pnl_base is not None else net_pnl_native
-            day_realized_pnl[sym_side_key] = day_realized_pnl.get(sym_side_key, 0.0) + day_pnl_val
+            day_realized_pnl[sym_side_key] = (
+                day_realized_pnl.get(sym_side_key, 0.0) + net_pnl_native
+            )
 
             lot.remaining_qty -= matched
             remaining_to_process -= matched

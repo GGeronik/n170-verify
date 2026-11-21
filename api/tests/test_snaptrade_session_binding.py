@@ -936,6 +936,28 @@ class TestRelayVerifyReportsWithheldReturn(_AppCase):
         self.assertIs(body.get("performance_withheld"), True, sorted(body))
         self.assertTrue(body.get("withheld_reasons"))
 
+    def test_expired_in_use_session_never_resurrected_by_client_session_token(self) -> None:
+        transport, _ = _make_mock_snaptrade_transport()
+        now = [1000.0]
+        _, client, relay = self._client(transport, clock=lambda: now[0])
+        client_tok = "browser-client-expiring-0001"
+        created = client.post(PORTAL, json={"client_session_token": client_tok})
+        self.assertEqual(created.status_code, 200, created.text)
+        sess_tok = created.json()["session_token"]
+        with relay._lock:
+            uid = relay._sessions[sess_tok].user_id
+            relay._users_in_use[uid] = 1
+        now[0] += relay.session_ttl_seconds + 1.0
+        reused, ev = relay.acquire_or_begin_client_token(
+            hashlib.sha256(client_tok.encode("utf-8")).hexdigest(),
+            is_personal=False,
+        )
+        self.assertIsNone(reused)
+        self.assertIsNotNone(ev)
+        relay.finish_client_token_creation(
+            hashlib.sha256(client_tok.encode("utf-8")).hexdigest(), ev
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2699,10 +2699,11 @@ class IbkrAiBuilderRealSchemaAndFxDriftTests(unittest.TestCase):
             places=9,
         )
 
-    def test_equity_summary_stock_and_percent_of_nav_never_invent_closing_fx(self) -> None:
-        xml = (
+    def test_single_foreign_currency_open_positions_infers_closing_fx_and_minimal_nav_omits_fx(self) -> None:
+        # Item 1.1: Single-foreign-currency OpenPositions + EquitySummaryInBase.stock infers exact closing FX (8280 / 9000 = 0.92)
+        with_stock_xml = (
             b'<?xml version="1.0" encoding="UTF-8"?>'
-            b'<FlexQueryResponse queryName="NoImpliedStockFX" type="AF"><FlexStatements count="1">'
+            b'<FlexQueryResponse queryName="ImpliedStockFX" type="AF"><FlexStatements count="1">'
             b'<FlexStatement accountId="U7774444" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
             b'<AccountInformation accountId="U7774444" currency="EUR" />'
             b'<EquitySummaryInBase>'
@@ -2719,7 +2720,33 @@ class IbkrAiBuilderRealSchemaAndFxDriftTests(unittest.TestCase):
             b'<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
             b'</FlexStatement></FlexStatements></FlexQueryResponse>'
         )
-        ldg = parse_ibkr_flex_xml(xml, blinding_salt_hex=_SALT)
+        ldg_stock = parse_ibkr_flex_xml(with_stock_xml, blinding_salt_hex=_SALT)
+        self.assertAlmostEqual(ldg_stock.ending_positions[0].fx_rate_to_base or 0.0, 0.92, places=6)
+        self.assertAlmostEqual(ldg_stock.trades[0].fx_rate_to_base or 0.0, 0.92, places=6)
+        rec_stock = reconcile_portfolio_ledger(ldg_stock)
+        self.assertEqual(rec_stock.discrepancy_count, 0)
+
+        # Item 1.2: Minimal Flex XML with neither ConversionRates, fxRateToBase, nor stock keeps fx=None (never 1.0, even if percentOfNAV is present)
+        minimal_no_fx_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="MinimalNoFX" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7774444" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
+            b'<AccountInformation accountId="U7774444" currency="EUR" />'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7774444" reportDate="2025-01-02" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7774444" reportDate="2025-01-10" total="10160.00" />'
+            b'</EquitySummaryInBase>'
+            b'<PriorPeriodPositions />'
+            b'<OpenPositions>'
+            b'<OpenPosition accountId="U7774444" symbol="AAPL" assetCategory="STK" currency="USD" position="50" markPrice="180.00" positionValue="9000.00" costBasisMoney="8800.00" percentOfNAV="81.50" />'
+            b'</OpenPositions>'
+            b'<Trades>'
+            b'<Trade accountId="U7774444" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="50" tradePrice="176.00" currency="USD" ibCommission="-1.00" dateTime="2025-01-03;15:00:00" />'
+            b'</Trades>'
+            b'<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        ldg = parse_ibkr_flex_xml(minimal_no_fx_xml, blinding_salt_hex=_SALT)
         self.assertIsNone(ldg.trades[0].fx_rate_to_base)
         self.assertIsNone(ldg.ending_positions[0].fx_rate_to_base)
         self.assertEqual(ldg.conversion_rates, {})
@@ -2731,6 +2758,131 @@ class IbkrAiBuilderRealSchemaAndFxDriftTests(unittest.TestCase):
         perf = calculate_portfolio_performance_detailed(ldg)
         self.assertFalse(perf.withheld)
         self.assertAlmostEqual(perf.summary.twr_decimal or 0.0, 0.016, places=6)
+
+    def test_closing_fx_never_backpropagates_onto_foreign_capital_flows_or_multiyear_drift(self) -> None:
+        from n170_verify.coaching import build_trader_coaching_report
+
+        # 1. Strict S6: <=10% foreign external deposit 796 days before closing FX (both via stock and via positionValueInBase) MUST withhold!
+        for open_extra_attr in ("", ' positionValueInBase="14422.50"'):
+            s6_long_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<FlexQueryResponse queryName="S6LongCap" type="AF"><FlexStatements count="1">'
+                '<FlexStatement accountId="U7776661" baseCurrency="EUR" fromDate="2024-09-02" toDate="2026-11-20">'
+                '<AccountInformation accountId="U7776661" currency="EUR" />'
+                '<EquitySummaryInBase>'
+                '<EquitySummaryByReportDateInBase accountId="U7776661" reportDate="2024-09-02" cash="10000.00" stock="0.00" total="10000.00" />'
+                '<EquitySummaryByReportDateInBase accountId="U7776661" reportDate="2024-09-15" cash="10360.36" stock="0.00" total="10360.36" />'
+                '<EquitySummaryByReportDateInBase accountId="U7776661" reportDate="2026-11-20" cash="1200.00" stock="14422.50" total="15622.50" />'
+                '</EquitySummaryInBase>'
+                '<PriorPeriodPositions />'
+                f'<OpenPositions><OpenPosition accountId="U7776661" symbol="AAPL" assetCategory="STK" currency="USD" position="100" markPrice="150.00" positionValue="15000.00" costBasisMoney="10000.00"{open_extra_attr} /></OpenPositions>'
+                '<Trades><Trade accountId="U7776661" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="100" tradePrice="100.00" currency="USD" ibCommission="0" dateTime="2024-09-20;15:00:00" /></Trades>'
+                '<CashTransactions><CashTransaction accountId="U7776661" type="Deposits/Withdrawals" currency="USD" amount="400.00" dateTime="2024-09-15;10:00:00" description="Small USD Wire" /></CashTransactions>'
+                '<Transfers /><CorporateActions /><OptionEAE />'
+                '</FlexStatement></FlexStatements></FlexQueryResponse>'
+            ).encode("utf-8")
+            s6_ldg = parse_ibkr_flex_xml(s6_long_xml, blinding_salt_hex=_SALT)
+            self.assertIsNone(s6_ldg.flows[0].fx_rate_to_base)
+            self.assertIsNone(s6_ldg.flows[0].amount_base)
+            self.assertTrue(calculate_portfolio_performance_detailed(s6_ldg).withheld)
+
+        # 2. Strict S6 even on a 4-day window: EquitySummaryInBase.stock closing FX NEVER values a foreign external deposit!
+        s6_short_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="S6ShortCap" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7776662" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-06">'
+            b'<AccountInformation accountId="U7776662" currency="EUR" />'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7776662" reportDate="2025-01-02" cash="10000.00" stock="0.00" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7776662" reportDate="2025-01-06" cash="2080.00" stock="8280.00" total="10360.00" />'
+            b'</EquitySummaryInBase>'
+            b'<OpenPositions><OpenPosition accountId="U7776662" symbol="AAPL" assetCategory="STK" currency="USD" position="50" markPrice="180.00" positionValue="9000.00" costBasisMoney="8800.00" /></OpenPositions>'
+            b'<Trades><Trade accountId="U7776662" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="50" tradePrice="176.00" currency="USD" ibCommission="0" dateTime="2025-01-03;15:00:00" /></Trades>'
+            b'<CashTransactions><CashTransaction accountId="U7776662" type="Deposits/Withdrawals" currency="USD" amount="250.00" dateTime="2025-01-03;10:00:00" description="USD Deposit" /></CashTransactions>'
+            b'<PriorPeriodPositions /><Transfers /><CorporateActions /><OptionEAE />'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        s6_short_ldg = parse_ibkr_flex_xml(s6_short_xml, blinding_salt_hex=_SALT)
+        self.assertIsNone(s6_short_ldg.flows[0].fx_rate_to_base)
+        self.assertIsNone(s6_short_ldg.flows[0].amount_base)
+        self.assertTrue(calculate_portfolio_performance_detailed(s6_short_ldg).withheld)
+
+        # 3. Multi-year AI-built query with EquitySummaryInBase cash+stock+total and realistic USD/EUR drift (0.9009 -> 0.9615)
+        #    and NO ConversionRates / fxRateToBase / CASH FX trades: closing OpenPosition gets 0.9615 while 2024 trade stays None -> 0 discrepancies!
+        drift_xml = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<FlexQueryResponse queryName="MultiYearDrift" type="AF"><FlexStatements count="1">'
+            b'<FlexStatement accountId="U7776663" baseCurrency="EUR" fromDate="2024-09-02" toDate="2026-11-20">'
+            b'<AccountInformation accountId="U7776663" currency="EUR" />'
+            b'<EquitySummaryInBase>'
+            b'<EquitySummaryByReportDateInBase accountId="U7776663" reportDate="2024-09-02" cash="10000.00" stock="0.00" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7776663" reportDate="2024-09-15" cash="991.00" stock="9009.00" total="10000.00" />'
+            b'<EquitySummaryByReportDateInBase accountId="U7776663" reportDate="2026-11-20" cash="991.00" stock="14422.50" total="15413.50" />'
+            b'</EquitySummaryInBase>'
+            b'<PriorPeriodPositions />'
+            b'<OpenPositions><OpenPosition accountId="U7776663" symbol="AAPL" assetCategory="STK" currency="USD" position="100" markPrice="150.00" positionValue="15000.00" costBasisMoney="10000.00" /></OpenPositions>'
+            b'<Trades>'
+            b'<Trade accountId="U7776663" ibExecID="D1" symbol="NVDA" assetCategory="STK" buySell="BUY" quantity="10" tradePrice="100.00" currency="USD" ibCommission="0" dateTime="2024-09-05;15:00:00" />'
+            b'<Trade accountId="U7776663" ibExecID="D2" symbol="NVDA" assetCategory="STK" buySell="SELL" quantity="-10" tradePrice="110.00" currency="USD" ibCommission="0" dateTime="2024-09-12;15:00:00" />'
+            b'<Trade accountId="U7776663" ibExecID="D3" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="100" tradePrice="100.00" currency="USD" ibCommission="0" dateTime="2024-09-15;15:00:00" />'
+            b'</Trades>'
+            b'<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+            b'</FlexStatement></FlexStatements></FlexQueryResponse>'
+        )
+        drift_ldg = parse_ibkr_flex_xml(drift_xml, blinding_salt_hex=_SALT)
+        self.assertAlmostEqual(drift_ldg.ending_positions[0].fx_rate_to_base or 0.0, 0.9615, places=6)
+        self.assertIsNone(drift_ldg.trades[-1].fx_rate_to_base)
+        drift_rec = reconcile_portfolio_ledger(drift_ldg)
+        self.assertEqual(drift_rec.status, ReconciliationStatus.INSUFFICIENT_SECTIONS)
+        self.assertIn("ConversionRates", drift_rec.missing_sections)
+        self.assertEqual(drift_rec.discrepancy_count, 0, drift_rec.findings)
+        drift_perf = calculate_portfolio_performance_detailed(drift_ldg)
+        self.assertFalse(drift_perf.withheld)
+        drift_coach = build_trader_coaching_report(drift_ldg, enable_llm_narrative=False)
+        self.assertIsNotNone(drift_coach.quant_dna)
+
+    def test_price_only_prior_period_positions_symbol_scoping_and_shortfall_detection(self) -> None:
+        def _price_only_xml(aapl_open_qty: int) -> bytes:
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<FlexQueryResponse queryName="PriceOnlyPrior" type="AF"><FlexStatements count="1">'
+                '<FlexStatement accountId="U7776669" baseCurrency="EUR" fromDate="2025-01-02" toDate="2025-01-10">'
+                '<AccountInformation accountId="U7776669" currency="EUR" />'
+                '<EquitySummaryInBase>'
+                '<EquitySummaryByReportDateInBase accountId="U7776669" reportDate="2025-01-02" cash="20000.00" stock="9000.00" total="29000.00" />'
+                '<EquitySummaryByReportDateInBase accountId="U7776669" reportDate="2025-01-10" cash="11000.00" stock="18000.00" total="29000.00" />'
+                '</EquitySummaryInBase>'
+                '<PriorPeriodPositions>'
+                '<PriorPeriodPosition accountId="U7776669" symbol="VOO" assetCategory="STK" currency="EUR" price="500.00" />'
+                '<PriorPeriodPosition accountId="U7776669" symbol="MSFT" assetCategory="STK" currency="EUR" price="400.00" />'
+                '</PriorPeriodPositions>'
+                '<OpenPositions>'
+                '<OpenPosition accountId="U7776669" symbol="VOO" assetCategory="STK" currency="EUR" position="10" markPrice="500.00" positionValue="5000.00" costBasisMoney="5000.00" />'
+                '<OpenPosition accountId="U7776669" symbol="MSFT" assetCategory="STK" currency="EUR" position="10" markPrice="400.00" positionValue="4000.00" costBasisMoney="4000.00" />'
+                f'<OpenPosition accountId="U7776669" symbol="AAPL" assetCategory="STK" currency="EUR" position="{aapl_open_qty}" markPrice="180.00" positionValue="9000.00" costBasisMoney="9000.00" />'
+                '</OpenPositions>'
+                '<Trades>'
+                '<Trade accountId="U7776669" symbol="AAPL" assetCategory="STK" buySell="BUY" quantity="50" tradePrice="180.00" currency="EUR" ibCommission="0" dateTime="2025-01-03;15:00:00" />'
+                '</Trades>'
+                '<CashTransactions /><Transfers /><CorporateActions /><OptionEAE />'
+                '</FlexStatement></FlexStatements></FlexQueryResponse>'
+            ).encode("utf-8")
+
+        # Legitimate opening VOO + MSFT holdings + exact AAPL buy -> INSUFFICIENT_SECTIONS, 0 discrepancies
+        ok_rec = reconcile_portfolio_ledger(parse_ibkr_flex_xml(_price_only_xml(50), blinding_salt_hex=_SALT))
+        self.assertEqual(ok_rec.status, ReconciliationStatus.INSUFFICIENT_SECTIONS)
+        self.assertIn("PriorPeriodPositions", ok_rec.missing_sections)
+        self.assertEqual(ok_rec.discrepancy_count, 0, ok_rec.findings)
+
+        # Attack 1a: AAPL negative shortfall (BUY 50, OpenPosition 10 -> diff=-40) MUST be UNEXPLAINED_RESIDUAL!
+        shortfall_rec = reconcile_portfolio_ledger(parse_ibkr_flex_xml(_price_only_xml(10), blinding_salt_hex=_SALT))
+        self.assertEqual(shortfall_rec.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertEqual(shortfall_rec.discrepancy_count, 1, shortfall_rec.findings)
+
+        # Attack 1b: AAPL positive surplus (BUY 50, OpenPosition 90 -> diff=+40) on symbol absent from PriorPeriodPositions MUST be UNEXPLAINED_RESIDUAL!
+        surplus_rec = reconcile_portfolio_ledger(parse_ibkr_flex_xml(_price_only_xml(90), blinding_salt_hex=_SALT))
+        self.assertEqual(surplus_rec.status, ReconciliationStatus.UNEXPLAINED_RESIDUAL)
+        self.assertEqual(surplus_rec.discrepancy_count, 1, surplus_rec.findings)
 
     def test_prescan_all_in_base_ratios_bisect_tie_breaking_gbx_and_unvalued_withdrawal(self) -> None:
         prescan_xml = (

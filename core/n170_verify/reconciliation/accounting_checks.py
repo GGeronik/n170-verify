@@ -10,7 +10,11 @@ import math
 import re
 
 from n170_verify.coaching.cost_and_drag import normalize_fx_pair, resolve_forex_midpoint
-from n170_verify.connectors.ibkr_flex import INFERRED_SINGLE_PRIOR_POSITION_WARNING
+from n170_verify.connectors.ibkr_flex import (
+    INFERRED_SINGLE_PRIOR_POSITION_WARNING,
+    OMITTED_PRIOR_POSITION_QTY_WARNING,
+    OMITTED_PRIOR_POSITION_SYMBOLS_PREFIX,
+)
 from n170_verify.contracts import (
     AssetClass,
     CanonicalPortfolioLedger,
@@ -710,6 +714,28 @@ def reconcile_position_rollforward(
             else 0.0
         )
     )
+    omitted_prior_pos_qty = (
+        is_ibkr_broker
+        and "priorperiodpositions" not in present_norm_sections
+        and OMITTED_PRIOR_POSITION_QTY_WARNING in ledger.parser_warnings
+        and not non_cash_prior
+        and open_pos_base > 1e-6
+    )
+    omitted_prior_syms: set[str] | None = None
+    if omitted_prior_pos_qty:
+        parsed_pp_syms: set[str] = set()
+        saw_pp_sym_prefix = False
+        for w_msg in ledger.parser_warnings:
+            if w_msg.startswith(OMITTED_PRIOR_POSITION_SYMBOLS_PREFIX):
+                saw_pp_sym_prefix = True
+                raw_csv = w_msg[len(OMITTED_PRIOR_POSITION_SYMBOLS_PREFIX) :]
+                for tok in raw_csv.split(","):
+                    c_sym = _canonical_symbol(tok)
+                    if c_sym:
+                        parsed_pp_syms.add(c_sym)
+        if saw_pp_sym_prefix:
+            omitted_prior_syms = parsed_pp_syms
+    saw_omitted_prior_opening_holding = False
 
     for sym in all_syms:
         if sym in matched_rename_old_to_new:
@@ -792,6 +818,33 @@ def reconcile_position_rollforward(
                     benign_causes_considered=[
                         "IBKR Flex PriorPeriodPositions exported MTM price without position quantity attribute",
                         "Opening foreign-exchange rate translation and 0.01 base-currency NAV rounding",
+                    ],
+                )
+            )
+        elif (
+            omitted_prior_pos_qty
+            and diff > tol
+            and (omitted_prior_syms is None or sym in omitted_prior_syms)
+        ):
+            saw_omitted_prior_opening_holding = True
+            findings.append(
+                ReconciliationFinding(
+                    category="position_rollforward",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=ledger.period_end_utc,
+                    symbol=sym,
+                    expected_value=None,
+                    observed_value=obs_q,
+                    residual_bps=None,
+                    residual_base_currency=None,
+                    math_identity="PriorPositions + Trades + InKindFlows + CorporateActions == EndingPositions",
+                    technical_explanation=(
+                        f"Position roll-forward for {sym} was not evaluated because PriorPeriodPositions "
+                        "omitted share quantities and opening FX/valuation could not reconstruct the opening holding."
+                    ),
+                    benign_causes_considered=[
+                        "IBKR Flex PriorPeriodPositions exported without position quantity attribute",
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
                     ],
                 )
             )
@@ -882,6 +935,7 @@ def reconcile_position_rollforward(
         is_ibkr_with_unexplained_opening = (
             (ledger.broker_id or "").strip().lower() in _IBKR_FLEX_BROKER_IDS
             and not non_cash_prior
+            and not omitted_prior_pos_qty
             and bool(ledger.nav_points)
             and float(ledger.nav_points[0].positions_base or 0.0) > 1e-6
         )
@@ -893,9 +947,11 @@ def reconcile_position_rollforward(
         )
         if missing_sections:
             ledger_completeness_ok = False
-    elif omitted_foreign_fx:
+    elif omitted_foreign_fx or saw_omitted_prior_opening_holding:
         ledger_completeness_ok = False
-        if "ConversionRates" not in missing_sections:
+        if saw_omitted_prior_opening_holding and "PriorPeriodPositions" not in missing_sections:
+            missing_sections.append("PriorPeriodPositions")
+        if omitted_foreign_fx and "ConversionRates" not in missing_sections:
             missing_sections.append("ConversionRates")
 
     return PositionRollforwardResult(
