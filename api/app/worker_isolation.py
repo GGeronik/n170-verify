@@ -477,13 +477,35 @@ def default_standalone_worker_pipeline(job: Mapping[str, Any]) -> dict[str, Any]
     provided_leaves = job.get("leaf_payloads")
     if isinstance(provided_leaves, Mapping):
         raw_closed = provided_leaves.get("delayed_closed_trades", [])
-        filtered_trades, stripped_count = filter_delayed_closed_trades(
-            raw_closed,
-            issued_at_utc=issued_at_utc,
-            min_delay_days=delayed_guard_days,
-        )
-        leaf_payloads: dict[str, Any] = dict(provided_leaves)
-        leaf_payloads["delayed_closed_trades"] = [t.to_dict() for t in filtered_trades]
+        if isinstance(raw_closed, Mapping):
+            raw_trades = raw_closed.get("trades", [])
+            if not isinstance(raw_trades, list):
+                raise WorkerValidationError("delayed_closed_trades.trades must be a list")
+            filtered_trades, stripped_count = filter_delayed_closed_trades(
+                raw_trades,
+                issued_at_utc=issued_at_utc,
+                min_delay_days=delayed_guard_days,
+            )
+            leaf_payloads: dict[str, Any] = dict(provided_leaves)
+            prior_stripped = raw_closed.get("stripped_recent_count", 0)
+            base_stripped = (
+                prior_stripped
+                if isinstance(prior_stripped, int) and not isinstance(prior_stripped, bool) and prior_stripped >= 0
+                else 0
+            )
+            leaf_payloads["delayed_closed_trades"] = {
+                "embargo_days": int(delayed_guard_days),
+                "trades": [t.to_dict() for t in filtered_trades],
+                "stripped_recent_count": base_stripped + stripped_count,
+            }
+        else:
+            filtered_trades, stripped_count = filter_delayed_closed_trades(
+                raw_closed,
+                issued_at_utc=issued_at_utc,
+                min_delay_days=delayed_guard_days,
+            )
+            leaf_payloads = dict(provided_leaves)
+            leaf_payloads["delayed_closed_trades"] = [t.to_dict() for t in filtered_trades]
     else:
         raw_nav_points = job.get("nav_points")
         raw_nav_usd = job.get("nav_usd")

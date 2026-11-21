@@ -16,11 +16,21 @@ from app import __version__
 from app.badges import handle_get_badge_svg
 from app.config import ApiConfig
 from app.privacy_scanner import OutboundPrivacyScanner
+from app.routes_benchmarks import (
+    handle_get_benchmark_series,
+    handle_get_benchmarks_catalog,
+)
 from app.routes_keys import (
     handle_get_well_known_keys,
     handle_options_well_known_keys,
 )
 from app.routes_leaderboard import handle_get_leaderboard
+from app.routes_profiles import (
+    handle_get_profile,
+    handle_get_profile_by_key,
+    handle_post_profile,
+    handle_post_profile_leaderboard,
+)
 from app.routes_proofs import (
     handle_get_chain,
     handle_get_continuity_for_account,
@@ -180,10 +190,14 @@ def _retry_after_seconds_of(body: bytes) -> int | None:
     return None
 
 
-def _flatten_query_params(query_string: str) -> dict[str, str]:
+def _flatten_query_params(
+    query_string: str,
+    *,
+    keep_blank_values: bool = False,
+) -> dict[str, str]:
     if not query_string:
         return {}
-    parsed = parse_qs(query_string, keep_blank_values=False)
+    parsed = parse_qs(query_string, keep_blank_values=keep_blank_values)
     return {k: vals[-1] for k, vals in parsed.items() if vals}
 
 
@@ -226,6 +240,9 @@ _ROUTE_CHAIN_ITEM_RE = re.compile(r"^/api/v1/chains/(?P<chain_id>[^/]+)$")
 _ROUTE_CONTINUITY_RE = re.compile(r"^/api/v1/continuity/(?P<blinded_account_tag>[^/]+)$")
 _ROUTE_VS_RE = re.compile(r"^/api/v1/vs/(?P<proof_a>[^/]+)/(?P<proof_b>[^/]+)$")
 _ROUTE_VS_PREFIX_RE = re.compile(r"^/api/v1/vs(?:/.*)?$")
+_ROUTE_PROFILE_BY_KEY_RE = re.compile(r"^/api/v1/profiles/by-key/(?P<holder_public_key_hex>[^/]+)$")
+_ROUTE_PROFILE_LEADERBOARD_RE = re.compile(r"^/api/v1/profiles/(?P<handle>[^/]+)/leaderboard$")
+_ROUTE_PROFILE_ITEM_RE = re.compile(r"^/api/v1/profiles/(?P<handle>[^/]+)$")
 
 
 class VerifyApiApplication:
@@ -243,6 +260,7 @@ class VerifyApiApplication:
         snaptrade_http_transport: Any = None,
         hyperliquid_http_transport: Any = None,
         ibkr_flex_http_transport: Any = None,
+        eodhd_http_transport: Any = None,
     ) -> None:
         self.config = config or ApiConfig()
         self.store = store or ProofStore(self.config)
@@ -262,6 +280,7 @@ class VerifyApiApplication:
         )
         self.hyperliquid_http_transport = hyperliquid_http_transport
         self.ibkr_flex_http_transport = ibkr_flex_http_transport
+        self.eodhd_http_transport = eodhd_http_transport
 
     @property
     def verify_app(self) -> VerifyApiApplication:
@@ -734,6 +753,77 @@ class VerifyApiApplication:
             st, resp = handle_get_leaderboard(q_map, store=self.store)
             return ApiResponse.json_response(st, resp)
 
+        # 9. Daily Total-Return ETF Benchmarks (/api/v1/benchmarks & /api/v1/benchmarks/series)
+        if path == "/api/v1/benchmarks":
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            st, resp = handle_get_benchmarks_catalog()
+            return ApiResponse.json_response(
+                st,
+                resp,
+                headers={"Cache-Control": "public, max-age=300"},
+            )
+
+        if path == "/api/v1/benchmarks/series":
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            q_map = _flatten_query_params(query_string, keep_blank_values=True)
+            st, resp = handle_get_benchmark_series(
+                q_map,
+                config=self.config,
+                store=self.store,
+                eodhd_transport=self.eodhd_http_transport,
+            )
+            cache_hdr = (
+                {"Cache-Control": "public, max-age=300"}
+                if st == 200 and not q_map.get("proof_id")
+                else None
+            )
+            return ApiResponse.json_response(
+                st,
+                resp,
+                headers=cache_hdr,
+            )
+
+        # 10. Cryptographic Holder-Signed Trader Profiles (/api/v1/profiles...)
+        if path == "/api/v1/profiles":
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            st, resp = handle_post_profile(parsed, store=self.store)
+            return ApiResponse.json_response(st, resp)
+
+        profile_by_key_match = _ROUTE_PROFILE_BY_KEY_RE.match(path)
+        if profile_by_key_match is not None:
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            holder_key = unquote(profile_by_key_match.group("holder_public_key_hex"))
+            q_map = _flatten_query_params(query_string)
+            st, resp = handle_get_profile_by_key(holder_key, q_map, store=self.store)
+            return ApiResponse.json_response(st, resp)
+
+        profile_lb_match = _ROUTE_PROFILE_LEADERBOARD_RE.match(path)
+        if profile_lb_match is not None:
+            if verb != "POST":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            ok, parsed = _parse_json_body(body)
+            if not ok:
+                return ApiResponse.json_response(400, {"error": "invalid_json", "detail": parsed})
+            handle_val = unquote(profile_lb_match.group("handle"))
+            st, resp = handle_post_profile_leaderboard(handle_val, parsed, store=self.store)
+            return ApiResponse.json_response(st, resp)
+
+        profile_item_match = _ROUTE_PROFILE_ITEM_RE.match(path)
+        if profile_item_match is not None:
+            if verb != "GET":
+                return ApiResponse.json_response(405, {"error": "method_not_allowed"})
+            handle_val = unquote(profile_item_match.group("handle"))
+            q_map = _flatten_query_params(query_string)
+            st, resp = handle_get_profile(handle_val, q_map, store=self.store)
+            return ApiResponse.json_response(st, resp)
+
         not_found_body = {"error": "not_found", "detail": f"No route matching {verb} {path}"}
         if _is_sync_route(path):
             return _sync_json_response(404, not_found_body)
@@ -932,6 +1022,12 @@ def mount_onto_fastapi(verify_app: VerifyApiApplication) -> Any:
         ("/api/v1/continuity/{blinded_account_tag}", ["GET", "OPTIONS"]),
         ("/api/v1/badges/{proof_id:path}.svg", ["GET", "OPTIONS"]),
         ("/api/v1/leaderboard", ["GET", "OPTIONS"]),
+        ("/api/v1/benchmarks", ["GET", "OPTIONS"]),
+        ("/api/v1/benchmarks/series", ["GET", "OPTIONS"]),
+        ("/api/v1/profiles", ["POST", "OPTIONS"]),
+        ("/api/v1/profiles/by-key/{holder_public_key_hex}", ["GET", "OPTIONS"]),
+        ("/api/v1/profiles/{handle}/leaderboard", ["POST", "OPTIONS"]),
+        ("/api/v1/profiles/{handle}", ["GET", "OPTIONS"]),
     ):
         fapp.add_api_route(route_path, _proxy, methods=methods)
 
@@ -949,6 +1045,7 @@ def create_app(
     snaptrade_http_transport: Any = None,
     hyperliquid_http_transport: Any = None,
     ibkr_flex_http_transport: Any = None,
+    eodhd_http_transport: Any = None,
     prefer_fastapi: bool = True,
 ) -> Any:
     """Create the N170 Verify application (FastAPI when installed, zero-dep ASGI otherwise)."""
@@ -962,6 +1059,7 @@ def create_app(
         snaptrade_http_transport=snaptrade_http_transport,
         hyperliquid_http_transport=hyperliquid_http_transport,
         ibkr_flex_http_transport=ibkr_flex_http_transport,
+        eodhd_http_transport=eodhd_http_transport,
     )
     if prefer_fastapi and _HAS_FASTAPI:
         return mount_onto_fastapi(core_app)
