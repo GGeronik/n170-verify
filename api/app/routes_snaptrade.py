@@ -578,6 +578,7 @@ class SnapTradeRelayCoordinator:
                     if (
                         sess.client_token_sha256 == client_token_sha256
                         and sess.is_personal == is_personal
+                        and now_mono < sess.expires_monotonic
                         and now_mono < sess.created_monotonic + max_lifetime
                     ):
                         self._users_in_use[sess.user_id] = (
