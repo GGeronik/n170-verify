@@ -1,8 +1,8 @@
 {
   "wheel_name": "n170_verify-0.3.0-py3-none-any.whl",
   "version": "0.3.0",
-  "bytes": 379829,
-  "sha384": "37a17e09ba63005212b80796c88a6f7c8b79b35d27ae02fe51473ae61177cc8283f94bada1d0d5c66c01893f40857f8e",
-  "sha256": "a9bcc057439ea647599dae440d41e5c2f4983ec0a03d0090424273862717ae3e",
+  "bytes": 379970,
+  "sha384": "da0841592746c92c9c3db63c97a990457eb99e3551e759be6630baf78c6f087631fc250b81adc53c1feff8b7ed18eeae",
+  "sha256": "60f90ae5a398c9de4addd34ae47a6e3e1a617cdac1aa20eda933f6865d45d532",
   "built_at": "2026-01-01T00:00:00.000Z"
 }

@@ -100,6 +100,7 @@ class _EphemeralSnapTradeSession:
     expires_monotonic: float
     is_personal: bool = False
     created_monotonic: float = 0.0
+    client_token_sha256: str = ""
 
 
 def _utc_iso_from_dt(dt: datetime) -> str:
@@ -359,6 +360,47 @@ def _verify_dev_key_if_required(
     return True, None
 
 
+def _hash_client_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _extract_client_session_token(
+    payload: Mapping[str, Any] | None,
+    headers: Mapping[str, str] | None,
+) -> tuple[str, tuple[int, dict[str, Any]] | None]:
+    raw_tok: Any = None
+    if isinstance(payload, Mapping):
+        for field_name in ("client_session_token", "client_token", "client_session_id"):
+            if field_name in payload and payload.get(field_name) is not None:
+                raw_tok = payload.get(field_name)
+                break
+    if raw_tok is None and headers is not None:
+        for k, v in headers.items():
+            if str(k).strip().lower() == "x-n170-client-token" and v is not None:
+                raw_tok = str(v)
+                break
+    if raw_tok is None:
+        return "", None
+    if not isinstance(raw_tok, str):
+        return "", (
+            422,
+            {
+                "error": "validation_error",
+                "detail": "client_session_token must be a string between 24 and 256 characters",
+            },
+        )
+    cleaned = raw_tok.strip()
+    if len(cleaned) < 24 or len(cleaned) > 256:
+        return "", (
+            422,
+            {
+                "error": "validation_error",
+                "detail": "client_session_token must be a string between 24 and 256 characters",
+            },
+        )
+    return cleaned, None
+
+
 class SnapTradeRelayCoordinator:
     """Thread-safe ephemeral in-memory coordinator for the 5-slot SnapTrade V1 relay."""
 
@@ -387,6 +429,7 @@ class SnapTradeRelayCoordinator:
         # Users whose session is being read by a verify right now: never expired or deleted
         # upstream until that verify has finished (count of verifies in flight per user).
         self._users_in_use: dict[str, int] = {}
+        self._inflight_client_creations: dict[str, threading.Event] = {}
         self._startup_cleanup_done = False
         self._sweep_running = False
         self._sweep_next_attempt = float("-inf")
@@ -504,6 +547,7 @@ class SnapTradeRelayCoordinator:
         user_id: str,
         user_secret: str,
         is_personal: bool,
+        client_token_sha256: str = "",
     ) -> _EphemeralSnapTradeSession:
         """Turn a reservation into a session in one step under the lock."""
         with self._lock:
@@ -513,9 +557,51 @@ class SnapTradeRelayCoordinator:
                 user_id=user_id,
                 user_secret=user_secret,
                 is_personal=is_personal,
+                client_token_sha256=client_token_sha256,
             )
             self._reserved_users.discard(user_id)
             return sess
+
+    def acquire_or_begin_client_token(
+        self, client_token_sha256: str, *, is_personal: bool
+    ) -> tuple[_EphemeralSnapTradeSession | None, threading.Event | None]:
+        """Find an active session for ``client_token_sha256`` or claim creation rights."""
+        if not client_token_sha256:
+            return None, None
+        max_lifetime = max(self.session_ttl_seconds, SNAPTRADE_SESSION_TTL_SECONDS)
+        deadline = time.monotonic() + 15.0
+        while True:
+            self.purge_expired_sessions()
+            now_mono = self._clock()
+            with self._lock:
+                for sess in self._sessions.values():
+                    if (
+                        sess.client_token_sha256 == client_token_sha256
+                        and sess.is_personal == is_personal
+                        and now_mono < sess.created_monotonic + max_lifetime
+                    ):
+                        self._users_in_use[sess.user_id] = (
+                            self._users_in_use.get(sess.user_id, 0) + 1
+                        )
+                        return sess, None
+                inflight = self._inflight_client_creations.get(client_token_sha256)
+                if inflight is None:
+                    new_ev = threading.Event()
+                    self._inflight_client_creations[client_token_sha256] = new_ev
+                    return None, new_ev
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0 or not inflight.wait(timeout=remaining):
+                return None, None
+
+    def finish_client_token_creation(
+        self, client_token_sha256: str, event: threading.Event | None
+    ) -> None:
+        if not client_token_sha256 or event is None:
+            return
+        with self._lock:
+            if self._inflight_client_creations.get(client_token_sha256) is event:
+                self._inflight_client_creations.pop(client_token_sha256, None)
+            event.set()
 
     def _record_cleanup_warning(
         self,
@@ -650,6 +736,7 @@ class SnapTradeRelayCoordinator:
         user_id: str,
         user_secret: str,
         is_personal: bool = False,
+        client_token_sha256: str = "",
     ) -> _EphemeralSnapTradeSession:
         self.purge_expired_sessions()
         now_mono = self._clock()
@@ -667,6 +754,7 @@ class SnapTradeRelayCoordinator:
             expires_monotonic=now_mono + self.session_ttl_seconds,
             is_personal=is_personal,
             created_monotonic=now_mono,
+            client_token_sha256=client_token_sha256,
         )
         with self._lock:
             # One session holds one slot: a new session for the same user replaces the old one.
@@ -955,19 +1043,18 @@ def handle_post_snaptrade_portal(
     clean_session_token = (
         raw_session_token.strip() if isinstance(raw_session_token, str) else ""
     )
+    clean_client_token, client_tok_err = _extract_client_session_token(payload, headers)
+    if client_tok_err is not None:
+        return client_tok_err
+    client_tok_sha = _hash_client_token(clean_client_token) if clean_client_token else ""
 
     adapter = relay.build_adapter(client_id, consumer_key, auth_mode=auth_mode)
-    if clean_session_token:
-        relay.cleanup_leftover_upstream_users_once(
-            adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
-        )
-        relay.reap_expired_upstream_users(adapter)
-        existing_sess = relay.get_session_for_use(clean_session_token)
-        if existing_sess is None:
-            return 404, {
-                "error": "session_not_found",
-                "detail": "SnapTrade relay session_token is invalid, expired, or already released.",
-            }
+
+    def _refresh_existing_portal_session(
+        existing_sess: _EphemeralSnapTradeSession,
+        *,
+        extra_secret: str = "",
+    ) -> tuple[int, dict[str, Any]]:
         sess_secrets = [
             tok
             for tok in (
@@ -975,7 +1062,8 @@ def handle_post_snaptrade_portal(
                 client_id,
                 existing_sess.user_id,
                 existing_sess.user_secret,
-                clean_session_token,
+                existing_sess.session_token,
+                extra_secret,
             )
             if tok
         ]
@@ -1020,18 +1108,48 @@ def handle_post_snaptrade_portal(
             "available_slots": counts["available_slots"],
         }
 
-    manager = relay._manager_for(is_personal=is_personal)
-    # A personal key has exactly one upstream identity (its owner). A build key gets a fresh
-    # random user per portal call, so a session can only be used by the caller that created it.
-    if is_personal:
-        user_id = _derive_blinded_snaptrade_user_id(
-            "personal-owner", config.account_blinding_salt_hex
+    if clean_session_token:
+        relay.cleanup_leftover_upstream_users_once(
+            adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
         )
-    else:
-        user_id = _new_relay_user_id(config.account_blinding_salt_hex)
-    secrets_to_redact = [consumer_key, client_id, user_id]
+        relay.reap_expired_upstream_users(adapter)
+        existing_sess = relay.get_session_for_use(clean_session_token)
+        if existing_sess is None:
+            return 404, {
+                "error": "session_not_found",
+                "detail": "SnapTrade relay session_token is invalid, expired, or already released.",
+            }
+        return _refresh_existing_portal_session(
+            existing_sess, extra_secret=clean_session_token
+        )
+
+    creation_event: threading.Event | None = None
+    if client_tok_sha:
+        relay.cleanup_leftover_upstream_users_once(
+            adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
+        )
+        relay.reap_expired_upstream_users(adapter)
+        existing_client_sess, creation_event = relay.acquire_or_begin_client_token(
+            client_tok_sha, is_personal=is_personal
+        )
+        if existing_client_sess is not None:
+            return _refresh_existing_portal_session(
+                existing_client_sess, extra_secret=clean_client_token
+            )
 
     try:
+        # A personal key has exactly one upstream identity (its owner). A build key gets a fresh
+        # random user per portal call, so a session can only be used by the caller that created it.
+        if is_personal:
+            user_id = _derive_blinded_snaptrade_user_id(
+                "personal-owner", config.account_blinding_salt_hex
+            )
+        else:
+            user_id = _new_relay_user_id(config.account_blinding_salt_hex)
+        secrets_to_redact = [
+            tok for tok in (consumer_key, client_id, user_id, clean_client_token) if tok
+        ]
+
         relay.cleanup_leftover_upstream_users_once(
             adapter, user_prefix=deployment_user_prefix(config.account_blinding_salt_hex)
         )
@@ -1061,6 +1179,7 @@ def handle_post_snaptrade_portal(
                 user_id=user_id,
                 user_secret=user_secret,
                 is_personal=is_personal,
+                client_token_sha256=client_tok_sha,
             )
         except Exception:
             # No session will hold this user: free the reserved seat and remove the user.
@@ -1101,6 +1220,8 @@ def handle_post_snaptrade_portal(
     except (SnapTradeAuthenticationError, SnapTradeServiceError, SnapTradeError) as exc:
         safe_msg = _clean_snaptrade_upstream_detail(exc, extra_secrets=secrets_to_redact)
         return 502, {"error": "snaptrade_upstream_error", "detail": safe_msg}
+    finally:
+        relay.finish_client_token_creation(client_tok_sha, creation_event)
 
 
 def handle_post_snaptrade_session_status(

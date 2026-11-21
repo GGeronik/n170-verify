@@ -139,6 +139,178 @@ class TestRelaySessionBelongsToItsCreator(_AppCase):
             self.assertTrue(uid.startswith(OWN_PREFIX), uid)
             self.assertEqual(len(uid), len(OWN_PREFIX) + 24, uid)
 
+    def test_active_session_token_refresh_reuses_slot_even_at_capacity(self) -> None:
+        transport, recorded = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport)
+
+        first = client.post(PORTAL, json={"slot_label": "visitor-one"})
+        self.assertEqual(first.status_code, 200, first.text)
+        first_data = first.json()
+        tok = first_data["session_token"]
+        slot_id = first_data["slot_id"]
+
+        for idx in range(4):
+            other = client.post(PORTAL, json={"slot_label": f"other-{idx}"})
+            self.assertEqual(other.status_code, 200, other.text)
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 5)
+
+        refreshed = client.post(PORTAL, json={"session_token": tok})
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        ref_data = refreshed.json()
+        self.assertEqual(ref_data["slot_id"], slot_id)
+        self.assertEqual(ref_data["session_token"], tok)
+        self.assertEqual(ref_data["active_slots"], 5)
+        self.assertEqual(len(_registered_user_ids(recorded)), 5)
+
+    def test_client_session_token_deduplicates_portal_refreshes_across_body_and_header(self) -> None:
+        transport, recorded = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport)
+        client_tok = "browser-client-token-a" + "1" * 16
+
+        first = client.post(
+            PORTAL,
+            json={"slot_label": "shared-name", "client_session_token": client_tok},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        first_data = first.json()
+        self.assertEqual(first_data["active_slots"], 1)
+
+        for idx in range(4):
+            other = client.post(PORTAL, json={"slot_label": f"other-{idx}"})
+            self.assertEqual(other.status_code, 200, other.text)
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 5)
+
+        via_body = client.post(
+            PORTAL,
+            json={"client_session_token": client_tok, "broker": "ROBINHOOD"},
+        )
+        self.assertEqual(via_body.status_code, 200, via_body.text)
+        self.assertEqual(via_body.json()["slot_id"], first_data["slot_id"])
+        self.assertEqual(via_body.json()["session_token"], first_data["session_token"])
+        self.assertEqual(via_body.json()["active_slots"], 5)
+
+        via_header = client.post(
+            PORTAL,
+            json={},
+            headers={"X-N170-Client-Token": client_tok},
+        )
+        self.assertEqual(via_header.status_code, 200, via_header.text)
+        self.assertEqual(via_header.json()["slot_id"], first_data["slot_id"])
+        self.assertEqual(via_header.json()["session_token"], first_data["session_token"])
+        self.assertEqual(len(_registered_user_ids(recorded)), 5)
+
+        status_text = client.get(STATUS).text
+        self.assertNotIn(client_tok, status_text)
+        self.assertNotIn("shared-name", status_text)
+
+        rel = client.post(RELEASE, json={"session_token": first_data["session_token"]})
+        self.assertEqual(rel.status_code, 200, rel.text)
+        self.assertEqual(rel.json()["active_slots"], 4)
+
+        reallocated = client.post(
+            PORTAL,
+            json={"client_session_token": client_tok},
+        )
+        self.assertEqual(reallocated.status_code, 200, reallocated.text)
+        self.assertNotEqual(reallocated.json()["session_token"], first_data["session_token"])
+        self.assertEqual(reallocated.json()["active_slots"], 5)
+        self.assertEqual(len(_registered_user_ids(recorded)), 6)
+
+    def test_distinct_client_tokens_remain_isolated_even_with_same_slot_label(self) -> None:
+        transport, recorded = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(transport)
+        tok_a = "caller-a-unique-token-0001"
+        tok_b = "caller-b-unique-token-0002"
+
+        resp_a = client.post(
+            PORTAL, json={"slot_label": "alice", "client_session_token": tok_a}
+        )
+        resp_b = client.post(
+            PORTAL, json={"slot_label": "alice", "client_session_token": tok_b}
+        )
+        resp_anon = client.post(PORTAL, json={"slot_label": "alice"})
+
+        for r in (resp_a, resp_b, resp_anon):
+            self.assertEqual(r.status_code, 200, r.text)
+        slot_ids = {resp_a.json()["slot_id"], resp_b.json()["slot_id"], resp_anon.json()["slot_id"]}
+        sess_tokens = {
+            resp_a.json()["session_token"],
+            resp_b.json()["session_token"],
+            resp_anon.json()["session_token"],
+        }
+        self.assertEqual(len(slot_ids), 3)
+        self.assertEqual(len(sess_tokens), 3)
+        user_ids = _registered_user_ids(recorded)
+        self.assertEqual(len(user_ids), 3)
+        self.assertEqual(len(set(user_ids)), 3)
+
+    def test_concurrent_portal_calls_with_same_client_token_allocate_single_slot(self) -> None:
+        inner, recorded = _make_mock_snaptrade_transport()
+        entered = threading.Event()
+        release = threading.Event()
+
+        def transport(method: str, url: str, headers: dict[str, str], body: bytes | None) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/registerUser":
+                entered.set()
+                release.wait(5)
+            return inner(method, url, headers, body)
+
+        _, client, _ = self._client(transport)
+        client.get(STATUS)  # run startup sweep first
+        shared_tok = "concurrent-browser-token-0001"
+        results: list[Any] = []
+
+        def invoke() -> None:
+            results.append(client.post(PORTAL, json={"client_session_token": shared_tok}))
+
+        t1 = threading.Thread(target=invoke, daemon=True)
+        t2 = threading.Thread(target=invoke, daemon=True)
+        t1.start()
+        self.assertTrue(entered.wait(5))
+        t2.start()
+        release.set()
+        t1.join(5)
+        t2.join(5)
+
+        self.assertEqual(len(results), 2)
+        for r in results:
+            self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(results[0].json()["slot_id"], results[1].json()["slot_id"])
+        self.assertEqual(results[0].json()["session_token"], results[1].json()["session_token"])
+        self.assertEqual(client.get(STATUS).json()["active_slots"], 1)
+        self.assertEqual(len(_registered_user_ids(recorded)), 1)
+
+    def test_invalid_client_session_token_rejected_and_secret_redacted_on_error(self) -> None:
+        inner, _ = _make_mock_snaptrade_transport()
+        _, client, _ = self._client(inner)
+
+        for bad in ("alice", "", "short-tok", 12345):
+            r = client.post(PORTAL, json={"client_session_token": bad})
+            self.assertEqual(r.status_code, 422, f"{bad!r} -> {r.text}")
+            self.assertEqual(r.json()["error"], "validation_error")
+
+        bad_hdr = client.post(PORTAL, json={}, headers={"X-N170-Client-Token": "too-short"})
+        self.assertEqual(bad_hdr.status_code, 422, bad_hdr.text)
+        self.assertEqual(bad_hdr.json()["error"], "validation_error")
+
+        secret_tok = "super-secret-client-token-0001"
+
+        def failing_transport(
+            method: str, url: str, headers: dict[str, str], body: bytes | None
+        ) -> Any:
+            if urllib.parse.urlsplit(url).path == "/api/v1/snapTrade/login":
+                return (
+                    503,
+                    {"Content-Type": "application/json"},
+                    {"detail": f"bad {secret_tok}"},
+                )
+            return inner(method, url, headers, body)
+
+        _, fail_client, _ = self._client(failing_transport)
+        err_resp = fail_client.post(PORTAL, json={"client_session_token": secret_tok})
+        self.assertEqual(err_resp.status_code, 502, err_resp.text)
+        self.assertNotIn(secret_tok, err_resp.text)
+
 
 class TestPersonalKeyIsOperatorOnlyWhenHosted(_AppCase):
     def test_hosted_personal_key_without_configured_dev_key_is_refused(self) -> None:

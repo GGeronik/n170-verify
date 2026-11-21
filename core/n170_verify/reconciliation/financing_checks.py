@@ -68,28 +68,15 @@ def reconcile_fx_conversion_marks(
     findings: list[ReconciliationFinding] = []
     end_date = ledger.period_end_utc[:10]
 
-    ibkr_omitted_conv_rates = (
-        (ledger.broker_id or "").strip().lower() in {"ibkr_flex_offline", "ibkr_flex_web"}
-        and "conversionrates"
-        not in {re.sub(r"[^a-z0-9]", "", s.lower()) for s in ledger.enabled_sections if s}
-    )
-    ending_foreign_ccys = {
-        normalize_uk_currency_and_scale(pos.currency)[1]
-        for pos in ledger.ending_positions
-        if normalize_uk_currency_and_scale(pos.currency)[1] != ledger.base_currency
-    }
-
     candidate_pairs: dict[tuple[str, str], float] = {}
     for key, rate in sorted(ledger.conversion_rates.items()):
         parsed = _parse_fx_pair_key(key, ledger.base_currency)
         if parsed is not None and parsed[0] != parsed[1]:
-            if ibkr_omitted_conv_rates:
-                foreign_leg = parsed[0] if parsed[1] == ledger.base_currency else parsed[1]
-                if foreign_leg not in ending_foreign_ccys:
-                    continue
             candidate_pairs[parsed] = float(rate)
 
     for pos in ledger.ending_positions:
+        if pos.fx_rate_to_base is None:
+            continue
         _, norm_pos_ccy, pos_scale = normalize_uk_currency_and_scale(pos.currency)
         if norm_pos_ccy != ledger.base_currency:
             # Normalize GBX fx_rate_to_base (0.01x of GBP) onto canonical GBP->base scale.
@@ -151,13 +138,6 @@ def reconcile_fx_conversion_marks(
             explanation = (
                 f"Closing FX mark for {pair_label} ({obs_rate:.6f} vs {ref_rate:.6f}, {spread_bps:.2f} bps) "
                 f"lies within standard {tier_label} fixing cut-off convention."
-            )
-        elif ibkr_omitted_conv_rates and spread_bps <= 250.0:
-            outcome = CheckOutcome.EXPLAINED_CONVENTION
-            explanation = (
-                f"Closing FX mark for {pair_label} ({obs_rate:.6f} vs {ref_rate:.6f}, {spread_bps:.2f} bps) "
-                "was inferred from OpenPositions/EquitySummaryInBase (2-decimal percentOfNAV rounding) "
-                "because <ConversionRates> was omitted in the IBKR Flex query."
             )
         else:
             outcome = CheckOutcome.DISCREPANCY
@@ -458,6 +438,25 @@ def reconcile_dividend_flows(
         assert fl.symbol is not None
         sym_upper = fl.symbol.strip().upper()
         fl_date = fl.timestamp_utc[:10]
+        if fl.amount_base is None:
+            findings.append(
+                ReconciliationFinding(
+                    category="dividend_accrual_check",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=fl.timestamp_utc,
+                    symbol=sym_upper,
+                    observed_value=None,
+                    math_identity="DividendBase == HeldSharesOnExDate * unadjustedValue * DeclarationFX",
+                    technical_explanation=(
+                        "Dividend row omitted base-currency FX conversion rate in statement export; "
+                        "base-currency accrual check was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
+                    ],
+                )
+            )
+            continue
         fl_dt = date.fromisoformat(fl_date)
 
         ex_hint = normalize_eodhd_exchange(None, isin=fl.isin, currency=fl.currency)
@@ -611,8 +610,26 @@ def reconcile_financing_accruals(
     for fl in ledger.flows:
         if fl.kind != FlowKind.MARGIN_INTEREST:
             continue
-        amt = float(fl.amount_base or 0.0)
         ts = parse_utc_timestamp(fl.timestamp_utc)
+        if fl.amount_base is None:
+            findings.append(
+                ReconciliationFinding(
+                    category="margin_financing_check",
+                    outcome=CheckOutcome.NOT_EVALUATED,
+                    date_or_timestamp=fl.timestamp_utc,
+                    observed_value=None,
+                    math_identity="MarginDebitInterest <= 0",
+                    technical_explanation=(
+                        "Margin interest row omitted base-currency FX conversion rate in statement export; "
+                        "base-currency financing check was not evaluated."
+                    ),
+                    benign_causes_considered=[
+                        "Minimal IBKR Activity Flex Query omitting ConversionRates / fxRateToBase",
+                    ],
+                )
+            )
+            continue
+        amt = float(fl.amount_base)
         # Positive margin interest inflow > $10 and > 10 bps while account carries debit cash is anomalous.
         if amt > max(10.0, 0.0010 * nav_scale) and min_cash <= 0.0:
             findings.append(

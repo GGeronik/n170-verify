@@ -351,7 +351,11 @@ def reconcile_trade_fills(
                 )
                 diff_per_unit = abs(normalized_fill - nearest_bound)
                 mult = float(tr.multiplier or 1.0)
-                res_base = diff_per_unit * abs(float(tr.quantity)) * mult * float(tr.fx_rate_to_base)
+                res_base = (
+                    diff_per_unit * abs(float(tr.quantity)) * mult * float(tr.fx_rate_to_base)
+                    if tr.fx_rate_to_base is not None
+                    else None
+                )
                 findings.append(
                     ReconciliationFinding(
                         category="trade_fill_envelope",
@@ -386,7 +390,11 @@ def reconcile_trade_fills(
         )
         diff_unit = abs(normalized_fill - nearest_rth)
         mult = float(tr.multiplier or 1.0)
-        res_base = diff_unit * abs(float(tr.quantity)) * mult * float(tr.fx_rate_to_base)
+        res_base = (
+            diff_unit * abs(float(tr.quantity)) * mult * float(tr.fx_rate_to_base)
+            if tr.fx_rate_to_base is not None
+            else None
+        )
         note_suffix = f" (Stage-2 intraday skipped: {skip_reason})" if skip_reason else " (no intraday bars available)"
         findings.append(
             ReconciliationFinding(
@@ -531,6 +539,8 @@ def reconcile_corporate_actions_and_ending_marks(
             * abs(float(pos.quantity))
             * mult
             * (float(pos.fx_rate_to_base) / pos_scale)
+            if pos.fx_rate_to_base is not None
+            else None
         )
         findings.append(
             ReconciliationFinding(
